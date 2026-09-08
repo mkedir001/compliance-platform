@@ -191,9 +191,13 @@ enum TrainingOwnershipType {
 
 enum TrainingCourseVersionStatus {
   DRAFT
+  IN_REVIEW
+  APPROVED
   PUBLISHED
+  ACTIVE
   SUPERSEDED
   RETIRED
+  ARCHIVED
 }
 
 enum TrainingModuleType {
@@ -785,30 +789,31 @@ model ComplianceRequirement {
 }
 
 model ComplianceRequirementVersion {
-  id                      String                           @id @default(cuid())
-  requirementId           String
-  versionNumber           Int
-  effectiveFrom           DateTime                         @db.Date
-  effectiveUntil          DateTime?                        @db.Date
-  verificationStatus      VerificationStatus
-  status                  RequirementVersionStatus         @default(DRAFT)
-  applicabilityDefinition Json
-  triggerDefinition       Json
-  deadlineDefinition      Json
-  recurrenceDefinition    Json?
-  competencyDefinition    Json?
-  evidenceDefinition      Json?
-  legalGraceDefinition    Json?
-  blockingScope           BlockingScope?
-  createdAt               DateTime                         @default(now())
-  updatedAt               DateTime                         @updatedAt
-  requirement             ComplianceRequirement            @relation(fields: [requirementId], references: [id], onDelete: Restrict)
-  authorityMappings       RequirementAuthorityMapping[]
-  rulesets                ComplianceRulesetRequirement[]
-  complianceInstances     ComplianceInstance[]
-  trainingOptions         RequirementTrainingOption[]
-  competencyRequirements  CompetencyRequirement[]
-  equivalencyDecisions    RequirementEquivalencyDecision[]
+  id                        String                           @id @default(cuid())
+  requirementId             String
+  versionNumber             Int
+  effectiveFrom             DateTime                         @db.Date
+  effectiveUntil            DateTime?                        @db.Date
+  verificationStatus        VerificationStatus
+  status                    RequirementVersionStatus         @default(DRAFT)
+  applicabilityDefinition   Json
+  triggerDefinition         Json
+  deadlineDefinition        Json
+  recurrenceDefinition      Json?
+  competencyDefinition      Json?
+  evidenceDefinition        Json?
+  legalGraceDefinition      Json?
+  blockingScope             BlockingScope?
+  createdAt                 DateTime                         @default(now())
+  updatedAt                 DateTime                         @updatedAt
+  requirement               ComplianceRequirement            @relation(fields: [requirementId], references: [id], onDelete: Restrict)
+  authorityMappings         RequirementAuthorityMapping[]
+  rulesets                  ComplianceRulesetRequirement[]
+  complianceInstances       ComplianceInstance[]
+  trainingOptions           RequirementTrainingOption[]
+  competencyRequirements    CompetencyRequirement[]
+  learningObjectiveMappings LearningObjectiveRequirement[]
+  equivalencyDecisions      RequirementEquivalencyDecision[]
 
   @@unique([requirementId, versionNumber])
   @@index([status, effectiveFrom, effectiveUntil])
@@ -1013,39 +1018,44 @@ model TrainingCourseVersion {
   trainingOptions          RequirementTrainingOption[]
   assignments              TrainingAssignment[]
   completions              TrainingCompletion[]
+  learningObjectives       LearningObjective[]
+  questionBanks            QuestionBank[]
 
   @@unique([courseId, versionNumber])
   @@index([status, effectiveFrom, effectiveUntil])
 }
 
 model TrainingModule {
-  id                       String                   @id @default(cuid())
+  id                       String                      @id @default(cuid())
   courseVersionId          String
   sequence                 Int
   title                    String
   moduleType               TrainingModuleType
-  required                 Boolean                  @default(true)
+  required                 Boolean                     @default(true)
   estimatedDurationMinutes Int?
-  createdAt                DateTime                 @default(now())
-  courseVersion            TrainingCourseVersion    @relation(fields: [courseVersionId], references: [id], onDelete: Restrict)
+  createdAt                DateTime                    @default(now())
+  courseVersion            TrainingCourseVersion       @relation(fields: [courseVersionId], references: [id], onDelete: Restrict)
   contentItems             TrainingContentItem[]
   assessments              Assessment[]
   progress                 TrainingModuleProgress[]
+  objectiveMappings        LearningObjectiveModule[]
+  subjectMappings          TrainingModuleSubjectArea[]
 
   @@unique([courseVersionId, sequence])
 }
 
 model TrainingContentItem {
-  id              String                    @id @default(cuid())
-  moduleId        String
-  sequence        Int
-  contentType     TrainingContentType
-  payload         Json
-  required        Boolean                   @default(true)
-  createdAt       DateTime                  @default(now())
-  module          TrainingModule            @relation(fields: [moduleId], references: [id], onDelete: Restrict)
-  progress        TrainingContentProgress[]
-  acknowledgments TrainingAcknowledgment[]
+  id                String                     @id @default(cuid())
+  moduleId          String
+  sequence          Int
+  contentType       TrainingContentType
+  payload           Json
+  required          Boolean                    @default(true)
+  createdAt         DateTime                   @default(now())
+  module            TrainingModule             @relation(fields: [moduleId], references: [id], onDelete: Restrict)
+  progress          TrainingContentProgress[]
+  acknowledgments   TrainingAcknowledgment[]
+  objectiveMappings LearningObjectiveContent[]
 
   @@unique([moduleId, sequence])
 }
@@ -1151,35 +1161,42 @@ model TrainingAcknowledgment {
 }
 
 model Assessment {
-  id                 String               @id @default(cuid())
-  moduleId           String
-  versionNumber      Int
-  title              String
-  passingScore       Decimal              @db.Decimal(5, 2)
-  maxAttempts        Int?
-  randomizeQuestions Boolean              @default(false)
-  status             AssessmentStatus     @default(DRAFT)
-  createdAt          DateTime             @default(now())
-  module             TrainingModule       @relation(fields: [moduleId], references: [id], onDelete: Restrict)
-  questions          AssessmentQuestion[]
-  attempts           AssessmentAttempt[]
+  id                    String               @id @default(cuid())
+  moduleId              String
+  versionNumber         Int
+  title                 String
+  passingScore          Decimal              @db.Decimal(5, 2)
+  maxAttempts           Int?
+  randomizeQuestions    Boolean              @default(false)
+  status                AssessmentStatus     @default(DRAFT)
+  createdAt             DateTime             @default(now())
+  module                TrainingModule       @relation(fields: [moduleId], references: [id], onDelete: Restrict)
+  questions             AssessmentQuestion[]
+  attempts              AssessmentAttempt[]
+  questionBankVersionId String?
+  questionBankVersion   QuestionBankVersion? @relation(fields: [questionBankVersionId], references: [id], onDelete: Restrict)
 
   @@unique([moduleId, versionNumber])
 }
 
 model AssessmentQuestion {
-  id           String                 @id @default(cuid())
-  assessmentId String
-  questionType AssessmentQuestionType
-  prompt       String
-  explanation  String?
-  sequence     Int
-  points       Decimal                @db.Decimal(8, 2)
-  required     Boolean                @default(true)
-  createdAt    DateTime               @default(now())
-  assessment   Assessment             @relation(fields: [assessmentId], references: [id], onDelete: Restrict)
-  options      AssessmentOption[]
-  responses    AssessmentResponse[]
+  id                       String                      @id @default(cuid())
+  assessmentId             String
+  questionType             AssessmentQuestionType
+  prompt                   String
+  explanation              String?
+  sequence                 Int
+  points                   Decimal                     @db.Decimal(8, 2)
+  required                 Boolean                     @default(true)
+  critical                 Boolean                     @default(false)
+  remediationContentItemId String?
+  createdAt                DateTime                    @default(now())
+  assessment               Assessment                  @relation(fields: [assessmentId], references: [id], onDelete: Restrict)
+  options                  AssessmentOption[]
+  responses                AssessmentResponse[]
+  objectiveMappings        LearningObjectiveQuestion[]
+  questionBankVersionId    String?
+  questionBankVersion      QuestionBankVersion?        @relation(fields: [questionBankVersionId], references: [id], onDelete: Restrict)
 
   @@unique([assessmentId, sequence])
 }
@@ -1719,4 +1736,107 @@ model WorkReadinessEvaluation {
   employee          Employee             @relation(fields: [employeeId], references: [id], onDelete: Restrict)
 
   @@index([organizationId, employeeId, evaluatedAt])
+}
+
+model LearningObjective {
+  id                 String                         @id @default(cuid())
+  courseVersionId    String
+  code               String
+  title              String
+  description        String?
+  required           Boolean                        @default(true)
+  assessmentRequired Boolean                        @default(true)
+  criticalSafety     Boolean                        @default(false)
+  createdAt          DateTime                       @default(now())
+  courseVersion      TrainingCourseVersion          @relation(fields: [courseVersionId], references: [id], onDelete: Restrict)
+  requirements       LearningObjectiveRequirement[]
+  modules            LearningObjectiveModule[]
+  contentItems       LearningObjectiveContent[]
+  questions          LearningObjectiveQuestion[]
+
+  @@unique([courseVersionId, code])
+  @@index([code])
+}
+
+model LearningObjectiveRequirement {
+  id                   String                       @id @default(cuid())
+  learningObjectiveId  String
+  requirementVersionId String
+  createdAt            DateTime                     @default(now())
+  learningObjective    LearningObjective            @relation(fields: [learningObjectiveId], references: [id], onDelete: Restrict)
+  requirementVersion   ComplianceRequirementVersion @relation(fields: [requirementVersionId], references: [id], onDelete: Restrict)
+
+  @@unique([learningObjectiveId, requirementVersionId])
+}
+
+model LearningObjectiveModule {
+  id                  String            @id @default(cuid())
+  learningObjectiveId String
+  moduleId            String
+  createdAt           DateTime          @default(now())
+  learningObjective   LearningObjective @relation(fields: [learningObjectiveId], references: [id], onDelete: Restrict)
+  module              TrainingModule    @relation(fields: [moduleId], references: [id], onDelete: Restrict)
+
+  @@unique([learningObjectiveId, moduleId])
+}
+
+model LearningObjectiveContent {
+  id                  String              @id @default(cuid())
+  learningObjectiveId String
+  contentItemId       String
+  createdAt           DateTime            @default(now())
+  learningObjective   LearningObjective   @relation(fields: [learningObjectiveId], references: [id], onDelete: Restrict)
+  contentItem         TrainingContentItem @relation(fields: [contentItemId], references: [id], onDelete: Restrict)
+
+  @@unique([learningObjectiveId, contentItemId])
+}
+
+model LearningObjectiveQuestion {
+  id                  String             @id @default(cuid())
+  learningObjectiveId String
+  questionId          String
+  createdAt           DateTime           @default(now())
+  learningObjective   LearningObjective  @relation(fields: [learningObjectiveId], references: [id], onDelete: Restrict)
+  question            AssessmentQuestion @relation(fields: [questionId], references: [id], onDelete: Restrict)
+
+  @@unique([learningObjectiveId, questionId])
+}
+
+model TrainingModuleSubjectArea {
+  id              String         @id @default(cuid())
+  moduleId        String
+  subjectAreaCode String
+  subjectAreaName String
+  minutes         Int
+  createdAt       DateTime       @default(now())
+  module          TrainingModule @relation(fields: [moduleId], references: [id], onDelete: Restrict)
+
+  @@unique([moduleId, subjectAreaCode])
+  @@index([subjectAreaCode])
+}
+
+model QuestionBank {
+  id              String                @id @default(cuid())
+  courseVersionId String
+  code            String
+  name            String
+  createdAt       DateTime              @default(now())
+  courseVersion   TrainingCourseVersion @relation(fields: [courseVersionId], references: [id], onDelete: Restrict)
+  versions        QuestionBankVersion[]
+
+  @@unique([courseVersionId, code])
+}
+
+model QuestionBankVersion {
+  id             String                      @id @default(cuid())
+  questionBankId String
+  versionNumber  Int
+  status         TrainingCourseVersionStatus @default(DRAFT)
+  contentHash    String
+  createdAt      DateTime                    @default(now())
+  questionBank   QuestionBank                @relation(fields: [questionBankId], references: [id], onDelete: Restrict)
+  assessments    Assessment[]
+  questions      AssessmentQuestion[]
+
+  @@unique([questionBankId, versionNumber])
 }

@@ -64,3 +64,15 @@ Functional routes:
 - `/api/organizations/[organizationId]/my/onboarding` and `/my/policies` — strict employee self-service.
 
 Service events and readiness snapshots are append-only. Policy acknowledgments, compliance evidence, training completions, competency records, certificates, corrections, and historical readiness results use restrict/supersede semantics rather than cascade deletion.
+
+## Phase 6 production 245D curriculum
+
+The platform catalog now includes globally owned `245D-101` through `245D-112` course concepts. Version 1 of each course contains structured lessons, scenarios, warnings, summaries, versioned assessment banks, objective mappings, and subject-area minute allocations. Estimated durations are product metadata—not statutory minimums.
+
+Curriculum provenance follows `RegulationVersion → ComplianceRequirementVersion → LearningObjective → TrainingCourseVersion → TrainingModule → TrainingContentItem/AssessmentQuestion → employee evidence`. The coverage endpoint reports requirements that are mapped, intentionally contextual, competency-dependent, organization-policy-dependent, assessed, critical-question-covered, or backed by subject evidence.
+
+Activation validation rejects missing modules/content/objectives, objectives without regulatory or content mappings, assessed objectives without questions, critical objectives without critical questions, missing subject allocations or hashes, and obvious placeholder markers. Activated versions are immutable; changes require a new version. An 80% threshold and mandatory correctness for critical safety/reporting questions are platform curriculum policy, not claims about a Minnesota statutory passing score.
+
+`245D-112` is a separately versioned annual refresher with subject minutes allocated across applicable annual topics. It does not replace historical source-course evidence or alter Phase 2 recurrence rules. Generic `245D-103` training does not fabricate acknowledgment of an organization policy. `245D-108` does not establish practical restraint competency, `245D-110` does not create CPR or hands-on first-aid credentials, and the medication demo remains non-authorizing.
+
+Functional curriculum inspection is available at `/admin/training/coverage`, backed by the tenant-protected training coverage and course-validation APIs.
