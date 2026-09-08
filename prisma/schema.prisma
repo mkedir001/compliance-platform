@@ -1,0 +1,348 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum RecordStatus {
+  ACTIVE
+  INACTIVE
+  ARCHIVED
+}
+
+enum OrganizationStatus {
+  ACTIVE
+  SUSPENDED
+  ARCHIVED
+}
+
+enum LicenseType {
+  MN_245D
+  MN_144G
+  MN_144A
+  MN_245I
+  OTHER
+}
+
+enum LicenseStatus {
+  ACTIVE
+  PENDING
+  SUSPENDED
+  EXPIRED
+  ARCHIVED
+}
+
+enum UserStatus {
+  INVITED
+  ACTIVE
+  SUSPENDED
+  DISABLED
+}
+
+enum MembershipStatus {
+  INVITED
+  ACTIVE
+  SUSPENDED
+  ENDED
+}
+
+enum RoleScope {
+  ORGANIZATION
+  PLATFORM
+}
+
+enum EmploymentStatus {
+  PENDING
+  ACTIVE
+  LEAVE
+  TERMINATED
+  ARCHIVED
+}
+
+enum EmploymentType {
+  FULL_TIME
+  PART_TIME
+  TEMPORARY
+  CONTRACTOR
+  VOLUNTEER
+  OTHER
+}
+
+enum ServiceEventType {
+  HIRED
+  FIRST_DIRECT_CONTACT
+  FIRST_SUPERVISED_DIRECT_CONTACT
+  FIRST_UNSUPERVISED_DIRECT_CONTACT
+  ROLE_CHANGED
+  MEDICATION_DUTY_ASSIGNED
+}
+
+model Brand {
+  id               String         @id @default(cuid())
+  name             String
+  slug             String         @unique
+  status           RecordStatus   @default(ACTIVE)
+  logoObjectKey    String?
+  faviconObjectKey String?
+  primaryDomain    String?
+  supportEmail     String?
+  themeConfigJson  Json?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  organizations    Organization[]
+}
+
+model Organization {
+  id              String                   @id @default(cuid())
+  brandId         String?
+  legalName       String
+  displayName     String
+  slug            String                   @unique
+  status          OrganizationStatus       @default(ACTIVE)
+  timezone        String                   @default("America/Chicago")
+  defaultLanguage String?
+  phone           String?
+  email           String?
+  addressLine1    String?
+  addressLine2    String?
+  city            String?
+  state           String?
+  postalCode      String?
+  country         String?
+  createdAt       DateTime                 @default(now())
+  updatedAt       DateTime                 @updatedAt
+  brand           Brand?                   @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  licenses        OrganizationLicense[]
+  programs        Program[]
+  locations       Location[]
+  memberships     OrganizationMembership[]
+  roles           RoleDefinition[]
+  employees       Employee[]
+  serviceEvents   EmployeeServiceEvent[]
+}
+
+model OrganizationLicense {
+  id               String        @id @default(cuid())
+  organizationId   String
+  licenseType      LicenseType
+  licenseNumber    String?
+  licenseStatus    LicenseStatus @default(PENDING)
+  effectiveDate    DateTime?     @db.Date
+  expirationDate   DateTime?     @db.Date
+  issuingAuthority String?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  organization     Organization  @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId])
+}
+
+model Program {
+  id             String                 @id @default(cuid())
+  organizationId String
+  name           String
+  code           String?
+  programType    String?
+  status         RecordStatus           @default(ACTIVE)
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+  organization   Organization           @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  locations      Location[]
+  serviceEvents  EmployeeServiceEvent[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId, status])
+}
+
+model Location {
+  id             String                 @id @default(cuid())
+  organizationId String
+  programId      String?
+  name           String
+  locationType   String?
+  addressLine1   String?
+  addressLine2   String?
+  city           String?
+  state          String?
+  postalCode     String?
+  country        String?
+  status         RecordStatus           @default(ACTIVE)
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+  organization   Organization           @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  program        Program?               @relation(fields: [programId], references: [id], onDelete: SetNull)
+  serviceEvents  EmployeeServiceEvent[]
+
+  @@index([organizationId, status])
+  @@index([organizationId, programId])
+}
+
+model User {
+  id                 String                   @id @default(cuid())
+  authProviderUserId String?                  @unique
+  email              String?                  @unique
+  phone              String?
+  status             UserStatus               @default(INVITED)
+  lastLoginAt        DateTime?
+  createdAt          DateTime                 @default(now())
+  updatedAt          DateTime                 @updatedAt
+  memberships        OrganizationMembership[]
+  employees          Employee[]
+  recordedEvents     EmployeeServiceEvent[]   @relation("RecordedBy")
+}
+
+model OrganizationMembership {
+  id             String           @id @default(cuid())
+  organizationId String
+  userId         String
+  status         MembershipStatus @default(INVITED)
+  joinedAt       DateTime?
+  endedAt        DateTime?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  user           User             @relation(fields: [userId], references: [id], onDelete: Restrict)
+  roles          MembershipRole[]
+
+  @@unique([organizationId, userId])
+  @@index([userId, status])
+}
+
+model Permission {
+  id          String           @id @default(cuid())
+  code        String           @unique
+  description String?
+  createdAt   DateTime         @default(now())
+  roles       RolePermission[]
+}
+
+model RoleDefinition {
+  id                 String           @id @default(cuid())
+  organizationId     String?
+  code               String
+  name               String
+  description        String?
+  scope              RoleScope
+  isPlatformStandard Boolean          @default(false)
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+  organization       Organization?    @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  permissions        RolePermission[]
+  memberships        MembershipRole[]
+  employeeRoles      EmployeeRole[]
+
+  @@unique([organizationId, code])
+  @@index([code, isPlatformStandard])
+}
+
+model RolePermission {
+  id               String         @id @default(cuid())
+  roleDefinitionId String
+  permissionId     String
+  createdAt        DateTime       @default(now())
+  roleDefinition   RoleDefinition @relation(fields: [roleDefinitionId], references: [id], onDelete: Restrict)
+  permission       Permission     @relation(fields: [permissionId], references: [id], onDelete: Restrict)
+
+  @@unique([roleDefinitionId, permissionId])
+}
+
+model MembershipRole {
+  id               String                 @id @default(cuid())
+  membershipId     String
+  roleDefinitionId String
+  createdAt        DateTime               @default(now())
+  membership       OrganizationMembership @relation(fields: [membershipId], references: [id], onDelete: Restrict)
+  roleDefinition   RoleDefinition         @relation(fields: [roleDefinitionId], references: [id], onDelete: Restrict)
+
+  @@unique([membershipId, roleDefinitionId])
+}
+
+model Employee {
+  id               String                 @id @default(cuid())
+  organizationId   String
+  userId           String?
+  employeeNumber   String?
+  firstName        String
+  middleName       String?
+  lastName         String
+  preferredName    String?
+  email            String?
+  phone            String?
+  hireDate         DateTime?              @db.Date
+  terminationDate  DateTime?              @db.Date
+  employmentStatus EmploymentStatus       @default(PENDING)
+  jobTitle         String?
+  employmentType   EmploymentType?
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+  organization     Organization           @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  user             User?                  @relation(fields: [userId], references: [id], onDelete: SetNull)
+  roles            EmployeeRole[]
+  duties           EmployeeDuty[]
+  serviceEvents    EmployeeServiceEvent[]
+
+  @@unique([organizationId, employeeNumber])
+  @@unique([organizationId, userId])
+  @@index([organizationId, employmentStatus])
+  @@index([organizationId, lastName, firstName])
+}
+
+model EmployeeRole {
+  id               String         @id @default(cuid())
+  employeeId       String
+  roleDefinitionId String
+  effectiveFrom    DateTime       @db.Date
+  effectiveUntil   DateTime?      @db.Date
+  createdAt        DateTime       @default(now())
+  employee         Employee       @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  roleDefinition   RoleDefinition @relation(fields: [roleDefinitionId], references: [id], onDelete: Restrict)
+
+  @@index([employeeId, effectiveUntil])
+}
+
+model DutyDefinition {
+  id             String         @id @default(cuid())
+  code           String         @unique
+  name           String
+  description    String?
+  createdAt      DateTime       @default(now())
+  employeeDuties EmployeeDuty[]
+}
+
+model EmployeeDuty {
+  id               String         @id @default(cuid())
+  employeeId       String
+  dutyDefinitionId String
+  effectiveFrom    DateTime       @db.Date
+  effectiveUntil   DateTime?      @db.Date
+  source           String?
+  createdAt        DateTime       @default(now())
+  employee         Employee       @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  dutyDefinition   DutyDefinition @relation(fields: [dutyDefinitionId], references: [id], onDelete: Restrict)
+
+  @@unique([employeeId, dutyDefinitionId, effectiveFrom])
+  @@index([employeeId, effectiveUntil])
+}
+
+model EmployeeServiceEvent {
+  id               String           @id @default(cuid())
+  organizationId   String
+  employeeId       String
+  eventType        ServiceEventType
+  occurredAt       DateTime
+  programId        String?
+  locationId       String?
+  recordedByUserId String?
+  notes            String?
+  createdAt        DateTime         @default(now())
+  organization     Organization     @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  employee         Employee         @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  program          Program?         @relation(fields: [programId], references: [id], onDelete: SetNull)
+  location         Location?        @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  recordedBy       User?            @relation("RecordedBy", fields: [recordedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, employeeId, occurredAt])
+}
