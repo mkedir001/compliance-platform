@@ -1,4 +1,4 @@
-# Human-services compliance platform — Phase 1
+# Human-services compliance platform — Phase 4
 
 Production-oriented multi-tenant foundation for organization structure, global identities, permission-based RBAC, and organization-owned workforce records. No regulatory logic or PHI is included.
 
@@ -34,3 +34,11 @@ Development routes:
 - `/` — workforce/compliance verification console.
 
 All local verification commands remain `pnpm db:migrate`, `pnpm db:seed`, `pnpm test`, `pnpm typecheck`, `pnpm lint`, and `pnpm build`.
+
+## Competency and evidence architecture
+
+Phase 4 adds tenant-scoped competency definitions, immutable checklist versions, authorized observed assessments with server-derived results, professional credentials, reviewed external training/equivalency, cryptographically hashed typed-name attestations, subject-area completion evidence, append-only corrections, and opaque-token certificate verification.
+
+Course completion, competency, compliance satisfaction, and work authorization remain separate concepts. Certificates are projections of retained evidence, and revocation never deletes that evidence. Medication authorization, clinical approval, recipient data, document storage, certificate PDF rendering, and polished UI remain deferred.
+
+Development routes include `/admin/competencies` for assessor workflow and `/verify/[token]` for a public-safe certificate projection.

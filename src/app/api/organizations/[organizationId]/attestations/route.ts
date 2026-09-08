@@ -1,0 +1,2 @@
+import { requireAuthenticatedUser } from "@/domain/auth/authentication";import { errorResponse } from "@/domain/auth/errors";import { attestationSchema } from "@/domain/evidence/schemas";import { createAttestation } from "@/domain/evidence/service";
+export async function POST(r:Request,c:{params:Promise<{organizationId:string}>}){try{const u=await requireAuthenticatedUser(r);return Response.json(await createAttestation(u.id,(await c.params).organizationId,attestationSchema.parse(await r.json())),{status:201})}catch(e){return errorResponse(e)}}

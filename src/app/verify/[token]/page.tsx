@@ -1,0 +1,2 @@
+import { verifyCertificate } from "@/domain/evidence/service";
+export default async function Verify({params}:{params:Promise<{token:string}>}){const c=await verifyCertificate((await params).token);return <main><h1>Certificate verification</h1>{c?<><p>Certificate {c.certificateNumber}</p><p>Status: {c.status}</p><pre>{JSON.stringify(c.certificateSnapshotJson,null,2)}</pre></>:<p>Certificate not found.</p>}</main>}
