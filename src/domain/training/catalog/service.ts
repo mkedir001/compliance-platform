@@ -1,0 +1,5 @@
+import type { Prisma } from "@prisma/client";
+import { prisma } from "@/lib/prisma";
+export async function listCatalog(organizationId:string){return prisma.trainingCourse.findMany({where:{status:"ACTIVE",OR:[{organizationId:null},{organizationId}]},include:{versions:{include:{modules:{include:{contentItems:true,assessments:true}}}}},orderBy:{title:"asc"}})}
+export async function getAssignableCourseVersion(organizationId:string,id:string){return prisma.trainingCourseVersion.findFirst({where:{id,status:"PUBLISHED",course:{status:"ACTIVE",OR:[{organizationId:null},{organizationId}]}},include:{course:true,modules:{include:{contentItems:true,assessments:{include:{questions:{include:{options:true}}}}}}}})}
+export async function updateCourseVersion(id:string,data:Prisma.TrainingCourseVersionUpdateInput){const current=await prisma.trainingCourseVersion.findUniqueOrThrow({where:{id},include:{assignments:{take:1}}});if(current.status==="PUBLISHED"||current.assignments.length)throw new Error("Published or assigned course versions are immutable; create a new version");return prisma.trainingCourseVersion.update({where:{id},data})}

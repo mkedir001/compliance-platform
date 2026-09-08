@@ -179,6 +179,86 @@ enum ComplianceStatus {
   WAIVED_BY_EQUIVALENCY
 }
 
+enum TrainingCourseStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+enum TrainingOwnershipType {
+  PLATFORM
+  ORGANIZATION
+}
+
+enum TrainingCourseVersionStatus {
+  DRAFT
+  PUBLISHED
+  SUPERSEDED
+  RETIRED
+}
+
+enum TrainingModuleType {
+  CONTENT
+  ASSESSMENT
+  MIXED
+}
+
+enum TrainingContentType {
+  RICH_TEXT
+  WRITTEN
+  VIDEO
+  DOCUMENT_REFERENCE
+  ACKNOWLEDGMENT
+  ASSESSMENT
+  EXTERNAL_RESOURCE
+}
+
+enum TrainingSatisfactionType {
+  TRAINING_ONLY
+  TRAINING_AND_COMPETENCY
+  ALTERNATIVE
+}
+
+enum TrainingAssignmentSource {
+  COMPLIANCE_ENGINE
+  MANUAL
+  ORGANIZATION_POLICY
+  ADMINISTRATOR
+}
+
+enum TrainingProgressStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+  LOCKED
+  SUPERSEDED
+}
+
+enum TrainingAssignmentStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+  TRAINING_COMPLETE_COMPETENCY_PENDING
+  FAILED
+  SUPERSEDED
+}
+
+enum AssessmentStatus {
+  DRAFT
+  PUBLISHED
+  RETIRED
+}
+
+enum AssessmentQuestionType {
+  SINGLE_CHOICE
+  MULTIPLE_CHOICE
+  TRUE_FALSE
+}
+
+enum TrainingCompletionMethod {
+  COURSEWORK
+}
+
 model Brand {
   id               String         @id @default(cuid())
   name             String
@@ -223,6 +303,10 @@ model Organization {
   serviceEvents            EmployeeServiceEvent[]
   complianceEvaluationRuns ComplianceEvaluationRun[]
   complianceInstances      ComplianceInstance[]
+  trainingCourses          TrainingCourse[]
+  trainingAssignments      TrainingAssignment[]
+  trainingCompletions      TrainingCompletion[]
+  assessmentAttempts       AssessmentAttempt[]
 }
 
 model OrganizationLicense {
@@ -294,6 +378,8 @@ model User {
   employees                  Employee[]
   recordedEvents             EmployeeServiceEvent[]   @relation("RecordedBy")
   verifiedRegulationVersions RegulationVersion[]      @relation("RegulationVerifiedBy")
+  assignedTraining           TrainingAssignment[]     @relation("TrainingAssignedBy")
+  trainingAcknowledgments    TrainingAcknowledgment[] @relation("TrainingAcknowledgedBy")
 }
 
 model OrganizationMembership {
@@ -363,29 +449,33 @@ model MembershipRole {
 }
 
 model Employee {
-  id                  String                 @id @default(cuid())
-  organizationId      String
-  userId              String?
-  employeeNumber      String?
-  firstName           String
-  middleName          String?
-  lastName            String
-  preferredName       String?
-  email               String?
-  phone               String?
-  hireDate            DateTime?              @db.Date
-  terminationDate     DateTime?              @db.Date
-  employmentStatus    EmploymentStatus       @default(PENDING)
-  jobTitle            String?
-  employmentType      EmploymentType?
-  createdAt           DateTime               @default(now())
-  updatedAt           DateTime               @updatedAt
-  organization        Organization           @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  user                User?                  @relation(fields: [userId], references: [id], onDelete: SetNull)
-  roles               EmployeeRole[]
-  duties              EmployeeDuty[]
-  serviceEvents       EmployeeServiceEvent[]
-  complianceInstances ComplianceInstance[]
+  id                      String                   @id @default(cuid())
+  organizationId          String
+  userId                  String?
+  employeeNumber          String?
+  firstName               String
+  middleName              String?
+  lastName                String
+  preferredName           String?
+  email                   String?
+  phone                   String?
+  hireDate                DateTime?                @db.Date
+  terminationDate         DateTime?                @db.Date
+  employmentStatus        EmploymentStatus         @default(PENDING)
+  jobTitle                String?
+  employmentType          EmploymentType?
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
+  organization            Organization             @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  user                    User?                    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  roles                   EmployeeRole[]
+  duties                  EmployeeDuty[]
+  serviceEvents           EmployeeServiceEvent[]
+  complianceInstances     ComplianceInstance[]
+  trainingAssignments     TrainingAssignment[]
+  trainingCompletions     TrainingCompletion[]
+  assessmentAttempts      AssessmentAttempt[]
+  trainingAcknowledgments TrainingAcknowledgment[]
 
   @@unique([organizationId, employeeNumber])
   @@unique([organizationId, userId])
@@ -476,6 +566,7 @@ model ComplianceRequirementVersion {
   authorityMappings       RequirementAuthorityMapping[]
   rulesets                ComplianceRulesetRequirement[]
   complianceInstances     ComplianceInstance[]
+  trainingOptions         RequirementTrainingOption[]
 
   @@unique([requirementId, versionNumber])
   @@index([status, effectiveFrom, effectiveUntil])
@@ -569,6 +660,7 @@ model ComplianceInstance {
   ruleset              ComplianceRuleset            @relation(fields: [rulesetId], references: [id], onDelete: Restrict)
   evaluationRun        ComplianceEvaluationRun?     @relation(fields: [evaluationRunId], references: [id], onDelete: SetNull)
   evidence             ComplianceInstanceEvidence[]
+  trainingAssignments  TrainingAssignment[]
 
   @@index([organizationId, employeeId, status])
   @@index([requirementVersionId])
@@ -640,4 +732,286 @@ model EmployeeServiceEvent {
   recordedBy       User?            @relation("RecordedBy", fields: [recordedByUserId], references: [id], onDelete: SetNull)
 
   @@index([organizationId, employeeId, occurredAt])
+}
+
+model TrainingCourse {
+  id             String                  @id @default(cuid())
+  organizationId String?
+  catalogKey     String                  @unique
+  code           String
+  title          String
+  description    String?
+  category       String
+  status         TrainingCourseStatus    @default(ACTIVE)
+  ownershipType  TrainingOwnershipType
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
+  organization   Organization?           @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  versions       TrainingCourseVersion[]
+  completions    TrainingCompletion[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId, status])
+}
+
+model TrainingCourseVersion {
+  id                       String                      @id @default(cuid())
+  courseId                 String
+  versionNumber            Int
+  status                   TrainingCourseVersionStatus @default(DRAFT)
+  effectiveFrom            DateTime                    @db.Date
+  effectiveUntil           DateTime?                   @db.Date
+  publishedAt              DateTime?
+  estimatedDurationMinutes Int?
+  contentHash              String
+  createdAt                DateTime                    @default(now())
+  course                   TrainingCourse              @relation(fields: [courseId], references: [id], onDelete: Restrict)
+  modules                  TrainingModule[]
+  trainingOptions          RequirementTrainingOption[]
+  assignments              TrainingAssignment[]
+  completions              TrainingCompletion[]
+
+  @@unique([courseId, versionNumber])
+  @@index([status, effectiveFrom, effectiveUntil])
+}
+
+model TrainingModule {
+  id                       String                   @id @default(cuid())
+  courseVersionId          String
+  sequence                 Int
+  title                    String
+  moduleType               TrainingModuleType
+  required                 Boolean                  @default(true)
+  estimatedDurationMinutes Int?
+  createdAt                DateTime                 @default(now())
+  courseVersion            TrainingCourseVersion    @relation(fields: [courseVersionId], references: [id], onDelete: Restrict)
+  contentItems             TrainingContentItem[]
+  assessments              Assessment[]
+  progress                 TrainingModuleProgress[]
+
+  @@unique([courseVersionId, sequence])
+}
+
+model TrainingContentItem {
+  id              String                    @id @default(cuid())
+  moduleId        String
+  sequence        Int
+  contentType     TrainingContentType
+  payload         Json
+  required        Boolean                   @default(true)
+  createdAt       DateTime                  @default(now())
+  module          TrainingModule            @relation(fields: [moduleId], references: [id], onDelete: Restrict)
+  progress        TrainingContentProgress[]
+  acknowledgments TrainingAcknowledgment[]
+
+  @@unique([moduleId, sequence])
+}
+
+model RequirementTrainingOption {
+  id                             String                       @id @default(cuid())
+  complianceRequirementVersionId String
+  trainingCourseVersionId        String
+  satisfactionType               TrainingSatisfactionType
+  isDefault                      Boolean                      @default(false)
+  effectiveFrom                  DateTime?                    @db.Date
+  effectiveUntil                 DateTime?                    @db.Date
+  conditions                     Json?
+  createdAt                      DateTime                     @default(now())
+  complianceRequirementVersion   ComplianceRequirementVersion @relation(fields: [complianceRequirementVersionId], references: [id], onDelete: Restrict)
+  trainingCourseVersion          TrainingCourseVersion        @relation(fields: [trainingCourseVersionId], references: [id], onDelete: Restrict)
+
+  @@unique([complianceRequirementVersionId, trainingCourseVersionId])
+  @@index([complianceRequirementVersionId, isDefault])
+}
+
+model TrainingAssignment {
+  id                   String                    @id @default(cuid())
+  fingerprint          String                    @unique
+  organizationId       String
+  employeeId           String
+  courseVersionId      String
+  sourceType           TrainingAssignmentSource
+  sourceReferenceId    String?
+  complianceInstanceId String?
+  assignedAt           DateTime                  @default(now())
+  dueAt                DateTime?
+  status               TrainingAssignmentStatus  @default(NOT_STARTED)
+  assignedByUserId     String?
+  startedAt            DateTime?
+  completedAt          DateTime?
+  supersededAt         DateTime?
+  createdAt            DateTime                  @default(now())
+  updatedAt            DateTime                  @updatedAt
+  organization         Organization              @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  employee             Employee                  @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  courseVersion        TrainingCourseVersion     @relation(fields: [courseVersionId], references: [id], onDelete: Restrict)
+  complianceInstance   ComplianceInstance?       @relation(fields: [complianceInstanceId], references: [id], onDelete: Restrict)
+  assignedBy           User?                     @relation("TrainingAssignedBy", fields: [assignedByUserId], references: [id], onDelete: SetNull)
+  moduleProgress       TrainingModuleProgress[]
+  contentProgress      TrainingContentProgress[]
+  acknowledgments      TrainingAcknowledgment[]
+  attempts             AssessmentAttempt[]
+  completion           TrainingCompletion?
+
+  @@index([organizationId, employeeId, status])
+  @@index([complianceInstanceId])
+}
+
+model TrainingModuleProgress {
+  id           String                 @id @default(cuid())
+  assignmentId String
+  moduleId     String
+  status       TrainingProgressStatus @default(NOT_STARTED)
+  startedAt    DateTime?
+  completedAt  DateTime?
+  lastViewedAt DateTime?
+  createdAt    DateTime               @default(now())
+  updatedAt    DateTime               @updatedAt
+  assignment   TrainingAssignment     @relation(fields: [assignmentId], references: [id], onDelete: Restrict)
+  module       TrainingModule         @relation(fields: [moduleId], references: [id], onDelete: Restrict)
+
+  @@unique([assignmentId, moduleId])
+}
+
+model TrainingContentProgress {
+  id            String                 @id @default(cuid())
+  assignmentId  String
+  contentItemId String
+  status        TrainingProgressStatus @default(NOT_STARTED)
+  startedAt     DateTime?
+  completedAt   DateTime?
+  lastViewedAt  DateTime?
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
+  assignment    TrainingAssignment     @relation(fields: [assignmentId], references: [id], onDelete: Restrict)
+  contentItem   TrainingContentItem    @relation(fields: [contentItemId], references: [id], onDelete: Restrict)
+
+  @@unique([assignmentId, contentItemId])
+}
+
+model TrainingAcknowledgment {
+  id                   String              @id @default(cuid())
+  assignmentId         String
+  contentItemId        String
+  employeeId           String
+  acknowledgedByUserId String
+  acknowledgedAt       DateTime            @default(now())
+  createdAt            DateTime            @default(now())
+  assignment           TrainingAssignment  @relation(fields: [assignmentId], references: [id], onDelete: Restrict)
+  contentItem          TrainingContentItem @relation(fields: [contentItemId], references: [id], onDelete: Restrict)
+  employee             Employee            @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  acknowledgedBy       User                @relation("TrainingAcknowledgedBy", fields: [acknowledgedByUserId], references: [id], onDelete: Restrict)
+
+  @@unique([assignmentId, contentItemId])
+  @@index([employeeId])
+}
+
+model Assessment {
+  id                 String               @id @default(cuid())
+  moduleId           String
+  versionNumber      Int
+  title              String
+  passingScore       Decimal              @db.Decimal(5, 2)
+  maxAttempts        Int?
+  randomizeQuestions Boolean              @default(false)
+  status             AssessmentStatus     @default(DRAFT)
+  createdAt          DateTime             @default(now())
+  module             TrainingModule       @relation(fields: [moduleId], references: [id], onDelete: Restrict)
+  questions          AssessmentQuestion[]
+  attempts           AssessmentAttempt[]
+
+  @@unique([moduleId, versionNumber])
+}
+
+model AssessmentQuestion {
+  id           String                 @id @default(cuid())
+  assessmentId String
+  questionType AssessmentQuestionType
+  prompt       String
+  explanation  String?
+  sequence     Int
+  points       Decimal                @db.Decimal(8, 2)
+  required     Boolean                @default(true)
+  createdAt    DateTime               @default(now())
+  assessment   Assessment             @relation(fields: [assessmentId], references: [id], onDelete: Restrict)
+  options      AssessmentOption[]
+  responses    AssessmentResponse[]
+
+  @@unique([assessmentId, sequence])
+}
+
+model AssessmentOption {
+  id         String             @id @default(cuid())
+  questionId String
+  text       String
+  isCorrect  Boolean
+  sequence   Int
+  createdAt  DateTime           @default(now())
+  question   AssessmentQuestion @relation(fields: [questionId], references: [id], onDelete: Restrict)
+
+  @@unique([questionId, sequence])
+}
+
+model AssessmentAttempt {
+  id                   String               @id @default(cuid())
+  organizationId       String
+  employeeId           String
+  trainingAssignmentId String
+  assessmentId         String
+  attemptNumber        Int
+  startedAt            DateTime             @default(now())
+  submittedAt          DateTime?
+  score                Decimal?             @db.Decimal(8, 2)
+  maxScore             Decimal?             @db.Decimal(8, 2)
+  percentage           Decimal?             @db.Decimal(5, 2)
+  passed               Boolean?
+  resultSnapshot       Json?
+  createdAt            DateTime             @default(now())
+  organization         Organization         @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  employee             Employee             @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  trainingAssignment   TrainingAssignment   @relation(fields: [trainingAssignmentId], references: [id], onDelete: Restrict)
+  assessment           Assessment           @relation(fields: [assessmentId], references: [id], onDelete: Restrict)
+  responses            AssessmentResponse[]
+  completions          TrainingCompletion[]
+
+  @@unique([trainingAssignmentId, assessmentId, attemptNumber])
+  @@index([organizationId, employeeId])
+}
+
+model AssessmentResponse {
+  id                String             @id @default(cuid())
+  attemptId         String
+  questionId        String
+  selectedOptionIds Json
+  awardedPoints     Decimal            @db.Decimal(8, 2)
+  correct           Boolean
+  resultSnapshot    Json
+  createdAt         DateTime           @default(now())
+  attempt           AssessmentAttempt  @relation(fields: [attemptId], references: [id], onDelete: Restrict)
+  question          AssessmentQuestion @relation(fields: [questionId], references: [id], onDelete: Restrict)
+
+  @@unique([attemptId, questionId])
+}
+
+model TrainingCompletion {
+  id                       String                   @id @default(cuid())
+  organizationId           String
+  employeeId               String
+  assignmentId             String                   @unique
+  courseId                 String
+  courseVersionId          String
+  completedAt              DateTime
+  completionMethod         TrainingCompletionMethod
+  finalAssessmentAttemptId String?
+  evidenceSnapshotJson     Json
+  contentHash              String
+  createdAt                DateTime                 @default(now())
+  organization             Organization             @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  employee                 Employee                 @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  assignment               TrainingAssignment       @relation(fields: [assignmentId], references: [id], onDelete: Restrict)
+  course                   TrainingCourse           @relation(fields: [courseId], references: [id], onDelete: Restrict)
+  courseVersion            TrainingCourseVersion    @relation(fields: [courseVersionId], references: [id], onDelete: Restrict)
+  finalAssessmentAttempt   AssessmentAttempt?       @relation(fields: [finalAssessmentAttemptId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, employeeId, completedAt])
 }

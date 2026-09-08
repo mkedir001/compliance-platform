@@ -1,6 +1,6 @@
 import { Prisma, PrismaClient } from "@prisma/client";
 const db = new PrismaClient();
-const permissionCodes = ["organization.read","organization.manage","employee.read","employee.manage","training.read","training.manage","recipient.read","recipient.readSensitive","recipient.readDocuments","recipient.uploadDocuments","recipient.assignStaff","clinical.review","medication.approve","audit.read"];
+const permissionCodes = ["organization.read","organization.manage","employee.read","employee.manage","training.read","training.manage","training.catalog.read","training.catalog.manage","training.assignment.read","training.assignment.manage","training.progress.read","training.assessment.manage","recipient.read","recipient.readSensitive","recipient.readDocuments","recipient.uploadDocuments","recipient.assignStaff","clinical.review","medication.approve","audit.read"];
 const dutyRows = [
   ["DIRECT_SUPPORT","Direct support"],["UNSUPERVISED_DIRECT_CONTACT","Unsupervised direct contact"],["MEDICATION_ADMINISTRATION","Medication administration"],
   ["MEDICATION_SETUP","Medication setup"],["TRANSPORTATION","Transportation"],["MEAL_PREPARATION","Meal preparation"],["POSITIVE_SUPPORT_IMPLEMENTATION","Positive support implementation"],
@@ -8,7 +8,7 @@ const dutyRows = [
 ] as const;
 const roleMap: Record<string,string[]> = {
   ORGANIZATION_OWNER: permissionCodes, COMPLIANCE_ADMIN:["organization.read","employee.read","employee.manage","training.read","training.manage","audit.read"],
-  TRAINING_ADMIN:["organization.read","employee.read","training.read","training.manage"], PROGRAM_MANAGER:["organization.read","employee.read","employee.manage","training.read"],
+  TRAINING_ADMIN:["organization.read","employee.read","training.read","training.manage","training.catalog.read","training.catalog.manage","training.assignment.read","training.assignment.manage","training.progress.read","training.assessment.manage"], PROGRAM_MANAGER:["organization.read","employee.read","employee.manage","training.read","training.catalog.read","training.assignment.read","training.assignment.manage","training.progress.read"],
   SUPERVISOR:["organization.read","employee.read","training.read"], CLINICAL_RN:["organization.read","employee.read","clinical.review","medication.approve"],
   TRAINER:["organization.read","employee.read","training.read","training.manage"], DSP:["organization.read","training.read"], AUDITOR:["organization.read","employee.read","training.read","audit.read"],
 };
@@ -35,6 +35,12 @@ async function seedRegulatory(northstarId:string,lakesideId:string){
   }
   for(const organizationId of [northstarId,lakesideId])if(!await db.organizationLicense.findFirst({where:{organizationId,licenseType:"MN_245D"}}))await db.organizationLicense.create({data:{organizationId,licenseType:"MN_245D",licenseStatus:"ACTIVE",effectiveDate:new Date("2026-08-01T00:00:00Z"),issuingAuthority:"Minnesota Department of Human Services"}});
 }
+async function seedTraining(){const demos=[
+  {code:"DEMO-245D-ORIENTATION",title:"Demo 245D Workforce Orientation",category:"ORIENTATION",requirement:"245D-WF-002",assessment:false,medication:false},
+  {code:"DEMO-245D-MALTREATMENT",title:"Demo Maltreatment and Mandated Reporting",category:"SAFETY",requirement:"245D-WF-008",assessment:true,medication:false},
+  {code:"DEMO-245D-ANNUAL",title:"Demo Annual Privacy Refresher",category:"ANNUAL",requirement:"245D-WF-006",assessment:false,medication:false},
+  {code:"DEMO-MEDICATION-SHELL",title:"Demo Medication Administration Training",category:"MEDICATION",requirement:null,assessment:true,medication:true},
+] as const;for(const demo of demos){const course=await db.trainingCourse.upsert({where:{catalogKey:`platform:${demo.code}`},update:{},create:{catalogKey:`platform:${demo.code}`,code:demo.code,title:demo.title,description:"Synthetic development/demo curriculum; not production regulatory text.",category:demo.category,ownershipType:"PLATFORM"}});let version=await db.trainingCourseVersion.findUnique({where:{courseId_versionNumber:{courseId:course.id,versionNumber:1}}});if(!version){version=await db.trainingCourseVersion.create({data:{courseId:course.id,versionNumber:1,status:"PUBLISHED",effectiveFrom:new Date("2026-08-01"),publishedAt:new Date(),estimatedDurationMinutes:20,contentHash:`${demo.code.toLowerCase()}-v1`,modules:{create:{sequence:1,title:"Demo learning module",moduleType:demo.assessment?"MIXED":"CONTENT",required:true,contentItems:{create:[{sequence:1,contentType:"WRITTEN",required:true,payload:{heading:demo.title,body:demo.medication?"Development content. Successful completion of this course does not by itself establish medication-administration competency. Separate competency validation may be required.":"Development/demo instructional content for workflow testing only."}},{sequence:2,contentType:"ACKNOWLEDGMENT",required:true,payload:{statement:"I acknowledge that I reviewed and understood this demo module."}}]},assessments:demo.assessment?{create:{versionNumber:1,title:"Demo knowledge check",passingScore:80,maxAttempts:3,status:"PUBLISHED",questions:{create:[{sequence:1,questionType:"TRUE_FALSE",prompt:demo.medication?"Online course completion alone establishes medication competency.":"This is synthetic development content.",points:1,options:{create:[{sequence:1,text:"True",isCorrect:!demo.medication},{sequence:2,text:"False",isCorrect:demo.medication}]}},{sequence:2,questionType:"SINGLE_CHOICE",prompt:"Which record preserves the exact course version?",points:1,options:{create:[{sequence:1,text:"Training completion",isCorrect:true},{sequence:2,text:"A mutable title",isCorrect:false}]}}]}}}:undefined}}}})}if(demo.requirement){const rv=await db.complianceRequirementVersion.findFirstOrThrow({where:{requirement:{code:demo.requirement},status:"ACTIVE"}});await db.requirementTrainingOption.upsert({where:{complianceRequirementVersionId_trainingCourseVersionId:{complianceRequirementVersionId:rv.id,trainingCourseVersionId:version.id}},update:{},create:{complianceRequirementVersionId:rv.id,trainingCourseVersionId:version.id,satisfactionType:"TRAINING_ONLY",isDefault:true}})}}}
 async function main(){
   for(const code of permissionCodes) await db.permission.upsert({where:{code},update:{},create:{code}});
   for(const [code,name] of dutyRows) await db.dutyDefinition.upsert({where:{code},update:{name},create:{code,name}});
@@ -57,6 +63,7 @@ async function main(){
   for(const [org,user,num,first,last] of [[northstar,shared,"1001","Taylor","Morgan"],[lakeside,shared,"1001","Taylor","Morgan"]] as const) if(!await db.employee.findFirst({where:{organizationId:org.id,userId:user.id}})) await db.employee.create({data:{organizationId:org.id,userId:user.id,employeeNumber:num,firstName:first,lastName:last,employmentStatus:"ACTIVE",employmentType:"FULL_TIME"}});
   const noLogin=await db.employee.findFirst({where:{organizationId:northstar.id,employeeNumber:"1002"}}); if(!noLogin) await db.employee.create({data:{organizationId:northstar.id,employeeNumber:"1002",firstName:"Casey",lastName:"Rivera",employmentStatus:"PENDING"}});
   await seedRegulatory(northstar.id,lakeside.id);
+  await seedTraining();
   console.log(JSON.stringify({developmentUsers:{owner:{id:owner.id,email:owner.email},viewer:{id:viewer.id,email:viewer.email},multiOrganization:{id:shared.id,email:shared.email}},organizations:{northstar:northstar.id,lakeside:lakeside.id}},null,2));
 }
 main().finally(()=>db.$disconnect());

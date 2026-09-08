@@ -49,3 +49,5 @@ export function assertRoleAssignableToOrganization(role: { organizationId: strin
     throw new AuthorizationError("Role belongs to a different organization");
   }
 }
+
+export async function requireEmployeeSelfAccess(user: Pick<User,"id">,organizationId:string,employeeId:string){await requireOrganizationMembership(user.id,organizationId);const employee=await prisma.employee.findFirst({where:{id:employeeId,organizationId,userId:user.id}});if(!employee)throw new AuthorizationError("Employee self-access denied");return employee;}
