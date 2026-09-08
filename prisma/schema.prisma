@@ -80,6 +80,105 @@ enum ServiceEventType {
   MEDICATION_DUTY_ASSIGNED
 }
 
+enum RegulationVersionStatus {
+  DRAFT
+  ACTIVE
+  SUPERSEDED
+  RETIRED
+}
+
+enum VerificationStatus {
+  PRIMARY_SOURCE_VERIFIED
+  PRIMARY_SOURCE_CLINICAL_GOVERNANCE
+  DHS_GUIDANCE_VERIFIED
+  ORGANIZATION_POLICY
+  PENDING_REVIEW
+}
+
+enum RequirementCategory {
+  WORKFORCE
+  PERSON_SPECIFIC
+  MEDICATION
+  CLINICAL
+  POSITIVE_SUPPORTS
+  PERSONNEL_RECORD
+  ORGANIZATION_POLICY
+  OTHER
+}
+
+enum RequirementVersionStatus {
+  DRAFT
+  ACTIVE
+  SUPERSEDED
+  RETIRED
+}
+
+enum BlockingScope {
+  GENERAL_WORK
+  DIRECT_CONTACT
+  UNSUPERVISED_CONTACT
+  PERSON_SPECIFIC_TASK
+  MEDICATION_ADMINISTRATION
+}
+
+enum RequirementAuthorityRelationship {
+  PRIMARY
+  SUPPORTING
+  EXCEPTION
+}
+
+enum RulesetStatus {
+  DRAFT
+  ACTIVE
+  SUPERSEDED
+  RETIRED
+}
+
+enum EvaluationScopeType {
+  EMPLOYEE
+  ORGANIZATION
+}
+
+enum ComplianceEvaluationTrigger {
+  EMPLOYEE_CREATED
+  EMPLOYEE_UPDATED
+  ROLE_CHANGED
+  DUTY_CHANGED
+  SERVICE_EVENT_CREATED
+  RULESET_CHANGED
+  MANUAL
+  RECONCILIATION
+}
+
+enum EvaluationRunStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+enum ComplianceTriggerType {
+  EMPLOYEE_HIRED
+  FIRST_DIRECT_CONTACT
+  FIRST_UNSUPERVISED_DIRECT_CONTACT
+  DUTY_ASSIGNED
+  ROLE_ASSIGNED
+  FIXED_REQUIREMENT
+}
+
+enum ComplianceStatus {
+  REQUIRED
+  ASSIGNED
+  IN_PROGRESS
+  SATISFIED
+  WITHIN_LEGAL_DELAY
+  PAST_DUE
+  EXPIRED
+  BLOCKED
+  SUPERSEDED
+  WAIVED_BY_EQUIVALENCY
+}
+
 model Brand {
   id               String         @id @default(cuid())
   name             String
@@ -96,32 +195,34 @@ model Brand {
 }
 
 model Organization {
-  id              String                   @id @default(cuid())
-  brandId         String?
-  legalName       String
-  displayName     String
-  slug            String                   @unique
-  status          OrganizationStatus       @default(ACTIVE)
-  timezone        String                   @default("America/Chicago")
-  defaultLanguage String?
-  phone           String?
-  email           String?
-  addressLine1    String?
-  addressLine2    String?
-  city            String?
-  state           String?
-  postalCode      String?
-  country         String?
-  createdAt       DateTime                 @default(now())
-  updatedAt       DateTime                 @updatedAt
-  brand           Brand?                   @relation(fields: [brandId], references: [id], onDelete: SetNull)
-  licenses        OrganizationLicense[]
-  programs        Program[]
-  locations       Location[]
-  memberships     OrganizationMembership[]
-  roles           RoleDefinition[]
-  employees       Employee[]
-  serviceEvents   EmployeeServiceEvent[]
+  id                       String                    @id @default(cuid())
+  brandId                  String?
+  legalName                String
+  displayName              String
+  slug                     String                    @unique
+  status                   OrganizationStatus        @default(ACTIVE)
+  timezone                 String                    @default("America/Chicago")
+  defaultLanguage          String?
+  phone                    String?
+  email                    String?
+  addressLine1             String?
+  addressLine2             String?
+  city                     String?
+  state                    String?
+  postalCode               String?
+  country                  String?
+  createdAt                DateTime                  @default(now())
+  updatedAt                DateTime                  @updatedAt
+  brand                    Brand?                    @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  licenses                 OrganizationLicense[]
+  programs                 Program[]
+  locations                Location[]
+  memberships              OrganizationMembership[]
+  roles                    RoleDefinition[]
+  employees                Employee[]
+  serviceEvents            EmployeeServiceEvent[]
+  complianceEvaluationRuns ComplianceEvaluationRun[]
+  complianceInstances      ComplianceInstance[]
 }
 
 model OrganizationLicense {
@@ -181,17 +282,18 @@ model Location {
 }
 
 model User {
-  id                 String                   @id @default(cuid())
-  authProviderUserId String?                  @unique
-  email              String?                  @unique
-  phone              String?
-  status             UserStatus               @default(INVITED)
-  lastLoginAt        DateTime?
-  createdAt          DateTime                 @default(now())
-  updatedAt          DateTime                 @updatedAt
-  memberships        OrganizationMembership[]
-  employees          Employee[]
-  recordedEvents     EmployeeServiceEvent[]   @relation("RecordedBy")
+  id                         String                   @id @default(cuid())
+  authProviderUserId         String?                  @unique
+  email                      String?                  @unique
+  phone                      String?
+  status                     UserStatus               @default(INVITED)
+  lastLoginAt                DateTime?
+  createdAt                  DateTime                 @default(now())
+  updatedAt                  DateTime                 @updatedAt
+  memberships                OrganizationMembership[]
+  employees                  Employee[]
+  recordedEvents             EmployeeServiceEvent[]   @relation("RecordedBy")
+  verifiedRegulationVersions RegulationVersion[]      @relation("RegulationVerifiedBy")
 }
 
 model OrganizationMembership {
@@ -261,33 +363,226 @@ model MembershipRole {
 }
 
 model Employee {
-  id               String                 @id @default(cuid())
-  organizationId   String
-  userId           String?
-  employeeNumber   String?
-  firstName        String
-  middleName       String?
-  lastName         String
-  preferredName    String?
-  email            String?
-  phone            String?
-  hireDate         DateTime?              @db.Date
-  terminationDate  DateTime?              @db.Date
-  employmentStatus EmploymentStatus       @default(PENDING)
-  jobTitle         String?
-  employmentType   EmploymentType?
-  createdAt        DateTime               @default(now())
-  updatedAt        DateTime               @updatedAt
-  organization     Organization           @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  user             User?                  @relation(fields: [userId], references: [id], onDelete: SetNull)
-  roles            EmployeeRole[]
-  duties           EmployeeDuty[]
-  serviceEvents    EmployeeServiceEvent[]
+  id                  String                 @id @default(cuid())
+  organizationId      String
+  userId              String?
+  employeeNumber      String?
+  firstName           String
+  middleName          String?
+  lastName            String
+  preferredName       String?
+  email               String?
+  phone               String?
+  hireDate            DateTime?              @db.Date
+  terminationDate     DateTime?              @db.Date
+  employmentStatus    EmploymentStatus       @default(PENDING)
+  jobTitle            String?
+  employmentType      EmploymentType?
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
+  organization        Organization           @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  user                User?                  @relation(fields: [userId], references: [id], onDelete: SetNull)
+  roles               EmployeeRole[]
+  duties              EmployeeDuty[]
+  serviceEvents       EmployeeServiceEvent[]
+  complianceInstances ComplianceInstance[]
 
   @@unique([organizationId, employeeNumber])
   @@unique([organizationId, userId])
   @@index([organizationId, employmentStatus])
   @@index([organizationId, lastName, firstName])
+}
+
+model RegulatoryAuthority {
+  id           String       @id @default(cuid())
+  jurisdiction String
+  agency       String
+  name         String
+  sourceUrl    String?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  regulations  Regulation[]
+
+  @@unique([jurisdiction, agency, name])
+}
+
+model Regulation {
+  id          String              @id @default(cuid())
+  authorityId String
+  citation    String
+  title       String
+  description String?
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  authority   RegulatoryAuthority @relation(fields: [authorityId], references: [id], onDelete: Restrict)
+  versions    RegulationVersion[]
+
+  @@unique([authorityId, citation])
+  @@index([citation])
+}
+
+model RegulationVersion {
+  id                          String                        @id @default(cuid())
+  regulationId                String
+  effectiveFrom               DateTime                      @db.Date
+  effectiveUntil              DateTime?                     @db.Date
+  sourceUrl                   String
+  sourceTextSnapshotObjectKey String?
+  contentHash                 String?
+  verificationStatus          VerificationStatus
+  verifiedAt                  DateTime?
+  verifiedByUserId            String?
+  status                      RegulationVersionStatus       @default(DRAFT)
+  createdAt                   DateTime                      @default(now())
+  regulation                  Regulation                    @relation(fields: [regulationId], references: [id], onDelete: Restrict)
+  verifiedBy                  User?                         @relation("RegulationVerifiedBy", fields: [verifiedByUserId], references: [id], onDelete: SetNull)
+  authorityMappings           RequirementAuthorityMapping[]
+
+  @@unique([regulationId, effectiveFrom])
+  @@index([status, effectiveFrom, effectiveUntil])
+}
+
+model ComplianceRequirement {
+  id                  String                         @id @default(cuid())
+  code                String                         @unique
+  name                String
+  description         String?
+  licenseType         LicenseType
+  requirementCategory RequirementCategory
+  createdAt           DateTime                       @default(now())
+  updatedAt           DateTime                       @updatedAt
+  versions            ComplianceRequirementVersion[]
+}
+
+model ComplianceRequirementVersion {
+  id                      String                         @id @default(cuid())
+  requirementId           String
+  versionNumber           Int
+  effectiveFrom           DateTime                       @db.Date
+  effectiveUntil          DateTime?                      @db.Date
+  verificationStatus      VerificationStatus
+  status                  RequirementVersionStatus       @default(DRAFT)
+  applicabilityDefinition Json
+  triggerDefinition       Json
+  deadlineDefinition      Json
+  recurrenceDefinition    Json?
+  competencyDefinition    Json?
+  evidenceDefinition      Json?
+  legalGraceDefinition    Json?
+  blockingScope           BlockingScope?
+  createdAt               DateTime                       @default(now())
+  updatedAt               DateTime                       @updatedAt
+  requirement             ComplianceRequirement          @relation(fields: [requirementId], references: [id], onDelete: Restrict)
+  authorityMappings       RequirementAuthorityMapping[]
+  rulesets                ComplianceRulesetRequirement[]
+  complianceInstances     ComplianceInstance[]
+
+  @@unique([requirementId, versionNumber])
+  @@index([status, effectiveFrom, effectiveUntil])
+}
+
+model RequirementAuthorityMapping {
+  id                   String                           @id @default(cuid())
+  requirementVersionId String
+  regulationVersionId  String
+  relationshipType     RequirementAuthorityRelationship
+  citationNote         String?
+  createdAt            DateTime                         @default(now())
+  requirementVersion   ComplianceRequirementVersion     @relation(fields: [requirementVersionId], references: [id], onDelete: Restrict)
+  regulationVersion    RegulationVersion                @relation(fields: [regulationVersionId], references: [id], onDelete: Restrict)
+
+  @@unique([requirementVersionId, regulationVersionId, relationshipType])
+}
+
+model ComplianceRuleset {
+  id                  String                         @id @default(cuid())
+  licenseType         LicenseType
+  version             Int
+  effectiveFrom       DateTime                       @db.Date
+  effectiveUntil      DateTime?                      @db.Date
+  status              RulesetStatus                  @default(DRAFT)
+  contentHash         String?
+  approvedAt          DateTime?
+  createdAt           DateTime                       @default(now())
+  updatedAt           DateTime                       @updatedAt
+  requirements        ComplianceRulesetRequirement[]
+  evaluationRuns      ComplianceEvaluationRun[]
+  complianceInstances ComplianceInstance[]
+
+  @@unique([licenseType, version])
+  @@index([status, effectiveFrom, effectiveUntil])
+}
+
+model ComplianceRulesetRequirement {
+  id                   String                       @id @default(cuid())
+  rulesetId            String
+  requirementVersionId String
+  createdAt            DateTime                     @default(now())
+  ruleset              ComplianceRuleset            @relation(fields: [rulesetId], references: [id], onDelete: Restrict)
+  requirementVersion   ComplianceRequirementVersion @relation(fields: [requirementVersionId], references: [id], onDelete: Restrict)
+
+  @@unique([rulesetId, requirementVersionId])
+}
+
+model ComplianceEvaluationRun {
+  id                     String                      @id @default(cuid())
+  organizationId         String
+  scopeType              EvaluationScopeType
+  scopeReference         String?
+  rulesetId              String
+  rulesetVersionSnapshot Int
+  trigger                ComplianceEvaluationTrigger
+  startedAt              DateTime                    @default(now())
+  completedAt            DateTime?
+  status                 EvaluationRunStatus         @default(PENDING)
+  summaryJson            Json?
+  createdAt              DateTime                    @default(now())
+  organization           Organization                @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  ruleset                ComplianceRuleset           @relation(fields: [rulesetId], references: [id], onDelete: Restrict)
+  instances              ComplianceInstance[]
+
+  @@index([organizationId, startedAt])
+}
+
+model ComplianceInstance {
+  id                   String                       @id @default(cuid())
+  fingerprint          String                       @unique
+  organizationId       String
+  employeeId           String
+  requirementVersionId String
+  triggerType          ComplianceTriggerType
+  triggerReference     String?
+  requiredAt           DateTime
+  nominalDueAt         DateTime?
+  statutoryDelayUntil  DateTime?
+  hardBlockAt          DateTime?
+  status               ComplianceStatus
+  satisfiedAt          DateTime?
+  lastEvaluatedAt      DateTime
+  rulesetId            String
+  evaluationRunId      String?
+  createdAt            DateTime                     @default(now())
+  updatedAt            DateTime                     @updatedAt
+  organization         Organization                 @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  employee             Employee                     @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  requirementVersion   ComplianceRequirementVersion @relation(fields: [requirementVersionId], references: [id], onDelete: Restrict)
+  ruleset              ComplianceRuleset            @relation(fields: [rulesetId], references: [id], onDelete: Restrict)
+  evaluationRun        ComplianceEvaluationRun?     @relation(fields: [evaluationRunId], references: [id], onDelete: SetNull)
+  evidence             ComplianceInstanceEvidence[]
+
+  @@index([organizationId, employeeId, status])
+  @@index([requirementVersionId])
+}
+
+model ComplianceInstanceEvidence {
+  id                   String             @id @default(cuid())
+  complianceInstanceId String
+  evidenceType         String
+  evidenceReferenceId  String
+  createdAt            DateTime           @default(now())
+  complianceInstance   ComplianceInstance @relation(fields: [complianceInstanceId], references: [id], onDelete: Restrict)
+
+  @@unique([complianceInstanceId, evidenceType, evidenceReferenceId])
 }
 
 model EmployeeRole {
