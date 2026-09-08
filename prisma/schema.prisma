@@ -386,6 +386,84 @@ enum CertificateStatus {
   EXPIRED
 }
 
+enum OnboardingStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  BLOCKED
+  READY
+  COMPLETED
+  CANCELED
+}
+
+enum OnboardingTemplateStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+enum OnboardingTemplateVersionStatus {
+  DRAFT
+  PUBLISHED
+  SUPERSEDED
+  RETIRED
+}
+
+enum OnboardingStepType {
+  EMPLOYEE_INFORMATION
+  EMPLOYMENT_EVENT
+  COMPLIANCE_REQUIREMENT
+  TRAINING
+  COMPETENCY
+  POLICY_ACKNOWLEDGMENT
+  CREDENTIAL
+  MANUAL_ADMIN_CHECK
+  OTHER
+}
+
+enum OnboardingStepStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  BLOCKED
+  NOT_APPLICABLE
+}
+
+enum PolicyStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+enum PolicyVersionStatus {
+  DRAFT
+  PUBLISHED
+  SUPERSEDED
+  RETIRED
+}
+
+enum PolicyAssignmentSource {
+  ONBOARDING
+  COMPLIANCE
+  MANUAL
+  ORGANIZATION_POLICY
+}
+
+enum PolicyAssignmentStatus {
+  PENDING
+  ACKNOWLEDGED
+  OVERDUE
+  SUPERSEDED
+  CANCELED
+}
+
+enum WorkReadinessTrigger {
+  ONBOARDING_UPDATED
+  COMPLIANCE_CHANGED
+  TRAINING_COMPLETED
+  COMPETENCY_FINALIZED
+  POLICY_ACKNOWLEDGED
+  CREDENTIAL_CHANGED
+  MANUAL_REEVALUATION
+}
+
 model Brand {
   id               String         @id @default(cuid())
   name             String
@@ -443,6 +521,11 @@ model Organization {
   attestations             Attestation[]
   evidenceCorrections      EvidenceCorrection[]
   certificates             Certificate[]
+  onboardingTemplates      OnboardingTemplate[]
+  employeeOnboardings      EmployeeOnboarding[]
+  policies                 Policy[]
+  policyAssignments        PolicyAssignment[]
+  workReadinessEvaluations WorkReadinessEvaluation[]
 }
 
 model OrganizationLicense {
@@ -524,6 +607,10 @@ model User {
   attestations               Attestation[]                    @relation("AttestationSigner")
   evidenceCorrections        EvidenceCorrection[]             @relation("EvidenceCorrectedBy")
   issuedCertificates         Certificate[]                    @relation("CertificateIssuedBy")
+  createdOnboardings         EmployeeOnboarding[]             @relation("OnboardingCreatedBy")
+  completedOnboardingSteps   EmployeeOnboardingStep[]         @relation("OnboardingStepCompletedBy")
+  createdPolicyVersions      PolicyVersion[]                  @relation("PolicyVersionCreatedBy")
+  assignedPolicies           PolicyAssignment[]               @relation("PolicyAssignedBy")
 }
 
 model OrganizationMembership {
@@ -593,39 +680,42 @@ model MembershipRole {
 }
 
 model Employee {
-  id                      String                   @id @default(cuid())
-  organizationId          String
-  userId                  String?
-  employeeNumber          String?
-  firstName               String
-  middleName              String?
-  lastName                String
-  preferredName           String?
-  email                   String?
-  phone                   String?
-  hireDate                DateTime?                @db.Date
-  terminationDate         DateTime?                @db.Date
-  employmentStatus        EmploymentStatus         @default(PENDING)
-  jobTitle                String?
-  employmentType          EmploymentType?
-  createdAt               DateTime                 @default(now())
-  updatedAt               DateTime                 @updatedAt
-  organization            Organization             @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  user                    User?                    @relation(fields: [userId], references: [id], onDelete: SetNull)
-  roles                   EmployeeRole[]
-  duties                  EmployeeDuty[]
-  serviceEvents           EmployeeServiceEvent[]
-  complianceInstances     ComplianceInstance[]
-  trainingAssignments     TrainingAssignment[]
-  trainingCompletions     TrainingCompletion[]
-  assessmentAttempts      AssessmentAttempt[]
-  trainingAcknowledgments TrainingAcknowledgment[]
-  competencyAssessments   CompetencyAssessment[]   @relation("CompetencySubject")
-  assessedCompetencies    CompetencyAssessment[]   @relation("CompetencyAssessorEmployee")
-  professionalCredentials ProfessionalCredential[]
-  externalTrainingRecords ExternalTrainingRecord[]
-  attestations            Attestation[]
-  certificates            Certificate[]
+  id                       String                    @id @default(cuid())
+  organizationId           String
+  userId                   String?
+  employeeNumber           String?
+  firstName                String
+  middleName               String?
+  lastName                 String
+  preferredName            String?
+  email                    String?
+  phone                    String?
+  hireDate                 DateTime?                 @db.Date
+  terminationDate          DateTime?                 @db.Date
+  employmentStatus         EmploymentStatus          @default(PENDING)
+  jobTitle                 String?
+  employmentType           EmploymentType?
+  createdAt                DateTime                  @default(now())
+  updatedAt                DateTime                  @updatedAt
+  organization             Organization              @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  user                     User?                     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  roles                    EmployeeRole[]
+  duties                   EmployeeDuty[]
+  serviceEvents            EmployeeServiceEvent[]
+  complianceInstances      ComplianceInstance[]
+  trainingAssignments      TrainingAssignment[]
+  trainingCompletions      TrainingCompletion[]
+  assessmentAttempts       AssessmentAttempt[]
+  trainingAcknowledgments  TrainingAcknowledgment[]
+  competencyAssessments    CompetencyAssessment[]    @relation("CompetencySubject")
+  assessedCompetencies     CompetencyAssessment[]    @relation("CompetencyAssessorEmployee")
+  professionalCredentials  ProfessionalCredential[]
+  externalTrainingRecords  ExternalTrainingRecord[]
+  attestations             Attestation[]
+  certificates             Certificate[]
+  onboardings              EmployeeOnboarding[]
+  policyAssignments        PolicyAssignment[]
+  workReadinessEvaluations WorkReadinessEvaluation[]
 
   @@unique([organizationId, employeeNumber])
   @@unique([organizationId, userId])
@@ -1371,7 +1461,7 @@ model RequirementEquivalencyDecision {
 }
 
 model Attestation {
-  id                String          @id @default(cuid())
+  id                String            @id @default(cuid())
   organizationId    String
   attestationType   AttestationType
   signerUserId      String
@@ -1387,10 +1477,11 @@ model Attestation {
   userAgent         String?
   sessionReference  String?
   signatureHash     String
-  createdAt         DateTime        @default(now())
-  organization      Organization    @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  signer            User            @relation("AttestationSigner", fields: [signerUserId], references: [id], onDelete: Restrict)
-  signerEmployee    Employee?       @relation(fields: [signerEmployeeId], references: [id], onDelete: SetNull)
+  createdAt         DateTime          @default(now())
+  organization      Organization      @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  signer            User              @relation("AttestationSigner", fields: [signerUserId], references: [id], onDelete: Restrict)
+  signerEmployee    Employee?         @relation(fields: [signerEmployeeId], references: [id], onDelete: SetNull)
+  policyAssignment  PolicyAssignment?
 
   @@index([organizationId, resourceType, resourceId])
 }
@@ -1450,4 +1541,182 @@ model Certificate {
 
   @@unique([trainingCompletionId, certificateType])
   @@index([organizationId, employeeId, status])
+}
+
+model OnboardingTemplate {
+  id             String                      @id @default(cuid())
+  organizationId String?
+  code           String
+  name           String
+  description    String?
+  ownerType      EvidenceOwnerType
+  licenseType    LicenseType?
+  status         OnboardingTemplateStatus    @default(ACTIVE)
+  createdAt      DateTime                    @default(now())
+  updatedAt      DateTime                    @updatedAt
+  organization   Organization?               @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  versions       OnboardingTemplateVersion[]
+
+  @@unique([organizationId, code])
+  @@index([ownerType, licenseType, status])
+}
+
+model OnboardingTemplateVersion {
+  id                   String                          @id @default(cuid())
+  onboardingTemplateId String
+  versionNumber        Int
+  status               OnboardingTemplateVersionStatus @default(DRAFT)
+  effectiveFrom        DateTime?                       @db.Date
+  effectiveUntil       DateTime?                       @db.Date
+  contentHash          String
+  publishedAt          DateTime?
+  createdAt            DateTime                        @default(now())
+  updatedAt            DateTime                        @updatedAt
+  onboardingTemplate   OnboardingTemplate              @relation(fields: [onboardingTemplateId], references: [id], onDelete: Restrict)
+  steps                OnboardingStepDefinition[]
+  employeeOnboardings  EmployeeOnboarding[]
+
+  @@unique([onboardingTemplateId, versionNumber])
+  @@index([status, effectiveFrom, effectiveUntil])
+}
+
+model OnboardingStepDefinition {
+  id                String                    @id @default(cuid())
+  templateVersionId String
+  sequence          Int
+  code              String
+  name              String
+  description       String?
+  stepType          OnboardingStepType
+  required          Boolean                   @default(true)
+  blockingScope     BlockingScope?
+  configurationJson Json?
+  createdAt         DateTime                  @default(now())
+  templateVersion   OnboardingTemplateVersion @relation(fields: [templateVersionId], references: [id], onDelete: Restrict)
+  employeeSteps     EmployeeOnboardingStep[]
+
+  @@unique([templateVersionId, sequence])
+  @@unique([templateVersionId, code])
+}
+
+model EmployeeOnboarding {
+  id                String                    @id @default(cuid())
+  organizationId    String
+  employeeId        String
+  templateVersionId String
+  status            OnboardingStatus          @default(NOT_STARTED)
+  startedAt         DateTime?
+  completedAt       DateTime?
+  canceledAt        DateTime?
+  createdByUserId   String
+  createdAt         DateTime                  @default(now())
+  updatedAt         DateTime                  @updatedAt
+  organization      Organization              @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  employee          Employee                  @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  templateVersion   OnboardingTemplateVersion @relation(fields: [templateVersionId], references: [id], onDelete: Restrict)
+  createdBy         User                      @relation("OnboardingCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  steps             EmployeeOnboardingStep[]
+
+  @@unique([employeeId, templateVersionId])
+  @@index([organizationId, status])
+}
+
+model EmployeeOnboardingStep {
+  id                   String                   @id @default(cuid())
+  employeeOnboardingId String
+  stepDefinitionId     String
+  status               OnboardingStepStatus     @default(PENDING)
+  dueAt                DateTime?
+  completedAt          DateTime?
+  completedByUserId    String?
+  sourceResourceType   String?
+  sourceResourceId     String?
+  explanationJson      Json?
+  administrativeNote   String?
+  createdAt            DateTime                 @default(now())
+  updatedAt            DateTime                 @updatedAt
+  employeeOnboarding   EmployeeOnboarding       @relation(fields: [employeeOnboardingId], references: [id], onDelete: Restrict)
+  stepDefinition       OnboardingStepDefinition @relation(fields: [stepDefinitionId], references: [id], onDelete: Restrict)
+  completedBy          User?                    @relation("OnboardingStepCompletedBy", fields: [completedByUserId], references: [id], onDelete: SetNull)
+
+  @@unique([employeeOnboardingId, stepDefinitionId])
+}
+
+model Policy {
+  id                        String          @id @default(cuid())
+  organizationId            String
+  code                      String
+  title                     String
+  description               String?
+  status                    PolicyStatus    @default(ACTIVE)
+  requiresAcknowledgment    Boolean         @default(false)
+  reacknowledgeOnNewVersion Boolean         @default(false)
+  blockingScope             BlockingScope?
+  createdAt                 DateTime        @default(now())
+  updatedAt                 DateTime        @updatedAt
+  organization              Organization    @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  versions                  PolicyVersion[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId, status])
+}
+
+model PolicyVersion {
+  id              String              @id @default(cuid())
+  policyId        String
+  versionNumber   Int
+  status          PolicyVersionStatus @default(DRAFT)
+  effectiveFrom   DateTime            @db.Date
+  effectiveUntil  DateTime?           @db.Date
+  publishedAt     DateTime?
+  body            String
+  contentHash     String
+  createdByUserId String
+  createdAt       DateTime            @default(now())
+  policy          Policy              @relation(fields: [policyId], references: [id], onDelete: Restrict)
+  createdBy       User                @relation("PolicyVersionCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  assignments     PolicyAssignment[]
+
+  @@unique([policyId, versionNumber])
+  @@index([status, effectiveFrom, effectiveUntil])
+}
+
+model PolicyAssignment {
+  id                String                 @id @default(cuid())
+  fingerprint       String                 @unique
+  organizationId    String
+  employeeId        String
+  policyVersionId   String
+  assignedAt        DateTime               @default(now())
+  dueAt             DateTime?
+  assignedByUserId  String?
+  sourceType        PolicyAssignmentSource
+  sourceReferenceId String?
+  status            PolicyAssignmentStatus @default(PENDING)
+  acknowledgedAt    DateTime?
+  attestationId     String?                @unique
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+  organization      Organization           @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  employee          Employee               @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  policyVersion     PolicyVersion          @relation(fields: [policyVersionId], references: [id], onDelete: Restrict)
+  assignedBy        User?                  @relation("PolicyAssignedBy", fields: [assignedByUserId], references: [id], onDelete: SetNull)
+  attestation       Attestation?           @relation(fields: [attestationId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId, employeeId, status])
+}
+
+model WorkReadinessEvaluation {
+  id                String               @id @default(cuid())
+  organizationId    String
+  employeeId        String
+  evaluatedAt       DateTime
+  evaluationTrigger WorkReadinessTrigger
+  resultJson        Json
+  engineVersion     String
+  createdAt         DateTime             @default(now())
+  organization      Organization         @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  employee          Employee             @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId, employeeId, evaluatedAt])
 }

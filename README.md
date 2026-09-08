@@ -42,3 +42,25 @@ Phase 4 adds tenant-scoped competency definitions, immutable checklist versions,
 Course completion, competency, compliance satisfaction, and work authorization remain separate concepts. Certificates are projections of retained evidence, and revocation never deletes that evidence. Medication authorization, clinical approval, recipient data, document storage, certificate PDF rendering, and polished UI remain deferred.
 
 Development routes include `/admin/competencies` for assessor workflow and `/verify/[token]` for a public-safe certificate projection.
+
+## Phase 5 onboarding, policy governance, and readiness
+
+Employee onboarding uses immutable, versioned templates. Employee steps are projections over canonical employee information, service events, compliance instances, training completions, competency assessments, policy assignments, and credentials; manual administrative checks remain explicitly separate from regulatory evidence. Employees can exist before a `User` account is linked or activated.
+
+Organization policies are versioned independently from courses. Published versions are immutable, assignments reference an exact version, and acknowledgments use the existing authenticated typed-name `Attestation` record and integrity hash. Publishing a replacement never rewrites historical acknowledgments.
+
+The work-readiness engine evaluates `GENERAL_WORK`, `DIRECT_CONTACT`, `UNSUPERVISED_CONTACT`, `PERSON_SPECIFIC_TASK`, and `MEDICATION_ADMINISTRATION` independently at a supplied UTC timestamp. Every block names its canonical source record. Each explicit evaluation appends a versioned `WorkReadinessEvaluation` snapshot; employee compliance profiles and organization operations summaries remain read-only projections.
+
+Medication administration deliberately returns `EVIDENCE_COMPLETE_AUTHORIZATION_NOT_IMPLEMENTED` when no evidence blocks remain. Training, competency, or policy evidence never creates clinical medication authorization.
+
+Work-readiness results are compliance-support determinations based on configured evidence and rules. They are not regulatory agency approval, professional licensure, or clinical authorization.
+
+Functional routes:
+
+- `/admin/compliance-operations` — onboarding, profile, readiness, and operations console.
+- `/learn/onboarding` — self-scoped onboarding and policy assignments.
+- `/api/organizations/[organizationId]/employees/[employeeId]/onboarding`, `/readiness`, `/profile`, and `/events` — tenant-protected operational APIs.
+- `/api/organizations/[organizationId]/policies`, `/policies/versions`, and `/policy-assignments` — policy governance.
+- `/api/organizations/[organizationId]/my/onboarding` and `/my/policies` — strict employee self-service.
+
+Service events and readiness snapshots are append-only. Policy acknowledgments, compliance evidence, training completions, competency records, certificates, corrections, and historical readiness results use restrict/supersede semantics rather than cascade deletion.
