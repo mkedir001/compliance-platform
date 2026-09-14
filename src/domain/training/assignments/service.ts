@@ -55,10 +55,11 @@ export async function assignTrainingForCompliance(complianceInstanceId: string) 
   const existing = await prisma.trainingAssignment.findUnique({ where: { activeKey } });
   if (existing) return existing;
   const existingForInstance = await prisma.trainingAssignment.findUnique({ where: { fingerprint } });
-  if (existingForInstance) return existingForInstance.activeKey ? existingForInstance : prisma.trainingAssignment.update({ where: { id: existingForInstance.id }, data: { activeKey, dueAt: instance.nominalDueAt } });
+  if (existingForInstance && existingForInstance.status !== "CANCELLED") return existingForInstance.activeKey ? existingForInstance : prisma.trainingAssignment.update({ where: { id: existingForInstance.id }, data: { activeKey, dueAt: instance.nominalDueAt } });
+  const createFingerprint = existingForInstance ? `${fingerprint}:${randomUUID()}` : fingerprint;
   return prisma.trainingAssignment.upsert({
-    where: { fingerprint },
-    create: { fingerprint, activeKey, organizationId: instance.organizationId, employeeId: instance.employeeId, courseVersionId: option.trainingCourseVersionId, sourceType: "COMPLIANCE_ENGINE", sourceReferenceId: instance.id, complianceInstanceId: instance.id, dueAt: instance.nominalDueAt, events: { create: { organizationId: instance.organizationId, eventType: "TRAINING_ASSIGNED", metadata: { complianceInstanceId: instance.id } } } },
+    where: { fingerprint: createFingerprint },
+    create: { fingerprint: createFingerprint, activeKey, organizationId: instance.organizationId, employeeId: instance.employeeId, courseVersionId: option.trainingCourseVersionId, sourceType: "COMPLIANCE_ENGINE", sourceReferenceId: instance.id, complianceInstanceId: instance.id, dueAt: instance.nominalDueAt, events: { create: { organizationId: instance.organizationId, eventType: "TRAINING_ASSIGNED", metadata: { complianceInstanceId: instance.id } } } },
     update: { dueAt: instance.nominalDueAt },
   });
 }

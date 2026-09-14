@@ -1,9 +1,10 @@
-import type { User } from "@prisma/client";
+import type { BlockingScope, User } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireEmployeeAccess, requireOrganizationAccess, requirePermission } from "@/domain/permissions/authorization";
 import { computeEmployeeWorkReadiness } from "@/domain/readiness/service";
+import { computeEmployeeOperationalProfile, getOrganizationComplianceOperations, type OperationalStatus } from "@/domain/compliance/operations/service";
 
-export async function getComplianceOperationsSummary(user: Pick<User,"id">, organizationId: string, at = new Date()) {
+export async function getComplianceOperationsSummary(user: Pick<User,"id">, organizationId: string, at = new Date(), filters: { status?: OperationalStatus; scope?: BlockingScope } = {}) {
   const { membership } = await requireOrganizationAccess(user, organizationId); await requirePermission(membership.id, "compliance.operations.read");
   const soon = new Date(at.getTime() + 30 * 86400000);
   const [onboarding, overdue, trainingDueSoon, trainingOverdue, competencyPending, policyPending, credentialsExpiring, certificateGroups] = await Promise.all([
@@ -16,7 +17,8 @@ export async function getComplianceOperationsSummary(user: Pick<User,"id">, orga
     prisma.professionalCredential.count({ where: { organizationId, status: "ACTIVE", expiresAt: { gte: at, lte: soon } } }),
     prisma.certificate.groupBy({ by: ["status"], where: { organizationId }, _count: true }),
   ]);
-  return { asOf: at.toISOString(), onboarding: Object.fromEntries(onboarding.map(x => [x.status, x._count])), overdueCompliance: overdue, trainingDueSoon, trainingOverdue, competencyPending, policyAcknowledgmentsPending: policyPending, credentialsExpiring, certificates: Object.fromEntries(certificateGroups.map(x => [x.status, x._count])) };
+  const workforce = await getOrganizationComplianceOperations(user, organizationId, filters, at);
+  return { asOf: at.toISOString(), onboarding: Object.fromEntries(onboarding.map(x => [x.status, x._count])), overdueCompliance: overdue, trainingDueSoon, trainingOverdue, competencyPending, policyAcknowledgmentsPending: policyPending, credentialsExpiring, certificates: Object.fromEntries(certificateGroups.map(x => [x.status, x._count])), workforce };
 }
 
 export async function getEmployeeComplianceProfile(user: Pick<User,"id">, organizationId: string, employeeId: string, at = new Date()) {
@@ -41,5 +43,5 @@ export async function getEmployeeComplianceProfile(user: Pick<User,"id">, organi
     ...detail.certificates.map(x => ({ type: `CERTIFICATE_${x.status}`, occurredAt: x.issuedAt, resourceType: "Certificate", resourceId: x.id })),
     ...detail.workReadinessEvaluations.map(x => ({ type: "READINESS_EVALUATED", occurredAt: x.evaluatedAt, resourceType: "WorkReadinessEvaluation", resourceId: x.id })),
   ].sort((a,b) => a.occurredAt.getTime() - b.occurredAt.getTime());
-  return { employee: detail, readiness: await computeEmployeeWorkReadiness(organizationId, employeeId, at), timeline };
+  return { employee: detail, readiness: await computeEmployeeWorkReadiness(organizationId, employeeId, at), operationalCompliance: await computeEmployeeOperationalProfile(organizationId, employeeId, at), timeline };
 }

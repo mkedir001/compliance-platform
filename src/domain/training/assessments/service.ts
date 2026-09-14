@@ -4,6 +4,7 @@ import { AuthorizationError } from "@/domain/auth/errors";
 import { assessmentSubmissionSchema } from "../schemas";
 import { deriveAndCreateCompletion } from "../completion/service";
 import { startAssignment } from "../assignments/service";
+import { reevaluateEmployeeReadinessSafely } from "@/domain/readiness/reevaluation";
 
 export async function startAttempt(assignmentId: string, employeeId: string, assessmentId: string) {
   const assignment = await prisma.trainingAssignment.findFirst({ where: { id: assignmentId, employeeId } });
@@ -51,5 +52,6 @@ export async function submitAttempt(attemptId: string, employeeId: string, input
     return completed;
   }, { isolationLevel: "Serializable" });
   await deriveAndCreateCompletion(result.trainingAssignmentId);
+  await reevaluateEmployeeReadinessSafely(result.organizationId, result.employeeId, result.passed ? "TRAINING_COMPLETED" : "COMPLIANCE_CHANGED");
   return result;
 }
