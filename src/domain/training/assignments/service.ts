@@ -15,6 +15,7 @@ async function requireAssignableVersion(organizationId: string, courseVersionId:
   if (version.course.ownershipType === "PLATFORM" && version.status === "ACTIVE") {
     const validation = await validateCourseVersion(version.id);
     if (!validation.valid) throw new AuthorizationError("Active production course version failed curriculum validation");
+    if (version.clinicalGovernanceRequired && !await prisma.clinicalCurriculumApproval.findFirst({ where: { organizationId, courseVersionId: version.id, status: "APPROVED", contentHashSnapshot: version.contentHash } })) throw new AuthorizationError("Current clinical approval is required for this organization");
   }
   return version;
 }
