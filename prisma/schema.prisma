@@ -526,6 +526,36 @@ enum AssignmentEligibilityTrigger {
   OVERRIDE_ATTEMPT
 }
 
+enum ComplianceIssueType {
+  TRAINING_REQUIRED
+  TRAINING_OVERDUE
+  COMPETENCY_REQUIRED
+  CREDENTIAL_INVALID
+  CREDENTIAL_EXPIRING
+  POLICY_ACKNOWLEDGMENT_REQUIRED
+  ONBOARDING_INCOMPLETE
+  PERSON_SPECIFIC_INSTRUCTION_REQUIRED
+  MEDICATION_QUALIFICATION_INCOMPLETE
+  MEDICATION_AUTHORIZATION_MISSING
+  CLINICAL_SIGNOFF_REQUIRED
+  ASSIGNMENT_BLOCKED
+  ACTIVE_ASSIGNMENT_BECAME_BLOCKED
+}
+
+enum ComplianceIssuePriority {
+  LOW
+  NORMAL
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum ComplianceIssueStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+}
+
 model Brand {
   id               String         @id @default(cuid())
   name             String
@@ -599,6 +629,8 @@ model Organization {
   assignmentRules          ServiceAssignmentRequirementRule[]
   assignmentEvaluations    ServiceAssignmentEligibilityEvaluation[]
   assignmentEvents         ServiceAssignmentEvent[]
+  complianceIssues         ComplianceIssue[]
+  complianceIssueEvents    ComplianceIssueEvent[]
 }
 
 model OrganizationLicense {
@@ -699,6 +731,8 @@ model User {
   cancelledServiceAssignments ServiceAssignment[]                      @relation("ServiceAssignmentCanceller")
   assignmentEvaluations       ServiceAssignmentEligibilityEvaluation[] @relation("AssignmentEvaluationActor")
   assignmentEvents            ServiceAssignmentEvent[]                 @relation("AssignmentEventActor")
+  managedComplianceIssues     ComplianceIssue[]                        @relation("ComplianceIssueWorkflowActor")
+  complianceIssueEvents       ComplianceIssueEvent[]                   @relation("ComplianceIssueEventActor")
 }
 
 model OrganizationMembership {
@@ -809,6 +843,7 @@ model Employee {
   medicationAuthorizations MedicationAuthorizationEvidence[]
   serviceAssignments       ServiceAssignment[]
   assignmentEvaluations    ServiceAssignmentEligibilityEvaluation[]
+  complianceIssues         ComplianceIssue[]
 
   @@unique([organizationId, employeeNumber])
   @@unique([organizationId, userId])
@@ -2179,6 +2214,7 @@ model ServiceAssignment {
   requirements           ServiceAssignmentRequirement[]
   eligibilityEvaluations ServiceAssignmentEligibilityEvaluation[]
   events                 ServiceAssignmentEvent[]
+  complianceIssues       ComplianceIssue[]
 
   @@index([organizationId, status, startsAt])
   @@index([organizationId, employeeId, status])
@@ -2245,4 +2281,59 @@ model ServiceAssignmentEvent {
 
   @@index([organizationId, action, createdAt])
   @@index([assignmentId, createdAt])
+}
+
+model ComplianceIssue {
+  id                      String                  @id @default(cuid())
+  fingerprint             String                  @unique
+  activeKey               String?                 @unique
+  organizationId          String
+  employeeId              String
+  issueType               ComplianceIssueType
+  priority                ComplianceIssuePriority
+  status                  ComplianceIssueStatus   @default(OPEN)
+  sourceType              String
+  sourceId                String
+  serviceAssignmentId     String?
+  contextJson             Json
+  reasonCodesJson         Json
+  remediationActionsJson  Json
+  evidenceReferencesJson  Json
+  dueAt                   DateTime?
+  firstDetectedAt         DateTime
+  latestDetectedAt        DateTime
+  workflowStartedAt       DateTime?
+  workflowStartedByUserId String?
+  resolvedAt              DateTime?
+  resolutionReason        String?
+  createdAt               DateTime                @default(now())
+  updatedAt               DateTime                @updatedAt
+  organization            Organization            @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  employee                Employee                @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  serviceAssignment       ServiceAssignment?      @relation(fields: [serviceAssignmentId], references: [id], onDelete: Restrict)
+  workflowStartedBy       User?                   @relation("ComplianceIssueWorkflowActor", fields: [workflowStartedByUserId], references: [id], onDelete: SetNull)
+  events                  ComplianceIssueEvent[]
+
+  @@index([organizationId, status, priority])
+  @@index([organizationId, employeeId, status])
+  @@index([organizationId, issueType, status])
+  @@index([organizationId, dueAt])
+  @@index([serviceAssignmentId, status])
+}
+
+model ComplianceIssueEvent {
+  id                String          @id @default(cuid())
+  organizationId    String
+  complianceIssueId String
+  actorUserId       String?
+  action            String
+  dedupeKey         String?         @unique
+  snapshotJson      Json
+  createdAt         DateTime        @default(now())
+  organization      Organization    @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  complianceIssue   ComplianceIssue @relation(fields: [complianceIssueId], references: [id], onDelete: Restrict)
+  actor             User?           @relation("ComplianceIssueEventActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, action, createdAt])
+  @@index([complianceIssueId, createdAt])
 }
