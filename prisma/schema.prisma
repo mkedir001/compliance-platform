@@ -556,6 +556,18 @@ enum ComplianceIssueStatus {
   RESOLVED
 }
 
+enum AuditPackageScope {
+  EMPLOYEE_COMPLIANCE_RECORD
+  REQUIREMENT_EVIDENCE_RECORD
+  ORGANIZATION_COMPLIANCE_SUMMARY
+}
+
+enum AuditPackageStatus {
+  PENDING
+  GENERATED
+  FAILED
+}
+
 model Brand {
   id               String         @id @default(cuid())
   name             String
@@ -631,6 +643,8 @@ model Organization {
   assignmentEvents         ServiceAssignmentEvent[]
   complianceIssues         ComplianceIssue[]
   complianceIssueEvents    ComplianceIssueEvent[]
+  auditPackages            AuditPackage[]
+  auditEvents              AuditEvent[]
 }
 
 model OrganizationLicense {
@@ -733,6 +747,8 @@ model User {
   assignmentEvents            ServiceAssignmentEvent[]                 @relation("AssignmentEventActor")
   managedComplianceIssues     ComplianceIssue[]                        @relation("ComplianceIssueWorkflowActor")
   complianceIssueEvents       ComplianceIssueEvent[]                   @relation("ComplianceIssueEventActor")
+  requestedAuditPackages      AuditPackage[]                           @relation("AuditPackageRequester")
+  auditEvents                 AuditEvent[]                             @relation("AuditEventActor")
 }
 
 model OrganizationMembership {
@@ -2336,4 +2352,47 @@ model ComplianceIssueEvent {
 
   @@index([organizationId, action, createdAt])
   @@index([complianceIssueId, createdAt])
+}
+
+model AuditPackage {
+  id                String             @id @default(cuid())
+  organizationId    String
+  scope             AuditPackageScope
+  requestedByUserId String
+  subjectType       String?
+  subjectId         String?
+  pointInTimeAt     DateTime?
+  status            AuditPackageStatus @default(PENDING)
+  requestedAt       DateTime           @default(now())
+  generatedAt       DateTime?
+  manifestJson      Json?
+  integrityDigest   String?
+  generationErrors  Json?
+  createdAt         DateTime           @default(now())
+  organization      Organization       @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  requestedBy       User               @relation("AuditPackageRequester", fields: [requestedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId, requestedAt])
+  @@index([organizationId, scope, status])
+  @@index([organizationId, subjectType, subjectId])
+}
+
+model AuditEvent {
+  id             String       @id @default(cuid())
+  organizationId String
+  actorUserId    String?
+  employeeId     String?
+  eventType      String
+  entityType     String
+  entityId       String
+  metadataJson   Json?
+  occurredAt     DateTime     @default(now())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  actor          User?        @relation("AuditEventActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, occurredAt])
+  @@index([organizationId, employeeId, occurredAt])
+  @@index([organizationId, actorUserId, occurredAt])
+  @@index([organizationId, eventType, occurredAt])
+  @@index([organizationId, entityType, entityId, occurredAt])
 }
