@@ -1,0 +1,8 @@
+import { z } from "zod";
+import { requireAuthenticatedUser } from "@/domain/auth/authentication";
+import { errorResponse } from "@/domain/auth/errors";
+import { activateServiceAssignment, cancelServiceAssignment, deactivateServiceAssignment, getServiceAssignment, reevaluateServiceAssignment } from "@/domain/service-assignments/service";
+
+type Context = { params: Promise<{ organizationId: string; assignmentId: string }> };
+export async function GET(request: Request, context: Context) { try { const user = await requireAuthenticatedUser(request), { organizationId, assignmentId } = await context.params; return Response.json(await getServiceAssignment(user, organizationId, assignmentId)); } catch (error) { return errorResponse(error); } }
+export async function POST(request: Request, context: Context) { try { const user = await requireAuthenticatedUser(request), { organizationId, assignmentId } = await context.params, body = await request.json(), action = z.enum(["REEVALUATE", "ACTIVATE", "DEACTIVATE", "CANCEL"]).parse(body.action); if (action === "REEVALUATE") return Response.json(await reevaluateServiceAssignment(user, organizationId, assignmentId)); if (action === "ACTIVATE") return Response.json(await activateServiceAssignment(user, organizationId, assignmentId)); if (action === "DEACTIVATE") return Response.json(await deactivateServiceAssignment(user, organizationId, assignmentId, z.string().parse(body.reason))); return Response.json(await cancelServiceAssignment(user, organizationId, assignmentId, z.string().parse(body.reason))); } catch (error) { return errorResponse(error); } }

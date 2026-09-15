@@ -505,6 +505,27 @@ enum MedicationAuthorizationStatus {
   SUPERSEDED
 }
 
+enum ServiceAssignmentStatus {
+  PROPOSED
+  BLOCKED
+  ACTIVE
+  INACTIVE
+  CANCELLED
+}
+
+enum AssignmentEligibilityDecision {
+  ELIGIBLE
+  BLOCKED
+}
+
+enum AssignmentEligibilityTrigger {
+  PROPOSAL
+  CREATION
+  ACTIVATION
+  REEVALUATION
+  OVERRIDE_ATTEMPT
+}
+
 model Brand {
   id               String         @id @default(cuid())
   name             String
@@ -521,13 +542,13 @@ model Brand {
 }
 
 model Organization {
-  id                       String                                @id @default(cuid())
+  id                       String                                   @id @default(cuid())
   brandId                  String?
   legalName                String
   displayName              String
-  slug                     String                                @unique
-  status                   OrganizationStatus                    @default(ACTIVE)
-  timezone                 String                                @default("America/Chicago")
+  slug                     String                                   @unique
+  status                   OrganizationStatus                       @default(ACTIVE)
+  timezone                 String                                   @default("America/Chicago")
   defaultLanguage          String?
   phone                    String?
   email                    String?
@@ -537,9 +558,9 @@ model Organization {
   state                    String?
   postalCode               String?
   country                  String?
-  createdAt                DateTime                              @default(now())
-  updatedAt                DateTime                              @updatedAt
-  brand                    Brand?                                @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  createdAt                DateTime                                 @default(now())
+  updatedAt                DateTime                                 @updatedAt
+  brand                    Brand?                                   @relation(fields: [brandId], references: [id], onDelete: SetNull)
   licenses                 OrganizationLicense[]
   programs                 Program[]
   locations                Location[]
@@ -574,6 +595,10 @@ model Organization {
   medicationInstructions   PersonSpecificMedicationInstruction[]
   medicationAuthorizations MedicationAuthorizationEvidence[]
   clinicalEvents           ClinicalGovernanceEvent[]
+  serviceAssignments       ServiceAssignment[]
+  assignmentRules          ServiceAssignmentRequirementRule[]
+  assignmentEvaluations    ServiceAssignmentEligibilityEvaluation[]
+  assignmentEvents         ServiceAssignmentEvent[]
 }
 
 model OrganizationLicense {
@@ -593,79 +618,87 @@ model OrganizationLicense {
 }
 
 model Program {
-  id             String                 @id @default(cuid())
-  organizationId String
-  name           String
-  code           String?
-  programType    String?
-  status         RecordStatus           @default(ACTIVE)
-  createdAt      DateTime               @default(now())
-  updatedAt      DateTime               @updatedAt
-  organization   Organization           @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  locations      Location[]
-  serviceEvents  EmployeeServiceEvent[]
+  id                 String                             @id @default(cuid())
+  organizationId     String
+  name               String
+  code               String?
+  programType        String?
+  status             RecordStatus                       @default(ACTIVE)
+  createdAt          DateTime                           @default(now())
+  updatedAt          DateTime                           @updatedAt
+  organization       Organization                       @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  locations          Location[]
+  serviceEvents      EmployeeServiceEvent[]
+  serviceAssignments ServiceAssignment[]
+  assignmentRules    ServiceAssignmentRequirementRule[]
 
   @@unique([organizationId, code])
   @@index([organizationId, status])
 }
 
 model Location {
-  id             String                 @id @default(cuid())
-  organizationId String
-  programId      String?
-  name           String
-  locationType   String?
-  addressLine1   String?
-  addressLine2   String?
-  city           String?
-  state          String?
-  postalCode     String?
-  country        String?
-  status         RecordStatus           @default(ACTIVE)
-  createdAt      DateTime               @default(now())
-  updatedAt      DateTime               @updatedAt
-  organization   Organization           @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  program        Program?               @relation(fields: [programId], references: [id], onDelete: SetNull)
-  serviceEvents  EmployeeServiceEvent[]
+  id                 String                             @id @default(cuid())
+  organizationId     String
+  programId          String?
+  name               String
+  locationType       String?
+  addressLine1       String?
+  addressLine2       String?
+  city               String?
+  state              String?
+  postalCode         String?
+  country            String?
+  status             RecordStatus                       @default(ACTIVE)
+  createdAt          DateTime                           @default(now())
+  updatedAt          DateTime                           @updatedAt
+  organization       Organization                       @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  program            Program?                           @relation(fields: [programId], references: [id], onDelete: SetNull)
+  serviceEvents      EmployeeServiceEvent[]
+  serviceAssignments ServiceAssignment[]
+  assignmentRules    ServiceAssignmentRequirementRule[]
 
   @@index([organizationId, status])
   @@index([organizationId, programId])
 }
 
 model User {
-  id                         String                                @id @default(cuid())
-  authProviderUserId         String?                               @unique
-  email                      String?                               @unique
-  phone                      String?
-  status                     UserStatus                            @default(INVITED)
-  lastLoginAt                DateTime?
-  createdAt                  DateTime                              @default(now())
-  updatedAt                  DateTime                              @updatedAt
-  memberships                OrganizationMembership[]
-  employees                  Employee[]
-  recordedEvents             EmployeeServiceEvent[]                @relation("RecordedBy")
-  verifiedRegulationVersions RegulationVersion[]                   @relation("RegulationVerifiedBy")
-  assignedTraining           TrainingAssignment[]                  @relation("TrainingAssignedBy")
-  cancelledTraining          TrainingAssignment[]                  @relation("TrainingCancelledBy")
-  trainingAssignmentEvents   TrainingAssignmentEvent[]
-  trainingAcknowledgments    TrainingAcknowledgment[]              @relation("TrainingAcknowledgedBy")
-  competencyAssessments      CompetencyAssessment[]                @relation("CompetencyAssessorUser")
-  credentials                ProfessionalCredential[]              @relation("CredentialUser")
-  verifiedCredentials        ProfessionalCredential[]              @relation("CredentialVerifiedBy")
-  reviewedExternalTraining   ExternalTrainingRecord[]              @relation("ExternalTrainingReviewedBy")
-  equivalencyDecisions       RequirementEquivalencyDecision[]      @relation("EquivalencyReviewer")
-  attestations               Attestation[]                         @relation("AttestationSigner")
-  evidenceCorrections        EvidenceCorrection[]                  @relation("EvidenceCorrectedBy")
-  issuedCertificates         Certificate[]                         @relation("CertificateIssuedBy")
-  createdOnboardings         EmployeeOnboarding[]                  @relation("OnboardingCreatedBy")
-  completedOnboardingSteps   EmployeeOnboardingStep[]              @relation("OnboardingStepCompletedBy")
-  createdPolicyVersions      PolicyVersion[]                       @relation("PolicyVersionCreatedBy")
-  assignedPolicies           PolicyAssignment[]                    @relation("PolicyAssignedBy")
-  clinicalApprovals          ClinicalCurriculumApproval[]          @relation("ClinicalCurriculumReviewer")
-  medicationQualifications   MedicationQualification[]             @relation("MedicationQualificationReviewer")
-  medicationInstructions     PersonSpecificMedicationInstruction[] @relation("MedicationInstructionReviewer")
-  medicationAuthorizations   MedicationAuthorizationEvidence[]     @relation("MedicationAuthorizationRecorder")
-  clinicalEvents             ClinicalGovernanceEvent[]             @relation("ClinicalGovernanceActor")
+  id                          String                                   @id @default(cuid())
+  authProviderUserId          String?                                  @unique
+  email                       String?                                  @unique
+  phone                       String?
+  status                      UserStatus                               @default(INVITED)
+  lastLoginAt                 DateTime?
+  createdAt                   DateTime                                 @default(now())
+  updatedAt                   DateTime                                 @updatedAt
+  memberships                 OrganizationMembership[]
+  employees                   Employee[]
+  recordedEvents              EmployeeServiceEvent[]                   @relation("RecordedBy")
+  verifiedRegulationVersions  RegulationVersion[]                      @relation("RegulationVerifiedBy")
+  assignedTraining            TrainingAssignment[]                     @relation("TrainingAssignedBy")
+  cancelledTraining           TrainingAssignment[]                     @relation("TrainingCancelledBy")
+  trainingAssignmentEvents    TrainingAssignmentEvent[]
+  trainingAcknowledgments     TrainingAcknowledgment[]                 @relation("TrainingAcknowledgedBy")
+  competencyAssessments       CompetencyAssessment[]                   @relation("CompetencyAssessorUser")
+  credentials                 ProfessionalCredential[]                 @relation("CredentialUser")
+  verifiedCredentials         ProfessionalCredential[]                 @relation("CredentialVerifiedBy")
+  reviewedExternalTraining    ExternalTrainingRecord[]                 @relation("ExternalTrainingReviewedBy")
+  equivalencyDecisions        RequirementEquivalencyDecision[]         @relation("EquivalencyReviewer")
+  attestations                Attestation[]                            @relation("AttestationSigner")
+  evidenceCorrections         EvidenceCorrection[]                     @relation("EvidenceCorrectedBy")
+  issuedCertificates          Certificate[]                            @relation("CertificateIssuedBy")
+  createdOnboardings          EmployeeOnboarding[]                     @relation("OnboardingCreatedBy")
+  completedOnboardingSteps    EmployeeOnboardingStep[]                 @relation("OnboardingStepCompletedBy")
+  createdPolicyVersions       PolicyVersion[]                          @relation("PolicyVersionCreatedBy")
+  assignedPolicies            PolicyAssignment[]                       @relation("PolicyAssignedBy")
+  clinicalApprovals           ClinicalCurriculumApproval[]             @relation("ClinicalCurriculumReviewer")
+  medicationQualifications    MedicationQualification[]                @relation("MedicationQualificationReviewer")
+  medicationInstructions      PersonSpecificMedicationInstruction[]    @relation("MedicationInstructionReviewer")
+  medicationAuthorizations    MedicationAuthorizationEvidence[]        @relation("MedicationAuthorizationRecorder")
+  clinicalEvents              ClinicalGovernanceEvent[]                @relation("ClinicalGovernanceActor")
+  createdServiceAssignments   ServiceAssignment[]                      @relation("ServiceAssignmentCreator")
+  cancelledServiceAssignments ServiceAssignment[]                      @relation("ServiceAssignmentCanceller")
+  assignmentEvaluations       ServiceAssignmentEligibilityEvaluation[] @relation("AssignmentEvaluationActor")
+  assignmentEvents            ServiceAssignmentEvent[]                 @relation("AssignmentEventActor")
 }
 
 model OrganizationMembership {
@@ -735,7 +768,7 @@ model MembershipRole {
 }
 
 model Employee {
-  id                       String                                @id @default(cuid())
+  id                       String                                   @id @default(cuid())
   organizationId           String
   userId                   String?
   employeeNumber           String?
@@ -745,15 +778,15 @@ model Employee {
   preferredName            String?
   email                    String?
   phone                    String?
-  hireDate                 DateTime?                             @db.Date
-  terminationDate          DateTime?                             @db.Date
-  employmentStatus         EmploymentStatus                      @default(PENDING)
+  hireDate                 DateTime?                                @db.Date
+  terminationDate          DateTime?                                @db.Date
+  employmentStatus         EmploymentStatus                         @default(PENDING)
   jobTitle                 String?
   employmentType           EmploymentType?
-  createdAt                DateTime                              @default(now())
-  updatedAt                DateTime                              @updatedAt
-  organization             Organization                          @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  user                     User?                                 @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt                DateTime                                 @default(now())
+  updatedAt                DateTime                                 @updatedAt
+  organization             Organization                             @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  user                     User?                                    @relation(fields: [userId], references: [id], onDelete: SetNull)
   roles                    EmployeeRole[]
   duties                   EmployeeDuty[]
   serviceEvents            EmployeeServiceEvent[]
@@ -762,8 +795,8 @@ model Employee {
   trainingCompletions      TrainingCompletion[]
   assessmentAttempts       AssessmentAttempt[]
   trainingAcknowledgments  TrainingAcknowledgment[]
-  competencyAssessments    CompetencyAssessment[]                @relation("CompetencySubject")
-  assessedCompetencies     CompetencyAssessment[]                @relation("CompetencyAssessorEmployee")
+  competencyAssessments    CompetencyAssessment[]                   @relation("CompetencySubject")
+  assessedCompetencies     CompetencyAssessment[]                   @relation("CompetencyAssessorEmployee")
   professionalCredentials  ProfessionalCredential[]
   externalTrainingRecords  ExternalTrainingRecord[]
   attestations             Attestation[]
@@ -774,6 +807,8 @@ model Employee {
   medicationQualifications MedicationQualification[]
   medicationInstructions   PersonSpecificMedicationInstruction[]
   medicationAuthorizations MedicationAuthorizationEvidence[]
+  serviceAssignments       ServiceAssignment[]
+  assignmentEvaluations    ServiceAssignmentEligibilityEvaluation[]
 
   @@unique([organizationId, employeeNumber])
   @@unique([organizationId, userId])
@@ -843,32 +878,34 @@ model ComplianceRequirement {
 }
 
 model ComplianceRequirementVersion {
-  id                        String                           @id @default(cuid())
-  requirementId             String
-  versionNumber             Int
-  effectiveFrom             DateTime                         @db.Date
-  effectiveUntil            DateTime?                        @db.Date
-  verificationStatus        VerificationStatus
-  status                    RequirementVersionStatus         @default(DRAFT)
-  applicabilityDefinition   Json
-  triggerDefinition         Json
-  deadlineDefinition        Json
-  recurrenceDefinition      Json?
-  competencyDefinition      Json?
-  evidenceDefinition        Json?
-  legalGraceDefinition      Json?
-  blockingScope             BlockingScope?
-  createdAt                 DateTime                         @default(now())
-  updatedAt                 DateTime                         @updatedAt
-  requirement               ComplianceRequirement            @relation(fields: [requirementId], references: [id], onDelete: Restrict)
-  authorityMappings         RequirementAuthorityMapping[]
-  rulesets                  ComplianceRulesetRequirement[]
-  complianceInstances       ComplianceInstance[]
-  trainingOptions           RequirementTrainingOption[]
-  competencyRequirements    CompetencyRequirement[]
-  learningObjectiveMappings LearningObjectiveRequirement[]
-  equivalencyDecisions      RequirementEquivalencyDecision[]
-  medicationPathways        MedicationQualificationPathway[]
+  id                            String                             @id @default(cuid())
+  requirementId                 String
+  versionNumber                 Int
+  effectiveFrom                 DateTime                           @db.Date
+  effectiveUntil                DateTime?                          @db.Date
+  verificationStatus            VerificationStatus
+  status                        RequirementVersionStatus           @default(DRAFT)
+  applicabilityDefinition       Json
+  triggerDefinition             Json
+  deadlineDefinition            Json
+  recurrenceDefinition          Json?
+  competencyDefinition          Json?
+  evidenceDefinition            Json?
+  legalGraceDefinition          Json?
+  blockingScope                 BlockingScope?
+  createdAt                     DateTime                           @default(now())
+  updatedAt                     DateTime                           @updatedAt
+  requirement                   ComplianceRequirement              @relation(fields: [requirementId], references: [id], onDelete: Restrict)
+  authorityMappings             RequirementAuthorityMapping[]
+  rulesets                      ComplianceRulesetRequirement[]
+  complianceInstances           ComplianceInstance[]
+  trainingOptions               RequirementTrainingOption[]
+  competencyRequirements        CompetencyRequirement[]
+  learningObjectiveMappings     LearningObjectiveRequirement[]
+  equivalencyDecisions          RequirementEquivalencyDecision[]
+  medicationPathways            MedicationQualificationPathway[]
+  serviceAssignmentRules        ServiceAssignmentRequirementRule[]
+  serviceAssignmentRequirements ServiceAssignmentRequirement[]
 
   @@unique([requirementId, versionNumber])
   @@index([status, effectiveFrom, effectiveUntil])
@@ -994,12 +1031,14 @@ model EmployeeRole {
 }
 
 model DutyDefinition {
-  id             String         @id @default(cuid())
-  code           String         @unique
-  name           String
-  description    String?
-  createdAt      DateTime       @default(now())
-  employeeDuties EmployeeDuty[]
+  id                      String                             @id @default(cuid())
+  code                    String                             @unique
+  name                    String
+  description             String?
+  createdAt               DateTime                           @default(now())
+  employeeDuties          EmployeeDuty[]
+  serviceAssignmentDuties ServiceAssignmentDuty[]
+  assignmentRules         ServiceAssignmentRequirementRule[]
 }
 
 model EmployeeDuty {
@@ -1939,27 +1978,29 @@ model QuestionBankVersion {
 }
 
 model MedicationQualificationPathway {
-  id                             String                       @id @default(cuid())
+  id                             String                             @id @default(cuid())
   organizationId                 String
   requirementVersionId           String
   courseVersionId                String
   competencyDefinitionId         String
   skillChecklistVersionId        String
-  requiresKnowledgeAssessment    Boolean                      @default(true)
-  requiresObservedSkill          Boolean                      @default(true)
-  requiresClinicalSignoff        Boolean                      @default(true)
-  requiresPersonInstruction      Boolean                      @default(true)
-  requiresAuthorization          Boolean                      @default(true)
-  requiresDelegation             Boolean                      @default(false)
-  requiresMedicationDuty         Boolean                      @default(true)
+  requiresKnowledgeAssessment    Boolean                            @default(true)
+  requiresObservedSkill          Boolean                            @default(true)
+  requiresClinicalSignoff        Boolean                            @default(true)
+  requiresPersonInstruction      Boolean                            @default(true)
+  requiresAuthorization          Boolean                            @default(true)
+  requiresDelegation             Boolean                            @default(false)
+  requiresMedicationDuty         Boolean                            @default(true)
   validityDays                   Int?
   allowedReviewerCredentialTypes ProfessionalCredentialType[]
-  createdAt                      DateTime                     @default(now())
-  organization                   Organization                 @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  requirementVersion             ComplianceRequirementVersion @relation(fields: [requirementVersionId], references: [id], onDelete: Restrict)
-  courseVersion                  TrainingCourseVersion        @relation(fields: [courseVersionId], references: [id], onDelete: Restrict)
-  competencyDefinition           CompetencyDefinition         @relation(fields: [competencyDefinitionId], references: [id], onDelete: Restrict)
-  skillChecklistVersion          SkillChecklistVersion        @relation(fields: [skillChecklistVersionId], references: [id], onDelete: Restrict)
+  createdAt                      DateTime                           @default(now())
+  organization                   Organization                       @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  requirementVersion             ComplianceRequirementVersion       @relation(fields: [requirementVersionId], references: [id], onDelete: Restrict)
+  courseVersion                  TrainingCourseVersion              @relation(fields: [courseVersionId], references: [id], onDelete: Restrict)
+  competencyDefinition           CompetencyDefinition               @relation(fields: [competencyDefinitionId], references: [id], onDelete: Restrict)
+  skillChecklistVersion          SkillChecklistVersion              @relation(fields: [skillChecklistVersionId], references: [id], onDelete: Restrict)
+  assignmentRules                ServiceAssignmentRequirementRule[]
+  serviceAssignments             ServiceAssignment[]
 
   @@unique([organizationId, requirementVersionId])
   @@index([organizationId, courseVersionId])
@@ -2081,4 +2122,127 @@ model ClinicalGovernanceEvent {
 
   @@index([organizationId, entityType, entityId, createdAt])
   @@index([action, createdAt])
+}
+
+model ServiceAssignmentRequirementRule {
+  id                   String                          @id @default(cuid())
+  organizationId       String
+  name                 String
+  programId            String?
+  locationId           String?
+  serviceRecipientRef  String?
+  dutyDefinitionId     String?
+  requirementVersionId String?
+  medicationPathwayId  String?
+  blockingScope        BlockingScope                   @default(GENERAL_WORK)
+  status               RecordStatus                    @default(ACTIVE)
+  createdAt            DateTime                        @default(now())
+  organization         Organization                    @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  program              Program?                        @relation(fields: [programId], references: [id], onDelete: Restrict)
+  location             Location?                       @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  dutyDefinition       DutyDefinition?                 @relation(fields: [dutyDefinitionId], references: [id], onDelete: Restrict)
+  requirementVersion   ComplianceRequirementVersion?   @relation(fields: [requirementVersionId], references: [id], onDelete: Restrict)
+  medicationPathway    MedicationQualificationPathway? @relation(fields: [medicationPathwayId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId, status])
+  @@index([organizationId, programId, locationId])
+  @@index([organizationId, serviceRecipientRef])
+}
+
+model ServiceAssignment {
+  id                     String                                   @id @default(cuid())
+  organizationId         String
+  employeeId             String
+  programId              String?
+  locationId             String?
+  serviceRecipientRef    String?
+  blockingScope          BlockingScope                            @default(GENERAL_WORK)
+  medicationPathwayId    String?
+  startsAt               DateTime
+  endsAt                 DateTime?
+  status                 ServiceAssignmentStatus                  @default(PROPOSED)
+  createdByUserId        String
+  activatedAt            DateTime?
+  cancelledAt            DateTime?
+  cancelledByUserId      String?
+  cancellationReason     String?
+  createdAt              DateTime                                 @default(now())
+  updatedAt              DateTime                                 @updatedAt
+  organization           Organization                             @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  employee               Employee                                 @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  program                Program?                                 @relation(fields: [programId], references: [id], onDelete: Restrict)
+  location               Location?                                @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  medicationPathway      MedicationQualificationPathway?          @relation(fields: [medicationPathwayId], references: [id], onDelete: Restrict)
+  createdBy              User                                     @relation("ServiceAssignmentCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  cancelledBy            User?                                    @relation("ServiceAssignmentCanceller", fields: [cancelledByUserId], references: [id], onDelete: SetNull)
+  duties                 ServiceAssignmentDuty[]
+  requirements           ServiceAssignmentRequirement[]
+  eligibilityEvaluations ServiceAssignmentEligibilityEvaluation[]
+  events                 ServiceAssignmentEvent[]
+
+  @@index([organizationId, status, startsAt])
+  @@index([organizationId, employeeId, status])
+  @@index([organizationId, serviceRecipientRef, status])
+}
+
+model ServiceAssignmentDuty {
+  id               String            @id @default(cuid())
+  assignmentId     String
+  dutyDefinitionId String
+  createdAt        DateTime          @default(now())
+  assignment       ServiceAssignment @relation(fields: [assignmentId], references: [id], onDelete: Restrict)
+  dutyDefinition   DutyDefinition    @relation(fields: [dutyDefinitionId], references: [id], onDelete: Restrict)
+
+  @@unique([assignmentId, dutyDefinitionId])
+}
+
+model ServiceAssignmentRequirement {
+  id                   String                       @id @default(cuid())
+  assignmentId         String
+  requirementVersionId String
+  ruleIdSnapshot       String?
+  createdAt            DateTime                     @default(now())
+  assignment           ServiceAssignment            @relation(fields: [assignmentId], references: [id], onDelete: Restrict)
+  requirementVersion   ComplianceRequirementVersion @relation(fields: [requirementVersionId], references: [id], onDelete: Restrict)
+
+  @@unique([assignmentId, requirementVersionId])
+}
+
+model ServiceAssignmentEligibilityEvaluation {
+  id                   String                        @id @default(cuid())
+  organizationId       String
+  employeeId           String
+  assignmentId         String?
+  actorUserId          String
+  trigger              AssignmentEligibilityTrigger
+  decision             AssignmentEligibilityDecision
+  evaluatedAt          DateTime
+  engineVersion        String
+  inputSnapshot        Json
+  resultSnapshot       Json
+  previousEvaluationId String?
+  createdAt            DateTime                      @default(now())
+  organization         Organization                  @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  employee             Employee                      @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  assignment           ServiceAssignment?            @relation(fields: [assignmentId], references: [id], onDelete: Restrict)
+  actor                User                          @relation("AssignmentEvaluationActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId, employeeId, evaluatedAt])
+  @@index([assignmentId, evaluatedAt])
+}
+
+model ServiceAssignmentEvent {
+  id             String             @id @default(cuid())
+  organizationId String
+  assignmentId   String?
+  actorUserId    String
+  action         String
+  metadata       Json?
+  createdAt      DateTime           @default(now())
+  organization   Organization       @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  assignment     ServiceAssignment? @relation(fields: [assignmentId], references: [id], onDelete: Restrict)
+  actor          User               @relation("AssignmentEventActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId, action, createdAt])
+  @@index([assignmentId, createdAt])
 }

@@ -8,7 +8,7 @@ import { listMedicationQualifications } from "@/domain/medication/service";
 export async function getComplianceOperationsSummary(user: Pick<User,"id">, organizationId: string, at = new Date(), filters: { status?: OperationalStatus; scope?: BlockingScope } = {}) {
   const { membership } = await requireOrganizationAccess(user, organizationId); await requirePermission(membership.id, "compliance.operations.read");
   const soon = new Date(at.getTime() + 30 * 86400000);
-  const [onboarding, overdue, trainingDueSoon, trainingOverdue, competencyPending, policyPending, credentialsExpiring, certificateGroups] = await Promise.all([
+  const [onboarding, overdue, trainingDueSoon, trainingOverdue, competencyPending, policyPending, credentialsExpiring, certificateGroups, assignmentGroups, medicationBlocked, personSpecificBlocked] = await Promise.all([
     prisma.employeeOnboarding.groupBy({ by: ["status"], where: { organizationId }, _count: true }),
     prisma.complianceInstance.count({ where: { organizationId, status: { in: ["PAST_DUE", "BLOCKED"] } } }),
     prisma.trainingAssignment.count({ where: { organizationId, status: { in: ["NOT_STARTED", "IN_PROGRESS", "TRAINING_COMPLETE_COMPETENCY_PENDING"] }, dueAt: { gte: at, lte: soon } } }),
@@ -17,11 +17,14 @@ export async function getComplianceOperationsSummary(user: Pick<User,"id">, orga
     prisma.policyAssignment.count({ where: { organizationId, status: { in: ["PENDING", "OVERDUE"] } } }),
     prisma.professionalCredential.count({ where: { organizationId, status: "ACTIVE", expiresAt: { gte: at, lte: soon } } }),
     prisma.certificate.groupBy({ by: ["status"], where: { organizationId }, _count: true }),
+    prisma.serviceAssignment.groupBy({ by: ["status"], where: { organizationId }, _count: true }),
+    prisma.serviceAssignment.count({ where: { organizationId, status: "BLOCKED", duties: { some: { dutyDefinition: { code: "MEDICATION_ADMINISTRATION" } } } } }),
+    prisma.serviceAssignment.count({ where: { organizationId, status: "BLOCKED", serviceRecipientRef: { not: null } } }),
   ]);
   const workforce = await getOrganizationComplianceOperations(user, organizationId, filters, at);
   const medicationStates = (await Promise.all(workforce.workers.map(row => listMedicationQualifications(user, organizationId, row.employee.id, at)))).flat();
   const medication = Object.fromEntries([...new Set(medicationStates.map(item => item.state))].map(state => [state, medicationStates.filter(item => item.state === state).length]));
-  return { asOf: at.toISOString(), onboarding: Object.fromEntries(onboarding.map(x => [x.status, x._count])), overdueCompliance: overdue, trainingDueSoon, trainingOverdue, competencyPending, policyAcknowledgmentsPending: policyPending, credentialsExpiring, certificates: Object.fromEntries(certificateGroups.map(x => [x.status, x._count])), medication, workforce };
+  return { asOf: at.toISOString(), onboarding: Object.fromEntries(onboarding.map(x => [x.status, x._count])), overdueCompliance: overdue, trainingDueSoon, trainingOverdue, competencyPending, policyAcknowledgmentsPending: policyPending, credentialsExpiring, certificates: Object.fromEntries(certificateGroups.map(x => [x.status, x._count])), medication, serviceAssignments: { byStatus: Object.fromEntries(assignmentGroups.map(x => [x.status, x._count])), medicationBlocked, personSpecificBlocked }, workforce };
 }
 
 export async function getEmployeeComplianceProfile(user: Pick<User,"id">, organizationId: string, employeeId: string, at = new Date()) {
@@ -34,6 +37,7 @@ export async function getEmployeeComplianceProfile(user: Pick<User,"id">, organi
     policyAssignments: { include: { policyVersion: { include: { policy: true } }, attestation: true } }, certificates: true,
     onboardings: { include: { steps: { include: { stepDefinition: true } }, templateVersion: { include: { onboardingTemplate: true } } } },
     workReadinessEvaluations: { orderBy: { evaluatedAt: "desc" }, take: 10 },
+    serviceAssignments: { include: { duties: { include: { dutyDefinition: true } }, eligibilityEvaluations: { orderBy: { evaluatedAt: "desc" }, take: 1 } }, orderBy: { startsAt: "desc" } },
   } });
   const timeline = [
     { type: "EMPLOYEE_CREATED", occurredAt: detail.createdAt, resourceType: "Employee", resourceId: detail.id },
@@ -46,5 +50,5 @@ export async function getEmployeeComplianceProfile(user: Pick<User,"id">, organi
     ...detail.certificates.map(x => ({ type: `CERTIFICATE_${x.status}`, occurredAt: x.issuedAt, resourceType: "Certificate", resourceId: x.id })),
     ...detail.workReadinessEvaluations.map(x => ({ type: "READINESS_EVALUATED", occurredAt: x.evaluatedAt, resourceType: "WorkReadinessEvaluation", resourceId: x.id })),
   ].sort((a,b) => a.occurredAt.getTime() - b.occurredAt.getTime());
-  return { employee: detail, readiness: await computeEmployeeWorkReadiness(organizationId, employeeId, at), operationalCompliance: await computeEmployeeOperationalProfile(organizationId, employeeId, at), medication: await listMedicationQualifications(user, organizationId, employeeId, at), timeline };
+  return { employee: detail, readiness: await computeEmployeeWorkReadiness(organizationId, employeeId, at), operationalCompliance: await computeEmployeeOperationalProfile(organizationId, employeeId, at), medication: await listMedicationQualifications(user, organizationId, employeeId, at), serviceAssignments: detail.serviceAssignments, timeline };
 }
