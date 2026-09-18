@@ -1,0 +1,2 @@
+import{requireAuthenticatedUser}from"@/domain/auth/authentication";import{errorResponse}from"@/domain/auth/errors";import{getEmployerEmployeeDetail}from"@/domain/admin/service";
+export async function GET(request:Request,context:{params:Promise<{organizationId:string;employeeId:string}>}){try{const user=await requireAuthenticatedUser(request),{organizationId,employeeId}=await context.params;return Response.json(await getEmployerEmployeeDetail(user,organizationId,employeeId))}catch(error){return errorResponse(error)}}

@@ -34,7 +34,7 @@ export async function getEmployeeComplianceProfile(user: Pick<User,"id">, organi
     serviceEvents: true, duties: { include: { dutyDefinition: true } }, roles: { include: { roleDefinition: true } },
     complianceInstances: { include: { requirementVersion: { include: { requirement: true } }, evidence: true } },
     trainingAssignments: { include: { courseVersion: { include: { course: true } }, completion: true } }, trainingCompletions: true,
-    competencyAssessments: { include: { competencyDefinition: true } }, professionalCredentials: true,
+    competencyAssessments: { include: { competencyDefinition: true } }, professionalCredentials: true, externalTrainingRecords: true,
     policyAssignments: { include: { policyVersion: { include: { policy: true } }, attestation: true } }, certificates: true,
     onboardings: { include: { steps: { include: { stepDefinition: true } }, templateVersion: { include: { onboardingTemplate: true } } } },
     workReadinessEvaluations: { orderBy: { evaluatedAt: "desc" }, take: 10 },
