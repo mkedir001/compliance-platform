@@ -568,6 +568,12 @@ enum AuditPackageStatus {
   FAILED
 }
 
+enum EmployeePortalInvitationStatus {
+  PENDING
+  ACCEPTED
+  REVOKED
+}
+
 model Brand {
   id               String         @id @default(cuid())
   name             String
@@ -584,67 +590,68 @@ model Brand {
 }
 
 model Organization {
-  id                       String                                   @id @default(cuid())
-  brandId                  String?
-  legalName                String
-  displayName              String
-  slug                     String                                   @unique
-  status                   OrganizationStatus                       @default(ACTIVE)
-  timezone                 String                                   @default("America/Chicago")
-  defaultLanguage          String?
-  phone                    String?
-  email                    String?
-  addressLine1             String?
-  addressLine2             String?
-  city                     String?
-  state                    String?
-  postalCode               String?
-  country                  String?
-  createdAt                DateTime                                 @default(now())
-  updatedAt                DateTime                                 @updatedAt
-  brand                    Brand?                                   @relation(fields: [brandId], references: [id], onDelete: SetNull)
-  licenses                 OrganizationLicense[]
-  programs                 Program[]
-  locations                Location[]
-  memberships              OrganizationMembership[]
-  roles                    RoleDefinition[]
-  employees                Employee[]
-  serviceEvents            EmployeeServiceEvent[]
-  complianceEvaluationRuns ComplianceEvaluationRun[]
-  complianceInstances      ComplianceInstance[]
-  trainingCourses          TrainingCourse[]
-  trainingAssignments      TrainingAssignment[]
-  trainingCompletions      TrainingCompletion[]
-  assessmentAttempts       AssessmentAttempt[]
-  trainingAssignmentEvents TrainingAssignmentEvent[]
-  competencyDefinitions    CompetencyDefinition[]
-  skillChecklists          SkillChecklist[]
-  competencyAssessments    CompetencyAssessment[]
-  professionalCredentials  ProfessionalCredential[]
-  externalTrainingRecords  ExternalTrainingRecord[]
-  equivalencyDecisions     RequirementEquivalencyDecision[]
-  attestations             Attestation[]
-  evidenceCorrections      EvidenceCorrection[]
-  certificates             Certificate[]
-  onboardingTemplates      OnboardingTemplate[]
-  employeeOnboardings      EmployeeOnboarding[]
-  policies                 Policy[]
-  policyAssignments        PolicyAssignment[]
-  workReadinessEvaluations WorkReadinessEvaluation[]
-  medicationPathways       MedicationQualificationPathway[]
-  clinicalApprovals        ClinicalCurriculumApproval[]
-  medicationQualifications MedicationQualification[]
-  medicationInstructions   PersonSpecificMedicationInstruction[]
-  medicationAuthorizations MedicationAuthorizationEvidence[]
-  clinicalEvents           ClinicalGovernanceEvent[]
-  serviceAssignments       ServiceAssignment[]
-  assignmentRules          ServiceAssignmentRequirementRule[]
-  assignmentEvaluations    ServiceAssignmentEligibilityEvaluation[]
-  assignmentEvents         ServiceAssignmentEvent[]
-  complianceIssues         ComplianceIssue[]
-  complianceIssueEvents    ComplianceIssueEvent[]
-  auditPackages            AuditPackage[]
-  auditEvents              AuditEvent[]
+  id                        String                                   @id @default(cuid())
+  brandId                   String?
+  legalName                 String
+  displayName               String
+  slug                      String                                   @unique
+  status                    OrganizationStatus                       @default(ACTIVE)
+  timezone                  String                                   @default("America/Chicago")
+  defaultLanguage           String?
+  phone                     String?
+  email                     String?
+  addressLine1              String?
+  addressLine2              String?
+  city                      String?
+  state                     String?
+  postalCode                String?
+  country                   String?
+  createdAt                 DateTime                                 @default(now())
+  updatedAt                 DateTime                                 @updatedAt
+  brand                     Brand?                                   @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  licenses                  OrganizationLicense[]
+  programs                  Program[]
+  locations                 Location[]
+  memberships               OrganizationMembership[]
+  roles                     RoleDefinition[]
+  employees                 Employee[]
+  serviceEvents             EmployeeServiceEvent[]
+  complianceEvaluationRuns  ComplianceEvaluationRun[]
+  complianceInstances       ComplianceInstance[]
+  trainingCourses           TrainingCourse[]
+  trainingAssignments       TrainingAssignment[]
+  trainingCompletions       TrainingCompletion[]
+  assessmentAttempts        AssessmentAttempt[]
+  trainingAssignmentEvents  TrainingAssignmentEvent[]
+  competencyDefinitions     CompetencyDefinition[]
+  skillChecklists           SkillChecklist[]
+  competencyAssessments     CompetencyAssessment[]
+  professionalCredentials   ProfessionalCredential[]
+  externalTrainingRecords   ExternalTrainingRecord[]
+  equivalencyDecisions      RequirementEquivalencyDecision[]
+  attestations              Attestation[]
+  evidenceCorrections       EvidenceCorrection[]
+  certificates              Certificate[]
+  onboardingTemplates       OnboardingTemplate[]
+  employeeOnboardings       EmployeeOnboarding[]
+  policies                  Policy[]
+  policyAssignments         PolicyAssignment[]
+  workReadinessEvaluations  WorkReadinessEvaluation[]
+  medicationPathways        MedicationQualificationPathway[]
+  clinicalApprovals         ClinicalCurriculumApproval[]
+  medicationQualifications  MedicationQualification[]
+  medicationInstructions    PersonSpecificMedicationInstruction[]
+  medicationAuthorizations  MedicationAuthorizationEvidence[]
+  clinicalEvents            ClinicalGovernanceEvent[]
+  serviceAssignments        ServiceAssignment[]
+  assignmentRules           ServiceAssignmentRequirementRule[]
+  assignmentEvaluations     ServiceAssignmentEligibilityEvaluation[]
+  assignmentEvents          ServiceAssignmentEvent[]
+  complianceIssues          ComplianceIssue[]
+  complianceIssueEvents     ComplianceIssueEvent[]
+  auditPackages             AuditPackage[]
+  auditEvents               AuditEvent[]
+  employeePortalInvitations EmployeePortalInvitation[]
 }
 
 model OrganizationLicense {
@@ -749,6 +756,8 @@ model User {
   complianceIssueEvents       ComplianceIssueEvent[]                   @relation("ComplianceIssueEventActor")
   requestedAuditPackages      AuditPackage[]                           @relation("AuditPackageRequester")
   auditEvents                 AuditEvent[]                             @relation("AuditEventActor")
+  sentEmployeeInvitations     EmployeePortalInvitation[]               @relation("EmployeePortalInvitationSender")
+  acceptedEmployeeInvitations EmployeePortalInvitation[]               @relation("EmployeePortalInvitationAccepter")
 }
 
 model OrganizationMembership {
@@ -860,6 +869,7 @@ model Employee {
   serviceAssignments       ServiceAssignment[]
   assignmentEvaluations    ServiceAssignmentEligibilityEvaluation[]
   complianceIssues         ComplianceIssue[]
+  portalInvitations        EmployeePortalInvitation[]
 
   @@unique([organizationId, employeeNumber])
   @@unique([organizationId, userId])
@@ -2395,4 +2405,26 @@ model AuditEvent {
   @@index([organizationId, actorUserId, occurredAt])
   @@index([organizationId, eventType, occurredAt])
   @@index([organizationId, entityType, entityId, occurredAt])
+}
+
+model EmployeePortalInvitation {
+  id               String                         @id @default(cuid())
+  organizationId   String
+  employeeId       String
+  invitedEmail     String
+  tokenHash        String                         @unique
+  status           EmployeePortalInvitationStatus @default(PENDING)
+  invitedByUserId  String
+  acceptedByUserId String?
+  invitedAt        DateTime                       @default(now())
+  acceptedAt       DateTime?
+  revokedAt        DateTime?
+  createdAt        DateTime                       @default(now())
+  organization     Organization                   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  employee         Employee                       @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  invitedBy        User                           @relation("EmployeePortalInvitationSender", fields: [invitedByUserId], references: [id], onDelete: Restrict)
+  acceptedBy       User?                          @relation("EmployeePortalInvitationAccepter", fields: [acceptedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, employeeId, invitedAt])
+  @@index([organizationId, invitedEmail, status])
 }
