@@ -1,1 +1,26 @@
-import{z}from"zod";import{requireAuthenticatedUser}from"@/domain/auth/authentication";import{errorResponse,ResourceNotFoundError}from"@/domain/auth/errors";import{requireOrganizationMembership}from"@/domain/permissions/authorization";import{acknowledgePolicy}from"@/domain/policies/service";import{prisma}from"@/lib/prisma";export async function GET(r:Request,c:{params:Promise<{organizationId:string;assignmentId:string}>}){try{const u=await requireAuthenticatedUser(r),p=await c.params;await requireOrganizationMembership(u.id,p.organizationId);const a=await prisma.policyAssignment.findFirst({where:{id:p.assignmentId,organizationId:p.organizationId,employee:{userId:u.id}},include:{policyVersion:{include:{policy:true}},attestation:true}});if(!a)throw new ResourceNotFoundError("Policy assignment not found");return Response.json(a)}catch(e){return errorResponse(e)}}export async function POST(r:Request,c:{params:Promise<{organizationId:string;assignmentId:string}>}){try{const u=await requireAuthenticatedUser(r),p=await c.params,b=z.object({typedName:z.string().min(1)}).parse(await r.json());return Response.json(await acknowledgePolicy(u,p.organizationId,p.assignmentId,{...b,ipAddress:r.headers.get("x-forwarded-for")??undefined,userAgent:r.headers.get("user-agent")??undefined,sessionReference:r.headers.get("x-session-reference")??undefined}))}catch(e){return errorResponse(e)}}
+import { z } from "zod";
+import { requireAuthenticatedUser } from "@/domain/auth/authentication";
+import { errorResponse, ResourceNotFoundError } from "@/domain/auth/errors";
+import { requireOrganizationMembership } from "@/domain/permissions/authorization";
+import { acknowledgePolicy } from "@/domain/policies/service";
+import { prisma } from "@/lib/prisma";
+
+type Context = { params: Promise<{ organizationId: string; assignmentId: string }> };
+
+export async function GET(request: Request, context: Context) {
+  try {
+    const user = await requireAuthenticatedUser(request), params = await context.params;
+    await requireOrganizationMembership(user.id, params.organizationId);
+    const assignment = await prisma.policyAssignment.findFirst({ where: { id: params.assignmentId, organizationId: params.organizationId, employee: { userId: user.id } }, include: { policyVersion: { include: { policy: true } }, attestation: true } });
+    if (!assignment) throw new ResourceNotFoundError("Policy assignment not found");
+    return Response.json(assignment);
+  } catch (error) { return errorResponse(error); }
+}
+
+export async function POST(request: Request, context: Context) {
+  try {
+    const user = await requireAuthenticatedUser(request), params = await context.params;
+    const body = z.object({ typedName: z.string().min(1) }).parse(await request.json());
+    return Response.json(await acknowledgePolicy(user, params.organizationId, params.assignmentId, { ...body, userAgent: request.headers.get("user-agent") ?? undefined, sessionReference: request.headers.get("x-session-reference") ?? undefined }));
+  } catch (error) { return errorResponse(error); }
+}

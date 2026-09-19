@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "jobs": [
+    {
+      "name": "organization-compliance-reconciliation",
+      "schedule": "*/15 * * * *",
+      "method": "POST",
+      "path": "/api/jobs/compliance",
+      "authorization": "Bearer ${JOB_SECRET}",
+      "jsonBody": { "organizationId": "${PRODUCTION_ORGANIZATION_ID}" },
+      "timeoutSeconds": 120,
+      "maxConcurrentRuns": 1,
+      "retryAttempts": 2
+    }
+  ]
+}

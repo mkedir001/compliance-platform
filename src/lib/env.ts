@@ -9,6 +9,8 @@ const productionSchema = z.object({
   RATE_LIMIT_URL: z.string().url().refine(value => value.startsWith("https://"), "RATE_LIMIT_URL must use HTTPS"),
   RATE_LIMIT_TOKEN: z.string().min(20),
   EVIDENCE_STORAGE_MODE: z.literal("external-reference"),
+  EVIDENCE_STORAGE_URL: z.string().url().refine(value => value.startsWith("https://"), "EVIDENCE_STORAGE_URL must use HTTPS"),
+  EVIDENCE_STORAGE_TOKEN: z.string().min(20),
   EMAIL_API_URL: z.preprocess(value => value === "" ? undefined : value, z.string().url().optional()),
   EMAIL_API_TOKEN: z.preprocess(value => value === "" ? undefined : value, z.string().min(20).optional()),
   EMAIL_FROM: z.preprocess(value => value === "" ? undefined : value, z.string().email().optional()),
