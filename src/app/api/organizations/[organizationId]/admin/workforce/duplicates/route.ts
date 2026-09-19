@@ -1,0 +1,4 @@
+import { requireAuthenticatedUser } from "@/domain/auth/authentication";
+import { errorResponse } from "@/domain/auth/errors";
+import { findPotentialEmployeeDuplicates } from "@/domain/workforce-administration/service";
+export async function GET(request:Request,context:{params:Promise<{organizationId:string}>}){try{const user=await requireAuthenticatedUser(request),{organizationId}=await context.params,q=new URL(request.url).searchParams;return Response.json(await findPotentialEmployeeDuplicates(user,organizationId,{employeeNumber:q.get("employeeNumber"),email:q.get("email"),firstName:q.get("firstName")??undefined,lastName:q.get("lastName")??undefined,hireDate:q.get("hireDate")?new Date(`${q.get("hireDate")}T00:00:00Z`):undefined},q.get("excludeEmployeeId")??undefined))}catch(error){return errorResponse(error)}}

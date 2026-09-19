@@ -13,6 +13,7 @@ export async function inviteEmployeeToPortal(user: Pick<User, "id">, organizatio
   await requirePermission(membership.id, "employee.manage");
   const employee = await prisma.employee.findFirst({ where: { id: employeeId, organizationId } });
   if (!employee?.email) throw new AuthorizationError("Employee email is required before portal access can be enabled");
+  if (["LEAVE", "TERMINATED", "ARCHIVED"].includes(employee.employmentStatus)) throw new AuthorizationError("Inactive or separated employees cannot be invited to portal access");
   const invitedEmail = employee.email.trim().toLowerCase();
   const existingUser = await prisma.user.findUnique({ where: { email: invitedEmail } });
   const account = existingUser ?? await prisma.user.create({ data: { email: invitedEmail, status: "INVITED" } });
