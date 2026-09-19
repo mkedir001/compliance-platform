@@ -4,6 +4,7 @@ import { requireAuthenticatedUser } from "@/domain/auth/authentication";
 import { errorResponse } from "@/domain/auth/errors";
 import { createAuditPackage } from "@/domain/audit/service";
 import { listAuditPackages } from "@/domain/reporting/service";
+import { enforceRateLimit,requestRateKey } from "@/lib/rate-limit";
 
 const inputSchema = z.object({ scope: z.enum(["EMPLOYEE_COMPLIANCE_RECORD", "REQUIREMENT_EVIDENCE_RECORD", "ORGANIZATION_COMPLIANCE_SUMMARY"]), subjectId: z.string().cuid().optional(), pointInTimeAt: z.coerce.date().optional(), rangeFrom: z.coerce.date().optional(), rangeTo: z.coerce.date().optional(), includedDomains: z.array(z.enum(["WORKFORCE", "TRAINING", "POLICIES", "EVIDENCE", "REMEDIATION", "ASSIGNMENTS", "NOTIFICATIONS", "AUDIT_HISTORY"])).max(8).optional() }).strict();
 
@@ -14,7 +15,7 @@ export async function GET(request: Request, context: { params: Promise<{ organiz
 
 export async function POST(request: Request, context: { params: Promise<{ organizationId: string }> }) {
   try {
-    const user = await requireAuthenticatedUser(request), { organizationId } = await context.params, body = inputSchema.parse(await request.json()) as Parameters<typeof createAuditPackage>[2] & { scope: AuditPackageScope };
+    const user = await requireAuthenticatedUser(request), { organizationId } = await context.params;await enforceRateLimit("audit-package",requestRateKey(request,user.id),5,300);const body = inputSchema.parse(await request.json()) as Parameters<typeof createAuditPackage>[2] & { scope: AuditPackageScope };
     return Response.json(await createAuditPackage(user, organizationId, body), { status: 201 });
   } catch (error) { return errorResponse(error); }
 }

@@ -35,6 +35,8 @@ export async function claimEmployeePortalInvitation(user: Pick<User, "id" | "ema
   if (!user.email) throw new AuthorizationError("Authenticated account must have an email address");
   const invitation = await prisma.employeePortalInvitation.findFirst({ where: { organizationId, tokenHash: hashToken(token), status: "PENDING" }, include: { employee: true } });
   if (!invitation) throw new ResourceNotFoundError("Portal invitation not found");
+  if (invitation.invitedAt < new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)) throw new AuthorizationError("Portal invitation expired");
+  if (!["PENDING", "ACTIVE"].includes(invitation.employee.employmentStatus)) throw new AuthorizationError("Inactive or separated employees cannot claim portal access");
   if (invitation.invitedEmail.toLowerCase() !== user.email.toLowerCase()) throw new AuthorizationError("Invitation belongs to a different account");
   const conflicting = await prisma.employee.findFirst({ where: { organizationId, userId: user.id, id: { not: invitation.employeeId } } });
   if (conflicting || invitation.employee.userId && invitation.employee.userId !== user.id) throw new AuthorizationError("Account cannot claim this employee profile");
@@ -56,7 +58,7 @@ export async function getEmployeePortalAccess(user: Pick<User, "id">, organizati
 
 async function resolveSelf(user: Pick<User, "id">, organizationId: string) {
   await requireOrganizationMembership(user.id, organizationId);
-  const employee = await prisma.employee.findFirst({ where: { organizationId, userId: user.id } });
+  const employee = await prisma.employee.findFirst({ where: { organizationId, userId: user.id, employmentStatus: { in: ["PENDING", "ACTIVE"] } } });
   if (!employee) throw new AuthorizationError("Employee self-access denied");
   await requireEmployeeSelfAccess(user, organizationId, employee.id);
   return employee;

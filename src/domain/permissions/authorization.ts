@@ -50,4 +50,4 @@ export function assertRoleAssignableToOrganization(role: { organizationId: strin
   }
 }
 
-export async function requireEmployeeSelfAccess(user: Pick<User,"id">,organizationId:string,employeeId:string){await requireOrganizationMembership(user.id,organizationId);const employee=await prisma.employee.findFirst({where:{id:employeeId,organizationId,userId:user.id}});if(!employee)throw new AuthorizationError("Employee self-access denied");return employee;}
+export async function requireEmployeeSelfAccess(user: Pick<User,"id">,organizationId:string,employeeId:string){await requireOrganizationMembership(user.id,organizationId);const employee=await prisma.employee.findFirst({where:{id:employeeId,organizationId,userId:user.id,employmentStatus:{in:["PENDING","ACTIVE"]}}});if(!employee)throw new AuthorizationError("Employee self-access denied");return employee;}

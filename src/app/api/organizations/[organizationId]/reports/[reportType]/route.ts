@@ -3,6 +3,7 @@ import { requireAuthenticatedUser } from "@/domain/auth/authentication";
 import { errorResponse } from "@/domain/auth/errors";
 import { getRequirementEvidenceTrace } from "@/domain/audit/service";
 import { getEmployeeComplianceReport, getEvidenceReport, getOrganizationComplianceReport, getPolicyReport, getRemediationReport, getServiceAssignmentReadinessReport, getTrainingReport, rowsToCsv } from "@/domain/reporting/service";
+import { enforceRateLimit,requestRateKey } from "@/lib/rate-limit";
 
 const reportTypeSchema = z.enum(["organization", "employee", "requirements", "training", "policies", "evidence", "remediation", "assignments"]);
 const date = (value: string | null) => value ? new Date(value) : undefined;
@@ -11,7 +12,7 @@ const flat = (value: unknown): Record<string, unknown>[] => Array.isArray(value)
 export async function GET(request: Request, context: { params: Promise<{ organizationId: string; reportType: string }> }) {
   try {
     const user = await requireAuthenticatedUser(request), { organizationId, reportType: rawType } = await context.params, reportType = reportTypeSchema.parse(rawType), q = new URL(request.url).searchParams;
-    const common = { employeeId: q.get("employeeId") ?? undefined, status: q.get("status") ?? undefined, from: date(q.get("from")), to: date(q.get("to")), page: q.get("page") ? Number(q.get("page")) : undefined, pageSize: q.get("pageSize") ? Number(q.get("pageSize")) : undefined, exportMode: q.get("format") === "csv" };
+    if(q.get("format")==="csv")await enforceRateLimit("report-csv",requestRateKey(request,user.id),10,300);const common = { employeeId: q.get("employeeId") ?? undefined, status: q.get("status") ?? undefined, from: date(q.get("from")), to: date(q.get("to")), page: q.get("page") ? Number(q.get("page")) : undefined, pageSize: q.get("pageSize") ? Number(q.get("pageSize")) : undefined, exportMode: q.get("format") === "csv" };
     let result: unknown;
     if (reportType === "organization") result = await getOrganizationComplianceReport(user, organizationId, { workforceStatus: q.get("workforceStatus") as never || undefined, at: date(q.get("at")) });
     else if (reportType === "employee") result = await getEmployeeComplianceReport(user, organizationId, z.string().cuid().parse(common.employeeId), date(q.get("at")));

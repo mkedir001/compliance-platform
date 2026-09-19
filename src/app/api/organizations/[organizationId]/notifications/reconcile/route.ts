@@ -1,2 +1,3 @@
 import{requireAuthenticatedUser}from"@/domain/auth/authentication";import{errorResponse}from"@/domain/auth/errors";import{reconcileOrganizationNotifications}from"@/domain/notifications/service";
-export async function POST(request:Request,context:{params:Promise<{organizationId:string}>}){try{return Response.json(await reconcileOrganizationNotifications(await requireAuthenticatedUser(request),(await context.params).organizationId))}catch(error){return errorResponse(error)}}
+import{enforceRateLimit,requestRateKey}from"@/lib/rate-limit";
+export async function POST(request:Request,context:{params:Promise<{organizationId:string}>}){try{const user=await requireAuthenticatedUser(request);await enforceRateLimit("notification-reconcile",requestRateKey(request,user.id),10,60);return Response.json(await reconcileOrganizationNotifications(user,(await context.params).organizationId))}catch(error){return errorResponse(error)}}

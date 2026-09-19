@@ -1,0 +1,1 @@
+export function assertDevelopmentSeedAllowed(environment = process.env.NODE_ENV){if(environment==="production")throw new Error("Development/demo seed is disabled in production. Use pnpm bootstrap:production for the first organization.")}

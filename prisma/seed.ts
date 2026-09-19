@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import { Prisma, PrismaClient } from "@prisma/client";
 import { seedProductionCurriculum } from "./seed-curriculum";
+import { assertDevelopmentSeedAllowed } from "./seed-guard";
+assertDevelopmentSeedAllowed();
 const db = new PrismaClient();
 const permissionCodes = ["organization.read","organization.manage","employee.read","employee.manage","training.read","training.manage","training.catalog.read","training.catalog.manage","training.assignment.read","training.assignment.manage","training.progress.read","training.assessment.manage","training.equivalency.review","training.curriculum.publish","training.curriculum.coverage.read","competency.read","competency.assess","competency.manage","certificate.read","certificate.issue","certificate.revoke","onboarding.read","onboarding.manage","policy.read","policy.manage","policy.assign","work_readiness.read","work_readiness.evaluate","compliance.operations.read","service_assignment.read","service_assignment.manage","service_assignment.override","compliance_issue.read","compliance_issue.reconcile","compliance_issue.manage","recipient.read","recipient.readSensitive","recipient.readDocuments","recipient.uploadDocuments","recipient.assignStaff","clinical.review","medication.approve","audit.read","audit.export"];
 const dutyRows = [

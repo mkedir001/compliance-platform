@@ -4,10 +4,11 @@ import { AuthorizationError, ResourceNotFoundError, ValidationError } from "@/do
 import { deriveTemporalStatus } from "@/domain/compliance/operations/deadlines";
 import { requireEmployeeAccess, requireEmployeeSelfAccess, requireOrganizationAccess, requirePermission } from "@/domain/permissions/authorization";
 import { createExternalTrainingRecord, createProfessionalCredential } from "@/domain/evidence/service";
+import { evidenceReferenceSchema } from "@/domain/evidence/reference";
 import { prisma } from "@/lib/prisma";
 
-const credentialInput=z.object({credentialType:z.enum(["RN","CNS","CNP","PA","PHYSICIAN","CPR_INSTRUCTOR","FIRST_AID_INSTRUCTOR","OTHER"]),credentialName:z.string().trim().max(255).optional(),licenseNumber:z.string().trim().max(255).optional(),jurisdiction:z.string().trim().max(100).optional(),issuedAt:z.coerce.date().optional(),expiresAt:z.coerce.date().optional(),evidenceReference:z.string().trim().min(1).max(1000)}).strict();
-const externalInput=z.object({providerName:z.string().trim().min(1).max(255),trainingName:z.string().trim().min(1).max(255),trainingDate:z.coerce.date(),trainingMinutes:z.number().int().positive().max(100_000).optional(),credentialNumber:z.string().trim().max(255).optional(),expiresAt:z.coerce.date().optional(),evidenceReference:z.string().trim().min(1).max(1000),notes:z.string().trim().max(2000).optional()}).strict();
+const credentialInput=z.object({credentialType:z.enum(["RN","CNS","CNP","PA","PHYSICIAN","CPR_INSTRUCTOR","FIRST_AID_INSTRUCTOR","OTHER"]),credentialName:z.string().trim().max(255).optional(),licenseNumber:z.string().trim().max(255).optional(),jurisdiction:z.string().trim().max(100).optional(),issuedAt:z.coerce.date().optional(),expiresAt:z.coerce.date().optional(),evidenceReference:evidenceReferenceSchema}).strict();
+const externalInput=z.object({providerName:z.string().trim().min(1).max(255),trainingName:z.string().trim().min(1).max(255),trainingDate:z.coerce.date(),trainingMinutes:z.number().int().positive().max(100_000).optional(),credentialNumber:z.string().trim().max(255).optional(),expiresAt:z.coerce.date().optional(),evidenceReference:evidenceReferenceSchema,notes:z.string().trim().max(2000).optional()}).strict();
 async function permission(user:Pick<User,"id">,organizationId:string,code:string){const{membership}=await requireOrganizationAccess(user,organizationId);await requirePermission(membership.id,code)}
 async function audit(organizationId:string,actorUserId:string,employeeId:string|undefined,eventType:string,entityType:string,entityId:string,metadataJson?:Prisma.InputJsonValue){await prisma.auditEvent.create({data:{organizationId,actorUserId,employeeId,eventType,entityType,entityId,metadataJson}})}
 
