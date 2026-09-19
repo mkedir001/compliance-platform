@@ -1,0 +1,2 @@
+import EvidenceOperations from "./evidence-operations";
+export default function Page(){return <><nav className="phase-nav" aria-label="Employer administration"><a href="/admin/compliance-operations">Employer operations</a><a href="/admin/action-center">Action center</a><a href="/admin/policy-operations">Policy operations</a><a href="/admin/competencies">Competency assessments</a></nav><EvidenceOperations/></>}

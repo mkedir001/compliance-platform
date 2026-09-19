@@ -1,0 +1,5 @@
+import { z } from "zod";
+import { requireAuthenticatedUser } from "@/domain/auth/authentication";
+import { errorResponse } from "@/domain/auth/errors";
+import { listEvidenceReviewQueue } from "@/domain/evidence/operations";
+export async function GET(request:Request,context:{params:Promise<{organizationId:string}>}){try{const user=await requireAuthenticatedUser(request),organizationId=(await context.params).organizationId,q=new URL(request.url).searchParams,type=q.get("type"),from=q.get("submittedFrom"),to=q.get("submittedTo");return Response.json(await listEvidenceReviewQueue(user,organizationId,{type:type?z.enum(["CREDENTIAL","EXTERNAL_TRAINING","COMPETENCY"]).parse(type):undefined,employeeId:q.get("employeeId")??undefined,status:q.get("status")??undefined,reviewerUserId:q.get("reviewerUserId")??undefined,submittedFrom:from?z.coerce.date().parse(from):undefined,submittedTo:to?z.coerce.date().parse(to):undefined,page:q.get("page")?Number(q.get("page")):undefined,pageSize:q.get("pageSize")?Number(q.get("pageSize")):undefined}))}catch(error){return errorResponse(error)}}
