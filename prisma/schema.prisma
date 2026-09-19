@@ -2407,6 +2407,11 @@ model AuditPackage {
   subjectType       String?
   subjectId         String?
   pointInTimeAt     DateTime?
+  rangeFrom         DateTime?
+  rangeTo           DateTime?
+  includedDomains   Json?
+  reportVersion     String?            @default("phase22-v1")
+  recordCount       Int?
   status            AuditPackageStatus @default(PENDING)
   requestedAt       DateTime           @default(now())
   generatedAt       DateTime?
@@ -2419,6 +2424,7 @@ model AuditPackage {
 
   @@index([organizationId, requestedAt])
   @@index([organizationId, scope, status])
+  @@index([organizationId, generatedAt])
   @@index([organizationId, subjectType, subjectId])
 }
 
