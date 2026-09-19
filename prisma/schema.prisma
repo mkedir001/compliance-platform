@@ -574,6 +574,36 @@ enum EmployeePortalInvitationStatus {
   REVOKED
 }
 
+enum NotificationAudience {
+  EMPLOYEE
+  ADMINISTRATOR
+  REVIEWER
+  CLINICAL
+}
+
+enum NotificationSeverity {
+  INFORMATIONAL
+  ACTION_REQUIRED
+  ESCALATED
+}
+
+enum NotificationStatus {
+  ACTIVE
+  RESOLVED
+}
+
+enum NotificationDeliveryChannel {
+  EMAIL
+}
+
+enum NotificationDeliveryStatus {
+  PENDING
+  SENT
+  RETRYABLE_FAILED
+  PERMANENT_FAILED
+  SKIPPED
+}
+
 model Brand {
   id               String         @id @default(cuid())
   name             String
@@ -652,6 +682,9 @@ model Organization {
   auditPackages             AuditPackage[]
   auditEvents               AuditEvent[]
   employeePortalInvitations EmployeePortalInvitation[]
+  notifications             Notification[]
+  notificationDeliveries    NotificationDelivery[]
+  notificationPreferences   NotificationPreference[]
 }
 
 model OrganizationLicense {
@@ -758,6 +791,8 @@ model User {
   auditEvents                 AuditEvent[]                             @relation("AuditEventActor")
   sentEmployeeInvitations     EmployeePortalInvitation[]               @relation("EmployeePortalInvitationSender")
   acceptedEmployeeInvitations EmployeePortalInvitation[]               @relation("EmployeePortalInvitationAccepter")
+  notifications               Notification[]                           @relation("NotificationRecipient")
+  notificationPreferences     NotificationPreference[]
 }
 
 model OrganizationMembership {
@@ -2427,4 +2462,70 @@ model EmployeePortalInvitation {
 
   @@index([organizationId, employeeId, invitedAt])
   @@index([organizationId, invitedEmail, status])
+}
+
+model Notification {
+  id                String               @id @default(cuid())
+  fingerprint       String               @unique
+  organizationId    String
+  recipientUserId   String
+  audience          NotificationAudience
+  notificationType  String
+  severity          NotificationSeverity @default(ACTION_REQUIRED)
+  sourceType        String
+  sourceId          String
+  title             String
+  message           String
+  actionHref        String?
+  dueAt             DateTime?
+  escalationLevel   Int                  @default(0)
+  status            NotificationStatus   @default(ACTIVE)
+  readAt             DateTime?
+  resolvedAt         DateTime?
+  resolutionReason  String?
+  generatedAt       DateTime             @default(now())
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+  organization      Organization         @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  recipient         User                 @relation("NotificationRecipient", fields: [recipientUserId], references: [id], onDelete: Restrict)
+  deliveries        NotificationDelivery[]
+
+  @@index([organizationId, recipientUserId, status, readAt, generatedAt])
+  @@index([organizationId, sourceType, sourceId, status])
+}
+
+model NotificationDelivery {
+  id                String                     @id @default(cuid())
+  organizationId    String
+  notificationId    String
+  channel           NotificationDeliveryChannel
+  status            NotificationDeliveryStatus @default(PENDING)
+  attemptCount      Int                        @default(0)
+  nextAttemptAt     DateTime?
+  lastAttemptAt     DateTime?
+  sentAt            DateTime?
+  provider          String?
+  providerMessageId String?
+  lastErrorCode     String?
+  createdAt         DateTime                   @default(now())
+  updatedAt         DateTime                   @updatedAt
+  organization      Organization               @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  notification      Notification               @relation(fields: [notificationId], references: [id], onDelete: Restrict)
+
+  @@unique([notificationId, channel])
+  @@index([organizationId, status, nextAttemptAt])
+}
+
+model NotificationPreference {
+  id                    String       @id @default(cuid())
+  organizationId        String
+  userId                String
+  optionalEmailEnabled  Boolean      @default(true)
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
+  organization          Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  user                  User         @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@unique([organizationId, userId])
+  @@index([organizationId, userId])
 }

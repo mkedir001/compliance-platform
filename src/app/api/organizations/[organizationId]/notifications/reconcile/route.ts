@@ -1,0 +1,2 @@
+import{requireAuthenticatedUser}from"@/domain/auth/authentication";import{errorResponse}from"@/domain/auth/errors";import{reconcileOrganizationNotifications}from"@/domain/notifications/service";
+export async function POST(request:Request,context:{params:Promise<{organizationId:string}>}){try{return Response.json(await reconcileOrganizationNotifications(await requireAuthenticatedUser(request),(await context.params).organizationId))}catch(error){return errorResponse(error)}}
