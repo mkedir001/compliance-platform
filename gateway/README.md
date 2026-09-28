@@ -12,9 +12,12 @@ Build and test:
 pnpm --dir gateway install --frozen-lockfile
 pnpm --dir gateway test
 pnpm --dir gateway run package
+pnpm --dir gateway run test:package
 ```
 
-Deploy `gateway/dist/gateway.zip` with handler `index.handler` and Node.js 22.
+Deploy `gateway/dist/gateway.zip` with handler exactly `index.handler`, Node.js
+22, and x86_64 architecture. The ZIP contains a CommonJS `index.js` at its root;
+AWS SDK v3 dependencies are bundled while Node built-ins remain runtime-native.
 Create proxy integrations for `POST /rate-limit` and `POST /evidence`. If the
 private REST API ID is `api-id`, its associated endpoint ID is `vpce-id`, and
 the stage is `prod`, configure the application with:
