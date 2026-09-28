@@ -1,0 +1,22 @@
+{
+  "name": "compliance-platform-aws-gateway",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.15.1",
+  "scripts": {
+    "test": "node --test test/*.node.mjs",
+    "build": "esbuild src/handler.mjs --bundle --platform=node --target=node22 --format=esm --outfile=dist/index.mjs",
+    "package": "pnpm build && cd dist && zip -q gateway.zip index.mjs"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "3.1141.0",
+    "@aws-sdk/client-s3": "3.1141.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild"]
+  }
+}

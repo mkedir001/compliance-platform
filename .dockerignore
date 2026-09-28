@@ -17,3 +17,4 @@ tests
 **/*.test.ts
 **/*.test.tsx
 docker-compose.yml
+gateway
