@@ -15,6 +15,38 @@ pnpm dev
 
 The seed command prints synthetic development user IDs. Enter one in the foundation console at `http://localhost:3000`. The `x-dev-user-id` adapter is disabled in production and must be replaced by the selected production authentication provider.
 
+## Production authentication
+
+Production uses one explicit `PRODUCTION_AUTH_MODE`. For AWS, set it to
+`aws-alb-cognito` and configure `AWS_ALB_AUTH_SIGNER_ARN`,
+`AWS_ALB_AUTH_ISSUER`, and `AWS_ALB_AUTH_CLIENT_ID`. The application verifies
+the ALB-signed `x-amzn-oidc-data` assertion using AWS's regional HTTPS public-key
+endpoint, then maps its signed `sub` claim to `User.authProviderUserId`.
+Unsigned `x-amzn-oidc-identity` and development headers are never trusted in
+production. The target-group readiness check remains unauthenticated because it
+reaches the target directly rather than traversing the authenticated listener.
+The ECS task must have outbound HTTPS access to
+`public-keys.auth.elb.<region>.amazonaws.com`; deployments in private subnets
+without internet egress must add a controlled egress path before enabling this
+mode. Key retrieval fails closed.
+
+Link the first bootstrapped administrator exactly once from a controlled task
+with production configuration loaded:
+
+```sh
+pnpm link:cognito-user -- --user-id <internal-user-id> --cognito-subject <cognito-subject>
+# or: pnpm link:cognito-user -- --email <exact-internal-email> --cognito-subject <cognito-subject>
+```
+
+The operation requires an active user and organization membership, rejects
+conflicts in either direction, fingerprints the external subject in the audit
+record, and is idempotent for the identical link. Rollback should restore the
+prior container revision and `PRODUCTION_AUTH_MODE`; identity links must not be
+silently removed or reassigned.
+Future invitees require a controlled Cognito-subject linkage before they can
+authenticate and claim an existing portal invitation; matching email alone
+never creates that identity link.
+
 Run verification with `pnpm test`, `pnpm typecheck`, `pnpm lint`, and `pnpm build`.
 
 ## Training architecture

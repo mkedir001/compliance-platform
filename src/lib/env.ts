@@ -1,9 +1,8 @@
 import { z } from "zod";
 
-const productionSchema = z.object({
+const productionInfrastructureSchema = z.object({
   DATABASE_URL: z.string().url().refine(value => value.startsWith("postgresql://") || value.startsWith("postgres://"), "DATABASE_URL must use PostgreSQL"),
   APP_BASE_URL: z.string().url().refine(value => value.startsWith("https://"), "APP_BASE_URL must use HTTPS in production"),
-  AUTH_PROXY_SECRET: z.string().min(32),
   JOB_SECRET: z.string().min(32),
   JOB_ACTOR_USER_ID: z.string().min(1),
   RATE_LIMIT_URL: z.string().url().refine(value => value.startsWith("https://"), "RATE_LIMIT_URL must use HTTPS"),
@@ -18,6 +17,25 @@ const productionSchema = z.object({
   const emailValues = [value.EMAIL_API_URL, value.EMAIL_API_TOKEN, value.EMAIL_FROM].filter(Boolean).length;
   if (emailValues !== 0 && emailValues !== 3) context.addIssue({ code: "custom", message: "EMAIL_API_URL, EMAIL_API_TOKEN, and EMAIL_FROM must be configured together", path: ["EMAIL_API_URL"] });
 });
+
+const productionAuthenticationSchema = z.discriminatedUnion("PRODUCTION_AUTH_MODE", [
+  z.object({
+    PRODUCTION_AUTH_MODE: z.literal("trusted-proxy-hmac"),
+    AUTH_PROXY_SECRET: z.string().min(32),
+    AWS_ALB_AUTH_SIGNER_ARN: z.string().optional(),
+    AWS_ALB_AUTH_ISSUER: z.string().optional(),
+    AWS_ALB_AUTH_CLIENT_ID: z.string().optional(),
+  }),
+  z.object({
+    PRODUCTION_AUTH_MODE: z.literal("aws-alb-cognito"),
+    AUTH_PROXY_SECRET: z.string().min(32).optional(),
+    AWS_ALB_AUTH_SIGNER_ARN: z.string().regex(/^arn:aws:elasticloadbalancing:[a-z0-9-]+:\d{12}:loadbalancer\/app\/[A-Za-z0-9-]+\/[a-f0-9]+$/),
+    AWS_ALB_AUTH_ISSUER: z.string().url().refine(value => value.startsWith("https://"), "AWS_ALB_AUTH_ISSUER must use HTTPS"),
+    AWS_ALB_AUTH_CLIENT_ID: z.string().min(1),
+  }),
+]);
+
+const productionSchema = productionInfrastructureSchema.and(productionAuthenticationSchema);
 
 export type ProductionEnvironment = z.infer<typeof productionSchema>;
 export function validateProductionEnvironment(source: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env) { return productionSchema.parse(source); }

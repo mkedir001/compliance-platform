@@ -16,7 +16,7 @@ import { enforceRateLimit, probeRateLimiter, requestRateKey, resetLocalRateLimit
 import { assertDevelopmentSeedAllowed } from "../prisma/seed-guard";
 
 const db = new PrismaClient();
-const production = { APP_BASE_URL: "https://compliance.example.test", AUTH_PROXY_SECRET: "a".repeat(32), JOB_SECRET: "b".repeat(32), JOB_ACTOR_USER_ID: "actor", RATE_LIMIT_URL: "https://limits.example.test/check", RATE_LIMIT_TOKEN: "c".repeat(20), EVIDENCE_STORAGE_MODE: "external-reference", EVIDENCE_STORAGE_URL: "https://evidence.example.test/v1/evidence", EVIDENCE_STORAGE_TOKEN: "d".repeat(20) };
+const production = { PRODUCTION_AUTH_MODE: "trusted-proxy-hmac", APP_BASE_URL: "https://compliance.example.test", AUTH_PROXY_SECRET: "a".repeat(32), JOB_SECRET: "b".repeat(32), JOB_ACTOR_USER_ID: "actor", RATE_LIMIT_URL: "https://limits.example.test/check", RATE_LIMIT_TOKEN: "c".repeat(20), EVIDENCE_STORAGE_MODE: "external-reference", EVIDENCE_STORAGE_URL: "https://evidence.example.test/v1/evidence", EVIDENCE_STORAGE_TOKEN: "d".repeat(20) };
 describe.sequential("Phase 23 production hardening", () => {
   let userId: string, ownerId: string, organizationId: string;
   beforeAll(async () => { const tag = `phase23-${Date.now()}`, user = await db.user.create({ data: { email: `${tag}@example.test`, status: "ACTIVE" } }), owner = await db.user.findUniqueOrThrow({ where: { email: "alex.owner@example.test" } }), organization = await db.organization.findFirstOrThrow({ where: { slug: "northstar-support-services" } }); userId = user.id; ownerId = owner.id; organizationId = organization.id; });
