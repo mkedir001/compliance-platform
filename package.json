@@ -13,6 +13,7 @@
     "db:seed": "prisma db seed",
     "bootstrap:production": "tsx scripts/bootstrap-production.ts",
     "link:cognito-user": "tsx scripts/link-cognito-user.ts",
+    "verify:linkage-runtime": "tsx scripts/verify-linkage-runtime.ts",
     "smoke:production": "tsx scripts/smoke-production.ts",
     "start": "next start"
   },

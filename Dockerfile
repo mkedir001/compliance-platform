@@ -33,10 +33,12 @@ ENV PORT="3000"
 
 COPY --from=production-dependencies --chown=node:node /app/node_modules ./node_modules
 COPY --from=builder --chown=node:node /app/.next ./.next
-COPY --chown=node:node package.json pnpm-lock.yaml next.config.ts ./
+COPY --chown=node:node package.json pnpm-lock.yaml next.config.ts tsconfig.json ./
 COPY --chown=node:node prisma ./prisma
 COPY --chown=node:node scripts ./scripts
-COPY --chown=node:node src/lib/env.ts ./src/lib/env.ts
+COPY --chown=node:node src/domain/auth/linkage.ts ./src/domain/auth/linkage.ts
+COPY --chown=node:node src/lib/env.ts src/lib/prisma.ts ./src/lib/
+RUN pnpm verify:linkage-runtime
 
 USER node
 EXPOSE 3000
