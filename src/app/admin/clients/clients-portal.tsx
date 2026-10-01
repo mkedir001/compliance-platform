@@ -24,6 +24,8 @@ type RenewalSummary = {
   affectedTemplates: string[];
   cycles: RenewalCycle[];
 };
+type DocumentationRequirement={id:string;name:string;documentType:string;state:string;satisfied:boolean;reason:string;documentId:string|null;dueDate:string|null;daysUntilDue:number|null;deadlinePhase:string|null;signatureStatus:string|null;outstandingRequests:{id:string;status:string;recipientName:string;actionHref:string}[];actionHref:string};
+type DocumentationReadiness={overallState:string;counts:{applicable:number;satisfied:number;current:number;missing:number;dueSoon:number;overdue:number;outstandingRequests:number;attentionNeeded:number;indeterminate:number};nearestActionableDeadline:string|null;highestPriorityIssue:DocumentationRequirement|null;requirements:DocumentationRequirement[];meaning:string};
 type ClientRow = {
   id: string;
   status: string;
@@ -34,6 +36,7 @@ type ClientRow = {
   intakes: { status: string; currentStep: string }[];
   _count: { services: number; documents: number };
   renewalSummary: RenewalSummary;
+  documentationReadiness: DocumentationReadiness;
 };
 type ClientDocument = {
   id: string;
@@ -73,7 +76,7 @@ const steps = ["CLIENT", "SERVICES", "REPRESENTATIVE", "CASE_MANAGER", "EMERGENC
 const pretty = (value: string) => value.toLowerCase().replaceAll("_", " ");
 const date = (value: string) => new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(value.length === 10 ? `${value}T12:00:00Z` : value));
 
-export default function ClientsPortal({ initialOrganizationId = "", initialClientId = "", initialDocumentId = "", initialRequestId = "", productionIdentity = false }: { initialOrganizationId?: string; initialClientId?: string; initialDocumentId?: string; initialRequestId?: string; productionIdentity?: boolean }) {
+export default function ClientsPortal({ initialOrganizationId = "", initialClientId = "", initialDocumentId = "", initialRequestId = "", initialView = "", productionIdentity = false }: { initialOrganizationId?: string; initialClientId?: string; initialDocumentId?: string; initialRequestId?: string; initialView?:string; productionIdentity?: boolean }) {
   const [userId, setUserId] = useState(""),
     [organizationId, setOrganizationId] = useState(initialOrganizationId),
     [clients, setClients] = useState<ClientRow[]>([]),
@@ -81,6 +84,7 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
     [search, setSearch] = useState(""),
     [status, setStatus] = useState(""),
     [renewalStatus, setRenewalStatus] = useState(""),
+    [readiness, setReadiness] = useState("ALL"),
     [tab, setTab] = useState("Overview"),
     [message, setMessage] = useState(""),
     [busy, setBusy] = useState(false);
@@ -103,7 +107,7 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
     }
   }
   async function load() {
-    await run(async () => setClients((await request(`?search=${encodeURIComponent(search)}&status=${encodeURIComponent(status)}&renewalStatus=${encodeURIComponent(renewalStatus)}`)) as ClientRow[]));
+    await run(async () => setClients((await request(`?search=${encodeURIComponent(search)}&status=${encodeURIComponent(status)}&renewalStatus=${encodeURIComponent(renewalStatus)}&readiness=${encodeURIComponent(readiness)}`)) as ClientRow[]));
   }
   async function open(id: string) {
     await run(async () => setSelected((await request(`/${id}`)) as ClientDetail));
@@ -111,7 +115,7 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
   async function refresh(text: string) {
     if (!selected) return;
     setSelected((await request(`/${selected.id}`)) as ClientDetail);
-    setClients((await request(`?search=${encodeURIComponent(search)}&status=${encodeURIComponent(status)}&renewalStatus=${encodeURIComponent(renewalStatus)}`)) as ClientRow[]);
+    setClients((await request(`?search=${encodeURIComponent(search)}&status=${encodeURIComponent(status)}&renewalStatus=${encodeURIComponent(renewalStatus)}&readiness=${encodeURIComponent(readiness)}`)) as ClientRow[]);
     setMessage(text);
   }
   async function create(event: FormEvent<HTMLFormElement>) {
@@ -261,18 +265,18 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
     if (productionIdentity && organizationId) {
       void load();
       if (initialClientId) {
-        setTab(initialDocumentId || initialRequestId ? "Documents" : "Overview");
+        setTab(initialDocumentId || initialRequestId || initialView==="Documents" ? "Documents" : initialView==="Readiness" ? "Readiness" : "Overview");
         void open(initialClientId);
       }
     }
-  }, [productionIdentity, organizationId, initialClientId, initialDocumentId, initialRequestId]);
+  }, [productionIdentity, organizationId, initialClientId, initialDocumentId, initialRequestId, initialView]);
   useEffect(() => {
     if (selected && initialDocumentId && tab === "Documents") document.getElementById(`document-${initialDocumentId}`)?.scrollIntoView({ block: "center" });
   }, [selected, initialDocumentId, tab]);
   useEffect(() => {
     if (selected && initialRequestId && tab === "Documents") document.getElementById(`request-${initialRequestId}`)?.scrollIntoView({ block: "center" });
   }, [selected, initialRequestId, tab]);
-  const tabs = ["Overview", "Intake", "Services", "Contacts", "Health", "Documents", "Signatures", "History"];
+  const tabs = ["Overview", "Readiness", "Intake", "Services", "Contacts", "Health", "Documents", "Signatures", "History"];
   return (
     <main className="admin-shell">
       <header>
@@ -327,6 +331,12 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
                 <option value="OVERDUE">Overdue</option>
               </select>
             </label>
+            <label>
+              Documentation readiness
+              <select value={readiness} onChange={(e)=>setReadiness(e.target.value)}>
+                <option value="ALL">All</option><option value="CURRENT">Ready / current</option><option value="ATTENTION_NEEDED">Attention needed</option><option value="MISSING">Missing documents</option><option value="DUE_SOON">Due soon</option><option value="OVERDUE">Overdue</option><option value="OUTSTANDING_REQUESTS">Outstanding requests</option>
+              </select>
+            </label>
             <button onClick={load}>Apply</button>
           </div>
         </div>
@@ -367,7 +377,7 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
         {clients.length ? (
           <div className="workforce-table" role="table">
             {clients.map((client) => (
-              <button key={client.id} className={`workforce-row renewal-${client.renewalSummary.status.toLowerCase()}`} onClick={() => open(client.id)}>
+              <button key={client.id} className={`workforce-row renewal-${client.documentationReadiness.overallState.toLowerCase()}`} onClick={() => open(client.id)}>
                 <span>
                   <strong>
                     {client.legalLastName}, {client.preferredName ?? client.legalFirstName}
@@ -375,8 +385,9 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
                 </span>
                 <span>{pretty(client.status)}</span>
                 <span className="renewal-badge">
-                  {client.renewalSummary.status === "OVERDUE" ? `Renewal overdue (${client.renewalSummary.overdueCount})` : client.renewalSummary.status === "DUE_SOON" ? `Renewal due soon (${client.renewalSummary.dueSoonCount})` : "Renewals current"}
-                  <small>{client.renewalSummary.nearestDeadline ? `Nearest ${date(client.renewalSummary.nearestDeadline)}` : "No renewal deadline"}</small>
+                  Documentation: {pretty(client.documentationReadiness.overallState)}
+                  <small>{client.documentationReadiness.counts.overdue} overdue · {client.documentationReadiness.counts.missing} missing · {client.documentationReadiness.counts.outstandingRequests} collection underway</small>
+                  <small>{client.documentationReadiness.nearestActionableDeadline ? `Nearest ${date(client.documentationReadiness.nearestActionableDeadline)}` : "No determinable deadline"}</small>
                 </span>
                 <span>{client._count.documents} awaiting signature</span>
               </button>
@@ -395,7 +406,7 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
                 {selected.legalFirstName} {selected.legalLastName}
               </h2>
               <p>
-                {pretty(selected.status)} · renewal status <strong>{pretty(selected.renewalSummary.status)}</strong>
+                {pretty(selected.status)} · documentation <strong>{pretty(selected.documentationReadiness.overallState)}</strong>
               </p>
             </div>
           </div>
@@ -417,6 +428,7 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
               </p>
             </article>
           ) : null}
+          {tab === "Readiness" ? <section className="renewal-panel"><h3>Documentation readiness</h3><p><strong>{pretty(selected.documentationReadiness.overallState)}</strong> · {selected.documentationReadiness.counts.satisfied} of {selected.documentationReadiness.counts.applicable} applicable requirement(s) currently satisfied</p><p>{selected.documentationReadiness.counts.missing} missing · {selected.documentationReadiness.counts.dueSoon} due soon · {selected.documentationReadiness.counts.overdue} overdue · {selected.documentationReadiness.counts.outstandingRequests} with collection underway</p><p>{selected.documentationReadiness.meaning}</p>{selected.documentationReadiness.requirements.map(item=><article key={item.id}><p className="eyebrow">{pretty(item.state)}{item.deadlinePhase?` · ${pretty(item.deadlinePhase)}`:""}</p><h4>{item.name}</h4><p>{item.reason}</p><p>{item.dueDate?`Due ${date(item.dueDate)}`:"No determinable deadline"}{item.signatureStatus?` · signature ${pretty(item.signatureStatus)}`:""}</p>{item.outstandingRequests.map(request=><p key={request.id}>Collection request {pretty(request.status)} for {request.recipientName}. <a href={request.actionHref}>Open request</a></p>)}<a href={item.actionHref}>Open document workflow</a></article>)}</section> : null}
           {tab === "Intake" ? (
             <form className="inline-form" onSubmit={saveBasics}>
               <label>
