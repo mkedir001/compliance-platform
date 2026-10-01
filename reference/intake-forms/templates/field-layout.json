@@ -1,0 +1,2310 @@
+{
+  "00_Intake_Checklist_Staff_Use.pdf": {
+    "CHK_001_Person_served": {
+      "page": 0,
+      "rect": [
+        50.0,
+        673.0,
+        298.0,
+        690.0
+      ],
+      "type": "/Tx"
+    },
+    "CHK_002_Date_of_birth": {
+      "page": 0,
+      "rect": [
+        306.0,
+        673.0,
+        405.2,
+        690.0
+      ],
+      "type": "/Tx"
+    },
+    "CHK_003_Service_start_date": {
+      "page": 0,
+      "rect": [
+        413.2,
+        673.0,
+        562.0,
+        690.0
+      ],
+      "type": "/Tx"
+    },
+    "CHK_004_Service_s": {
+      "page": 0,
+      "rect": [
+        50.0,
+        640.0,
+        352.4,
+        657.0
+      ],
+      "type": "/Tx"
+    },
+    "CHK_005_Intake_completed_by": {
+      "page": 0,
+      "rect": [
+        360.4,
+        640.0,
+        562.0,
+        657.0
+      ],
+      "type": "/Tx"
+    },
+    "CHK_006_Referral_and_case_manager_contact_inform": {
+      "page": 0,
+      "rect": [
+        52.0,
+        578.5,
+        62.0,
+        588.5
+      ],
+      "type": "/Btn"
+    },
+    "CHK_007_Referral_and_case_manager_contact_inform": {
+      "page": 0,
+      "rect": [
+        477.0,
+        572.5,
+        562.0,
+        585.5
+      ],
+      "type": "/Tx"
+    },
+    "CHK_008_Coordinated_Service_and_Support_Plan_CSS": {
+      "page": 0,
+      "rect": [
+        52.0,
+        555.5,
+        62.0,
+        565.5
+      ],
+      "type": "/Btn"
+    },
+    "CHK_009_Coordinated_Service_and_Support_Plan_CSS": {
+      "page": 0,
+      "rect": [
+        477.0,
+        549.5,
+        562.0,
+        562.5
+      ],
+      "type": "/Tx"
+    },
+    "CHK_010_Service_authorization_funding_confirmed": {
+      "page": 0,
+      "rect": [
+        52.0,
+        532.5,
+        62.0,
+        542.5
+      ],
+      "type": "/Btn"
+    },
+    "CHK_011_Service_authorization_funding_confirmed_": {
+      "page": 0,
+      "rect": [
+        477.0,
+        526.5,
+        562.0,
+        539.5
+      ],
+      "type": "/Tx"
+    },
+    "CHK_012_Form_01_Client_Information_Face_Sheet_co": {
+      "page": 0,
+      "rect": [
+        52.0,
+        509.5,
+        62.0,
+        519.5
+      ],
+      "type": "/Btn"
+    },
+    "CHK_013_Form_01_Client_Information_Face_Sheet_co": {
+      "page": 0,
+      "rect": [
+        477.0,
+        503.5,
+        562.0,
+        516.5
+      ],
+      "type": "/Tx"
+    },
+    "CHK_014_Form_02_Rights_Notice_given_and_signed_r": {
+      "page": 0,
+      "rect": [
+        52.0,
+        486.5,
+        62.0,
+        496.5
+      ],
+      "type": "/Btn"
+    },
+    "CHK_015_Form_02_Rights_Notice_given_and_signed_r": {
+      "page": 0,
+      "rect": [
+        477.0,
+        480.5,
+        562.0,
+        493.5
+      ],
+      "type": "/Tx"
+    },
+    "CHK_016_Form_03_Policy_Acknowledgment_all_polici": {
+      "page": 0,
+      "rect": [
+        52.0,
+        463.5,
+        62.0,
+        473.5
+      ],
+      "type": "/Btn"
+    },
+    "CHK_017_Form_03_Policy_Acknowledgment_all_polici": {
+      "page": 0,
+      "rect": [
+        477.0,
+        457.5,
+        562.0,
+        470.5
+      ],
+      "type": "/Tx"
+    },
+    "CHK_018_Form_04_Release_s_of_Information_signed_": {
+      "page": 0,
+      "rect": [
+        52.0,
+        440.5,
+        62.0,
+        450.5
+      ],
+      "type": "/Btn"
+    },
+    "CHK_019_Form_04_Release_s_of_Information_signed_": {
+      "page": 0,
+      "rect": [
+        477.0,
+        434.5,
+        562.0,
+        447.5
+      ],
+      "type": "/Tx"
+    },
+    "CHK_020_Form_05_Medication_Authorization_signed_": {
+      "page": 0,
+      "rect": [
+        52.0,
+        417.5,
+        62.0,
+        427.5
+      ],
+      "type": "/Btn"
+    },
+    "CHK_021_Form_05_Medication_Authorization_signed_": {
+      "page": 0,
+      "rect": [
+        477.0,
+        411.5,
+        562.0,
+        424.5
+      ],
+      "type": "/Tx"
+    },
+    "CHK_022_Form_06_Funds_and_Property_Authorization": {
+      "page": 0,
+      "rect": [
+        52.0,
+        394.5,
+        62.0,
+        404.5
+      ],
+      "type": "/Btn"
+    },
+    "CHK_023_Form_06_Funds_and_Property_Authorization": {
+      "page": 0,
+      "rect": [
+        477.0,
+        388.5,
+        562.0,
+        401.5
+      ],
+      "type": "/Tx"
+    },
+    "CHK_024_Person_specific_orientation_completed_by": {
+      "page": 0,
+      "rect": [
+        52.0,
+        371.5,
+        62.0,
+        381.5
+      ],
+      "type": "/Btn"
+    },
+    "CHK_025_Person_specific_orientation_completed_by": {
+      "page": 0,
+      "rect": [
+        477.0,
+        365.5,
+        562.0,
+        378.5
+      ],
+      "type": "/Tx"
+    },
+    "CHK_026_Form_07_Preliminary_Support_Plan_Self_Ma": {
+      "page": 0,
+      "rect": [
+        52.0,
+        318.5,
+        62.0,
+        328.5
+      ],
+      "type": "/Btn"
+    },
+    "CHK_027_Form_07_Preliminary_Support_Plan_Self_Ma": {
+      "page": 0,
+      "rect": [
+        477.0,
+        312.5,
+        562.0,
+        325.5
+      ],
+      "type": "/Tx"
+    },
+    "CHK_028_Support_team_meeting_held_within_45_cale": {
+      "page": 0,
+      "rect": [
+        52.0,
+        291.5,
+        62.0,
+        301.5
+      ],
+      "type": "/Btn"
+    },
+    "CHK_029_Support_team_meeting_held_within_45_cale": {
+      "page": 0,
+      "rect": [
+        477.0,
+        285.5,
+        562.0,
+        298.5
+      ],
+      "type": "/Tx"
+    },
+    "CHK_030_CSSP_Addendum_written_and_signed_Form_08": {
+      "page": 0,
+      "rect": [
+        52.0,
+        268.5,
+        62.0,
+        278.5
+      ],
+      "type": "/Btn"
+    },
+    "CHK_031_CSSP_Addendum_written_and_signed_Form_08": {
+      "page": 0,
+      "rect": [
+        477.0,
+        262.5,
+        562.0,
+        275.5
+      ],
+      "type": "/Tx"
+    },
+    "CHK_032_Progress_review_schedule_set_per_the_per": {
+      "page": 0,
+      "rect": [
+        52.0,
+        245.5,
+        62.0,
+        255.5
+      ],
+      "type": "/Btn"
+    },
+    "CHK_033_Progress_review_schedule_set_per_the_per": {
+      "page": 0,
+      "rect": [
+        477.0,
+        239.5,
+        562.0,
+        252.5
+      ],
+      "type": "/Tx"
+    },
+    "CHK_034_Medication_Administration_Record_MAR_sta": {
+      "page": 0,
+      "rect": [
+        52.0,
+        222.5,
+        62.0,
+        232.5
+      ],
+      "type": "/Btn"
+    },
+    "CHK_035_Medication_Administration_Record_MAR_sta": {
+      "page": 0,
+      "rect": [
+        477.0,
+        216.5,
+        562.0,
+        229.5
+      ],
+      "type": "/Tx"
+    },
+    "CHK_036_All_signed_forms_uploaded_to_the_person_": {
+      "page": 0,
+      "rect": [
+        52.0,
+        199.5,
+        62.0,
+        209.5
+      ],
+      "type": "/Btn"
+    },
+    "CHK_037_All_signed_forms_uploaded_to_the_person_": {
+      "page": 0,
+      "rect": [
+        477.0,
+        193.5,
+        562.0,
+        206.5
+      ],
+      "type": "/Tx"
+    },
+    "CHK_038_Notes_follow_up_needed": {
+      "page": 0,
+      "rect": [
+        50.0,
+        77.5,
+        562.0,
+        147.5
+      ],
+      "type": "/Tx"
+    },
+    "CHK_039_pg2_Person_served_name": {
+      "page": 1,
+      "rect": [
+        50.0,
+        673.0,
+        352.4,
+        690.0
+      ],
+      "type": "/Tx"
+    },
+    "CHK_040_pg2_Date_of_birth": {
+      "page": 1,
+      "rect": [
+        360.4,
+        673.0,
+        562.0,
+        690.0
+      ],
+      "type": "/Tx"
+    },
+    "CHK_041_Signature_Staff_completing_intake": {
+      "page": 1,
+      "rect": [
+        50.0,
+        635.0,
+        275.28,
+        657.0
+      ],
+      "type": "/Tx"
+    },
+    "CHK_042_Printed_name_Staff_completing_intake": {
+      "page": 1,
+      "rect": [
+        283.28,
+        635.0,
+        467.6,
+        657.0
+      ],
+      "type": "/Tx"
+    },
+    "CHK_043_Date_Staff_completing_intake": {
+      "page": 1,
+      "rect": [
+        475.6,
+        635.0,
+        562.0,
+        657.0
+      ],
+      "type": "/Tx"
+    },
+    "CHK_044_Signature_Designated_coordinator_manager": {
+      "page": 1,
+      "rect": [
+        50.0,
+        595.0,
+        275.28,
+        617.0
+      ],
+      "type": "/Tx"
+    },
+    "CHK_045_Printed_name_Designated_coordinator_mana": {
+      "page": 1,
+      "rect": [
+        283.28,
+        595.0,
+        467.6,
+        617.0
+      ],
+      "type": "/Tx"
+    },
+    "CHK_046_Date_Designated_coordinator_manager_revi": {
+      "page": 1,
+      "rect": [
+        475.6,
+        595.0,
+        562.0,
+        617.0
+      ],
+      "type": "/Tx"
+    }
+  },
+  "01_Client_Information_Face_Sheet.pdf": {
+    "FACE_001_Legal_first_name": {
+      "page": 0,
+      "rect": [
+        50.0,
+        653.0,
+        223.6,
+        670.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_002_Last_name": {
+      "page": 0,
+      "rect": [
+        231.6,
+        653.0,
+        405.2,
+        670.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_003_Preferred_name": {
+      "page": 0,
+      "rect": [
+        413.2,
+        653.0,
+        562.0,
+        670.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_004_Date_of_birth": {
+      "page": 0,
+      "rect": [
+        50.0,
+        620.0,
+        172.0,
+        637.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_005_Gender": {
+      "page": 0,
+      "rect": [
+        180.0,
+        620.0,
+        277.6,
+        637.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_006_Phone": {
+      "page": 0,
+      "rect": [
+        285.6,
+        620.0,
+        407.6,
+        637.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_007_Email": {
+      "page": 0,
+      "rect": [
+        415.6,
+        620.0,
+        562.0,
+        637.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_008_Street_address": {
+      "page": 0,
+      "rect": [
+        50.0,
+        587.0,
+        318.4,
+        604.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_009_City": {
+      "page": 0,
+      "rect": [
+        326.4,
+        587.0,
+        424.0,
+        604.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_010_State": {
+      "page": 0,
+      "rect": [
+        432.0,
+        587.0,
+        480.8,
+        604.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_011_ZIP": {
+      "page": 0,
+      "rect": [
+        488.8,
+        587.0,
+        562.0,
+        604.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_012_MA_PMI_number": {
+      "page": 0,
+      "rect": [
+        50.0,
+        554.0,
+        198.8,
+        571.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_013_Waiver_or_funding_program": {
+      "page": 0,
+      "rect": [
+        206.8,
+        554.0,
+        380.4,
+        571.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_014_County_tribe_of_financial_responsibility": {
+      "page": 0,
+      "rect": [
+        388.4,
+        554.0,
+        562.0,
+        571.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_015_Primary_language": {
+      "page": 0,
+      "rect": [
+        50.0,
+        521.0,
+        198.8,
+        538.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_016_Interpreter_needed_yes_no": {
+      "page": 0,
+      "rect": [
+        206.8,
+        521.0,
+        330.8,
+        538.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_017_Preferred_way_to_communicate": {
+      "page": 0,
+      "rect": [
+        338.8,
+        521.0,
+        562.0,
+        538.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_018_Living_situation_Own_home_apartment": {
+      "page": 0,
+      "rect": [
+        54.0,
+        491.0,
+        64.0,
+        501.0
+      ],
+      "type": "/Btn"
+    },
+    "FACE_019_Living_situation_Family_home": {
+      "page": 0,
+      "rect": [
+        163.7275,
+        491.0,
+        173.7275,
+        501.0
+      ],
+      "type": "/Btn"
+    },
+    "FACE_020_Living_situation_Other": {
+      "page": 0,
+      "rect": [
+        240.373,
+        491.0,
+        250.373,
+        501.0
+      ],
+      "type": "/Btn"
+    },
+    "FACE_021_Service_s_to_be_provided_Individualized_": {
+      "page": 0,
+      "rect": [
+        54.0,
+        430.0,
+        64.0,
+        440.0
+      ],
+      "type": "/Btn"
+    },
+    "FACE_022_Service_s_to_be_provided_IHS_with_traini": {
+      "page": 0,
+      "rect": [
+        276.6245,
+        430.0,
+        286.6245,
+        440.0
+      ],
+      "type": "/Btn"
+    },
+    "FACE_023_Service_s_to_be_provided_other": {
+      "page": 0,
+      "rect": [
+        366.5045,
+        430.0,
+        376.5045,
+        440.0
+      ],
+      "type": "/Btn"
+    },
+    "FACE_024_Service_s_to_be_provided_other_text": {
+      "page": 0,
+      "rect": [
+        414.5045,
+        429.0,
+        562.0,
+        442.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_025_Service_start_date": {
+      "page": 0,
+      "rect": [
+        50.0,
+        396.0,
+        198.8,
+        413.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_026_Authorized_units_hours": {
+      "page": 0,
+      "rect": [
+        206.8,
+        396.0,
+        380.4,
+        413.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_027_Authorization_dates": {
+      "page": 0,
+      "rect": [
+        388.4,
+        396.0,
+        562.0,
+        413.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_028_Days_times_and_locations_services_will_b": {
+      "page": 0,
+      "rect": [
+        50.0,
+        342.0,
+        562.0,
+        380.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_029_legal_rep_type_None_person_is_own_guardi": {
+      "page": 0,
+      "rect": [
+        54.0,
+        295.0,
+        64.0,
+        305.0
+      ],
+      "type": "/Btn"
+    },
+    "FACE_030_legal_rep_type_Guardian": {
+      "page": 0,
+      "rect": [
+        197.7445,
+        295.0,
+        207.7445,
+        305.0
+      ],
+      "type": "/Btn"
+    },
+    "FACE_031_legal_rep_type_Conservator": {
+      "page": 0,
+      "rect": [
+        260.705,
+        295.0,
+        270.705,
+        305.0
+      ],
+      "type": "/Btn"
+    },
+    "FACE_032_legal_rep_type_Health_care_agent_POA": {
+      "page": 0,
+      "rect": [
+        334.996,
+        295.0,
+        344.996,
+        305.0
+      ],
+      "type": "/Btn"
+    },
+    "FACE_033_legal_rep_type_Parent_of_minor": {
+      "page": 0,
+      "rect": [
+        455.1275,
+        295.0,
+        465.1275,
+        305.0
+      ],
+      "type": "/Btn"
+    },
+    "FACE_034_Name": {
+      "page": 0,
+      "rect": [
+        50.0,
+        261.0,
+        248.4,
+        278.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_035_Relationship": {
+      "page": 0,
+      "rect": [
+        256.4,
+        261.0,
+        380.4,
+        278.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_036_Phone": {
+      "page": 0,
+      "rect": [
+        388.4,
+        261.0,
+        562.0,
+        278.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_037_Address": {
+      "page": 0,
+      "rect": [
+        50.0,
+        228.0,
+        352.4,
+        245.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_038_Email": {
+      "page": 0,
+      "rect": [
+        360.4,
+        228.0,
+        562.0,
+        245.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_039_Case_manager_name": {
+      "page": 0,
+      "rect": [
+        50.0,
+        165.0,
+        248.4,
+        182.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_040_Agency_county": {
+      "page": 0,
+      "rect": [
+        256.4,
+        165.0,
+        430.0,
+        182.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_041_Phone": {
+      "page": 0,
+      "rect": [
+        438.0,
+        165.0,
+        562.0,
+        182.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_042_Email": {
+      "page": 0,
+      "rect": [
+        50.0,
+        132.0,
+        302.0,
+        149.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_043_Supervisor_name_and_phone": {
+      "page": 0,
+      "rect": [
+        310.0,
+        132.0,
+        562.0,
+        149.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_044_pg2_Person_served_name": {
+      "page": 1,
+      "rect": [
+        50.0,
+        683.0,
+        352.4,
+        700.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_045_pg2_Date_of_birth": {
+      "page": 1,
+      "rect": [
+        360.4,
+        683.0,
+        562.0,
+        700.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_046_Name_row1": {
+      "page": 1,
+      "rect": [
+        50.0,
+        620.0,
+        191.36,
+        636.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_047_Relationship_row1": {
+      "page": 1,
+      "rect": [
+        193.36,
+        620.0,
+        283.52,
+        636.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_048_Phone_row1": {
+      "page": 1,
+      "rect": [
+        285.52,
+        620.0,
+        375.68,
+        636.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_049_Alternate_phone_row1": {
+      "page": 1,
+      "rect": [
+        377.68,
+        620.0,
+        467.84,
+        636.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_050_May_we_share_info_Y_N_row1": {
+      "page": 1,
+      "rect": [
+        469.84,
+        620.0,
+        560.0,
+        636.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_051_Name_row2": {
+      "page": 1,
+      "rect": [
+        50.0,
+        602.0,
+        191.36,
+        618.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_052_Relationship_row2": {
+      "page": 1,
+      "rect": [
+        193.36,
+        602.0,
+        283.52,
+        618.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_053_Phone_row2": {
+      "page": 1,
+      "rect": [
+        285.52,
+        602.0,
+        375.68,
+        618.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_054_Alternate_phone_row2": {
+      "page": 1,
+      "rect": [
+        377.68,
+        602.0,
+        467.84,
+        618.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_055_May_we_share_info_Y_N_row2": {
+      "page": 1,
+      "rect": [
+        469.84,
+        602.0,
+        560.0,
+        618.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_056_Name_row3": {
+      "page": 1,
+      "rect": [
+        50.0,
+        584.0,
+        191.36,
+        600.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_057_Relationship_row3": {
+      "page": 1,
+      "rect": [
+        193.36,
+        584.0,
+        283.52,
+        600.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_058_Phone_row3": {
+      "page": 1,
+      "rect": [
+        285.52,
+        584.0,
+        375.68,
+        600.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_059_Alternate_phone_row3": {
+      "page": 1,
+      "rect": [
+        377.68,
+        584.0,
+        467.84,
+        600.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_060_May_we_share_info_Y_N_row3": {
+      "page": 1,
+      "rect": [
+        469.84,
+        584.0,
+        560.0,
+        600.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_061_Primary_care_provider": {
+      "page": 1,
+      "rect": [
+        50.0,
+        519.0,
+        248.4,
+        536.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_062_Clinic": {
+      "page": 1,
+      "rect": [
+        256.4,
+        519.0,
+        430.0,
+        536.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_063_Phone": {
+      "page": 1,
+      "rect": [
+        438.0,
+        519.0,
+        562.0,
+        536.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_064_Dentist": {
+      "page": 1,
+      "rect": [
+        50.0,
+        486.0,
+        248.4,
+        503.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_065_Pharmacy": {
+      "page": 1,
+      "rect": [
+        256.4,
+        486.0,
+        430.0,
+        503.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_066_Pharmacy_phone": {
+      "page": 1,
+      "rect": [
+        438.0,
+        486.0,
+        562.0,
+        503.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_067_Health_insurance_health_plan": {
+      "page": 1,
+      "rect": [
+        50.0,
+        453.0,
+        302.0,
+        470.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_068_Member_ID": {
+      "page": 1,
+      "rect": [
+        310.0,
+        453.0,
+        562.0,
+        470.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_069_Diagnoses_health_conditions": {
+      "page": 1,
+      "rect": [
+        50.0,
+        403.0,
+        562.0,
+        437.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_070_Allergies_medication_food_environmental_": {
+      "page": 1,
+      "rect": [
+        50.0,
+        357.0,
+        562.0,
+        387.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_071_Special_diet_texture": {
+      "page": 1,
+      "rect": [
+        50.0,
+        324.0,
+        302.0,
+        341.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_072_Choking_or_swallowing_risk_describe": {
+      "page": 1,
+      "rect": [
+        310.0,
+        324.0,
+        562.0,
+        341.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_073_Seizures_type_protocol": {
+      "page": 1,
+      "rect": [
+        50.0,
+        291.0,
+        302.0,
+        308.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_074_Mobility_adaptive_equipment": {
+      "page": 1,
+      "rect": [
+        310.0,
+        291.0,
+        562.0,
+        308.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_075_Current_medication_row1": {
+      "page": 1,
+      "rect": [
+        50.0,
+        258.0,
+        191.36,
+        274.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_076_Dose_row1": {
+      "page": 1,
+      "rect": [
+        193.36,
+        258.0,
+        263.04,
+        274.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_077_Time_s_row1": {
+      "page": 1,
+      "rect": [
+        265.04,
+        258.0,
+        344.96,
+        274.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_078_Reason_row1": {
+      "page": 1,
+      "rect": [
+        346.96,
+        258.0,
+        467.84,
+        274.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_079_Prescriber_row1": {
+      "page": 1,
+      "rect": [
+        469.84,
+        258.0,
+        560.0,
+        274.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_080_Current_medication_row2": {
+      "page": 1,
+      "rect": [
+        50.0,
+        240.0,
+        191.36,
+        256.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_081_Dose_row2": {
+      "page": 1,
+      "rect": [
+        193.36,
+        240.0,
+        263.04,
+        256.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_082_Time_s_row2": {
+      "page": 1,
+      "rect": [
+        265.04,
+        240.0,
+        344.96,
+        256.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_083_Reason_row2": {
+      "page": 1,
+      "rect": [
+        346.96,
+        240.0,
+        467.84,
+        256.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_084_Prescriber_row2": {
+      "page": 1,
+      "rect": [
+        469.84,
+        240.0,
+        560.0,
+        256.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_085_Current_medication_row3": {
+      "page": 1,
+      "rect": [
+        50.0,
+        222.0,
+        191.36,
+        238.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_086_Dose_row3": {
+      "page": 1,
+      "rect": [
+        193.36,
+        222.0,
+        263.04,
+        238.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_087_Time_s_row3": {
+      "page": 1,
+      "rect": [
+        265.04,
+        222.0,
+        344.96,
+        238.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_088_Reason_row3": {
+      "page": 1,
+      "rect": [
+        346.96,
+        222.0,
+        467.84,
+        238.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_089_Prescriber_row3": {
+      "page": 1,
+      "rect": [
+        469.84,
+        222.0,
+        560.0,
+        238.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_090_Current_medication_row4": {
+      "page": 1,
+      "rect": [
+        50.0,
+        204.0,
+        191.36,
+        220.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_091_Dose_row4": {
+      "page": 1,
+      "rect": [
+        193.36,
+        204.0,
+        263.04,
+        220.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_092_Time_s_row4": {
+      "page": 1,
+      "rect": [
+        265.04,
+        204.0,
+        344.96,
+        220.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_093_Reason_row4": {
+      "page": 1,
+      "rect": [
+        346.96,
+        204.0,
+        467.84,
+        220.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_094_Prescriber_row4": {
+      "page": 1,
+      "rect": [
+        469.84,
+        204.0,
+        560.0,
+        220.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_095_Current_medication_row5": {
+      "page": 1,
+      "rect": [
+        50.0,
+        186.0,
+        191.36,
+        202.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_096_Dose_row5": {
+      "page": 1,
+      "rect": [
+        193.36,
+        186.0,
+        263.04,
+        202.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_097_Time_s_row5": {
+      "page": 1,
+      "rect": [
+        265.04,
+        186.0,
+        344.96,
+        202.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_098_Reason_row5": {
+      "page": 1,
+      "rect": [
+        346.96,
+        186.0,
+        467.84,
+        202.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_099_Prescriber_row5": {
+      "page": 1,
+      "rect": [
+        469.84,
+        186.0,
+        560.0,
+        202.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_100_Medication_responsibility_Person_manages": {
+      "page": 1,
+      "rect": [
+        54.0,
+        154.0,
+        64.0,
+        164.0
+      ],
+      "type": "/Btn"
+    },
+    "FACE_101_Medication_responsibility_Family_other_m": {
+      "page": 1,
+      "rect": [
+        211.914,
+        154.0,
+        221.914,
+        164.0
+      ],
+      "type": "/Btn"
+    },
+    "FACE_102_Medication_responsibility_Radiant_Care_a": {
+      "page": 1,
+      "rect": [
+        328.722,
+        154.0,
+        338.722,
+        164.0
+      ],
+      "type": "/Btn"
+    },
+    "FACE_103_Medication_responsibility_Radiant_Care_a": {
+      "page": 1,
+      "rect": [
+        54.0,
+        139.0,
+        64.0,
+        149.0
+      ],
+      "type": "/Btn"
+    },
+    "FACE_104_Other_health_needs_treatments_or_protoco": {
+      "page": 1,
+      "rect": [
+        50.0,
+        84.0,
+        562.0,
+        122.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_105_pg3_Person_served_name": {
+      "page": 2,
+      "rect": [
+        50.0,
+        683.0,
+        352.4,
+        700.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_106_pg3_Date_of_birth": {
+      "page": 2,
+      "rect": [
+        360.4,
+        683.0,
+        562.0,
+        700.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_107_Strengths_interests_and_what_is_importan": {
+      "page": 2,
+      "rect": [
+        50.0,
+        597.0,
+        562.0,
+        637.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_108_Cultural_religious_or_personal_practices": {
+      "page": 2,
+      "rect": [
+        50.0,
+        549.0,
+        562.0,
+        581.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_109_Supports_needed_for_safety_communication": {
+      "page": 2,
+      "rect": [
+        50.0,
+        493.0,
+        562.0,
+        533.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_110_Signature_Person_served_or_legal_represe": {
+      "page": 2,
+      "rect": [
+        50.0,
+        425.0,
+        275.28,
+        447.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_111_Printed_name_Person_served_or_legal_repr": {
+      "page": 2,
+      "rect": [
+        283.28,
+        425.0,
+        467.6,
+        447.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_112_Date_Person_served_or_legal_representati": {
+      "page": 2,
+      "rect": [
+        475.6,
+        425.0,
+        562.0,
+        447.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_113_Signature_Radiant_Care_staff_completing_": {
+      "page": 2,
+      "rect": [
+        50.0,
+        385.0,
+        275.28,
+        407.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_114_Printed_name_Radiant_Care_staff_completi": {
+      "page": 2,
+      "rect": [
+        283.28,
+        385.0,
+        467.6,
+        407.0
+      ],
+      "type": "/Tx"
+    },
+    "FACE_115_Date_Radiant_Care_staff_completing_form": {
+      "page": 2,
+      "rect": [
+        475.6,
+        385.0,
+        562.0,
+        407.0
+      ],
+      "type": "/Tx"
+    }
+  },
+  "02_Service_Recipient_Rights_Acknowledgment.pdf": {
+    "RIGHTS_001_pg2_Person_served_name": {
+      "page": 1,
+      "rect": [
+        50.0,
+        673.0,
+        352.4,
+        690.0
+      ],
+      "type": "/Tx"
+    },
+    "RIGHTS_002_pg2_Date_of_birth": {
+      "page": 1,
+      "rect": [
+        360.4,
+        673.0,
+        562.0,
+        690.0
+      ],
+      "type": "/Tx"
+    },
+    "RIGHTS_003_Radiant_Care_contact_for_problems_or_gri": {
+      "page": 1,
+      "rect": [
+        50.0,
+        640.0,
+        327.2,
+        657.0
+      ],
+      "type": "/Tx"
+    },
+    "RIGHTS_004_Phone_email": {
+      "page": 1,
+      "rect": [
+        335.2,
+        640.0,
+        562.0,
+        657.0
+      ],
+      "type": "/Tx"
+    },
+    "RIGHTS_005_I_received_a_written_copy_of_these_right": {
+      "page": 1,
+      "rect": [
+        52.0,
+        593.0,
+        62.0,
+        603.0
+      ],
+      "type": "/Btn"
+    },
+    "RIGHTS_006_I_received_a_written_copy_of_these_right": {
+      "page": 1,
+      "rect": [
+        477.0,
+        587.0,
+        562.0,
+        600.0
+      ],
+      "type": "/Tx"
+    },
+    "RIGHTS_007_These_rights_were_explained_to_me_in_a_w": {
+      "page": 1,
+      "rect": [
+        52.0,
+        570.0,
+        62.0,
+        580.0
+      ],
+      "type": "/Btn"
+    },
+    "RIGHTS_008_These_rights_were_explained_to_me_in_a_w": {
+      "page": 1,
+      "rect": [
+        477.0,
+        564.0,
+        562.0,
+        577.0
+      ],
+      "type": "/Tx"
+    },
+    "RIGHTS_009_How_rights_were_explained_In_person": {
+      "page": 1,
+      "rect": [
+        54.0,
+        534.0,
+        64.0,
+        544.0
+      ],
+      "type": "/Btn"
+    },
+    "RIGHTS_010_How_rights_were_explained_Phone_video": {
+      "page": 1,
+      "rect": [
+        117.4365,
+        534.0,
+        127.4365,
+        544.0
+      ],
+      "type": "/Btn"
+    },
+    "RIGHTS_011_How_rights_were_explained_Interpreter_us": {
+      "page": 1,
+      "rect": [
+        197.414,
+        534.0,
+        207.414,
+        544.0
+      ],
+      "type": "/Btn"
+    },
+    "RIGHTS_012_How_rights_were_explained_Easy_read_visu": {
+      "page": 1,
+      "rect": [
+        285.4155,
+        534.0,
+        295.4155,
+        544.0
+      ],
+      "type": "/Btn"
+    },
+    "RIGHTS_013_How_rights_were_explained_other": {
+      "page": 1,
+      "rect": [
+        380.965,
+        534.0,
+        390.965,
+        544.0
+      ],
+      "type": "/Btn"
+    },
+    "RIGHTS_014_How_rights_were_explained_other_text": {
+      "page": 1,
+      "rect": [
+        428.965,
+        533.0,
+        562.0,
+        546.0
+      ],
+      "type": "/Tx"
+    },
+    "RIGHTS_015_Annual_review_of_rights_use_for_yearly_r": {
+      "page": 1,
+      "rect": [
+        52.0,
+        516.0,
+        62.0,
+        526.0
+      ],
+      "type": "/Btn"
+    },
+    "RIGHTS_016_Annual_review_of_rights_use_for_yearly_r": {
+      "page": 1,
+      "rect": [
+        477.0,
+        510.0,
+        562.0,
+        523.0
+      ],
+      "type": "/Tx"
+    },
+    "RIGHTS_017_Signature_Person_served": {
+      "page": 1,
+      "rect": [
+        50.0,
+        472.0,
+        275.28,
+        494.0
+      ],
+      "type": "/Tx"
+    },
+    "RIGHTS_018_Printed_name_Person_served": {
+      "page": 1,
+      "rect": [
+        283.28,
+        472.0,
+        467.6,
+        494.0
+      ],
+      "type": "/Tx"
+    },
+    "RIGHTS_019_Date_Person_served": {
+      "page": 1,
+      "rect": [
+        475.6,
+        472.0,
+        562.0,
+        494.0
+      ],
+      "type": "/Tx"
+    },
+    "RIGHTS_020_Signature_Legal_representative_if_applic": {
+      "page": 1,
+      "rect": [
+        50.0,
+        432.0,
+        275.28,
+        454.0
+      ],
+      "type": "/Tx"
+    },
+    "RIGHTS_021_Printed_name_Legal_representative_if_app": {
+      "page": 1,
+      "rect": [
+        283.28,
+        432.0,
+        467.6,
+        454.0
+      ],
+      "type": "/Tx"
+    },
+    "RIGHTS_022_Date_Legal_representative_if_applicable": {
+      "page": 1,
+      "rect": [
+        475.6,
+        432.0,
+        562.0,
+        454.0
+      ],
+      "type": "/Tx"
+    },
+    "RIGHTS_023_Signature_Radiant_Care_staff": {
+      "page": 1,
+      "rect": [
+        50.0,
+        392.0,
+        275.28,
+        414.0
+      ],
+      "type": "/Tx"
+    },
+    "RIGHTS_024_Printed_name_Radiant_Care_staff": {
+      "page": 1,
+      "rect": [
+        283.28,
+        392.0,
+        467.6,
+        414.0
+      ],
+      "type": "/Tx"
+    },
+    "RIGHTS_025_Date_Radiant_Care_staff": {
+      "page": 1,
+      "rect": [
+        475.6,
+        392.0,
+        562.0,
+        414.0
+      ],
+      "type": "/Tx"
+    }
+  },
+  "04_Authorization_to_Release_Information.pdf": {
+    "ROI_001_Name": {
+      "page": 0,
+      "rect": [
+        50.0,
+        643.0,
+        298.0,
+        660.0
+      ],
+      "type": "/Tx"
+    },
+    "ROI_002_Date_of_birth": {
+      "page": 0,
+      "rect": [
+        306.0,
+        643.0,
+        430.0,
+        660.0
+      ],
+      "type": "/Tx"
+    },
+    "ROI_003_MA_PMI_number": {
+      "page": 0,
+      "rect": [
+        438.0,
+        643.0,
+        562.0,
+        660.0
+      ],
+      "type": "/Tx"
+    },
+    "ROI_004_direction_Radiant_Care_may_RELEASE_infor": {
+      "page": 0,
+      "rect": [
+        54.0,
+        596.0,
+        64.0,
+        606.0
+      ],
+      "type": "/Btn"
+    },
+    "ROI_005_direction_Radiant_Care_may_RECEIVE_infor": {
+      "page": 0,
+      "rect": [
+        245.9225,
+        596.0,
+        255.9225,
+        606.0
+      ],
+      "type": "/Btn"
+    },
+    "ROI_006_direction_Both": {
+      "page": 0,
+      "rect": [
+        445.8605,
+        596.0,
+        455.8605,
+        606.0
+      ],
+      "type": "/Btn"
+    },
+    "ROI_007_Name_of_person_or_agency": {
+      "page": 0,
+      "rect": [
+        50.0,
+        562.0,
+        327.2,
+        579.0
+      ],
+      "type": "/Tx"
+    },
+    "ROI_008_Relationship_role": {
+      "page": 0,
+      "rect": [
+        335.2,
+        562.0,
+        562.0,
+        579.0
+      ],
+      "type": "/Tx"
+    },
+    "ROI_009_Address": {
+      "page": 0,
+      "rect": [
+        50.0,
+        529.0,
+        347.6,
+        546.0
+      ],
+      "type": "/Tx"
+    },
+    "ROI_010_Phone": {
+      "page": 0,
+      "rect": [
+        355.6,
+        529.0,
+        454.8,
+        546.0
+      ],
+      "type": "/Tx"
+    },
+    "ROI_011_Fax_email": {
+      "page": 0,
+      "rect": [
+        462.8,
+        529.0,
+        562.0,
+        546.0
+      ],
+      "type": "/Tx"
+    },
+    "ROI_012_info_type_Face_sheet_contact_information": {
+      "page": 0,
+      "rect": [
+        54.0,
+        482.0,
+        64.0,
+        492.0
+      ],
+      "type": "/Btn"
+    },
+    "ROI_013_info_type_CSSP_and_CSSP_addendum": {
+      "page": 0,
+      "rect": [
+        202.9465,
+        482.0,
+        212.9465,
+        492.0
+      ],
+      "type": "/Btn"
+    },
+    "ROI_014_info_type_Assessments": {
+      "page": 0,
+      "rect": [
+        338.667,
+        482.0,
+        348.667,
+        492.0
+      ],
+      "type": "/Btn"
+    },
+    "ROI_015_info_type_Progress_reports": {
+      "page": 0,
+      "rect": [
+        417.208,
+        482.0,
+        427.208,
+        492.0
+      ],
+      "type": "/Btn"
+    },
+    "ROI_016_info_type_Medical_health_information": {
+      "page": 0,
+      "rect": [
+        54.0,
+        467.0,
+        64.0,
+        477.0
+      ],
+      "type": "/Btn"
+    },
+    "ROI_017_info_type_Medication_information": {
+      "page": 0,
+      "rect": [
+        185.9295,
+        467.0,
+        195.9295,
+        477.0
+      ],
+      "type": "/Btn"
+    },
+    "ROI_018_info_type_Incident_reports": {
+      "page": 0,
+      "rect": [
+        299.431,
+        467.0,
+        309.431,
+        477.0
+      ],
+      "type": "/Btn"
+    },
+    "ROI_019_info_type_Behavior_support_information": {
+      "page": 0,
+      "rect": [
+        386.013,
+        467.0,
+        396.013,
+        477.0
+      ],
+      "type": "/Btn"
+    },
+    "ROI_020_info_type_Service_schedules_attendance": {
+      "page": 0,
+      "rect": [
+        54.0,
+        452.0,
+        64.0,
+        462.0
+      ],
+      "type": "/Btn"
+    },
+    "ROI_021_info_type_Billing_information": {
+      "page": 0,
+      "rect": [
+        200.116,
+        452.0,
+        210.116,
+        462.0
+      ],
+      "type": "/Btn"
+    },
+    "ROI_022_info_type_other": {
+      "page": 0,
+      "rect": [
+        295.1895,
+        452.0,
+        305.1895,
+        462.0
+      ],
+      "type": "/Btn"
+    },
+    "ROI_023_info_type_other_text": {
+      "page": 0,
+      "rect": [
+        343.1895,
+        451.0,
+        562.0,
+        464.0
+      ],
+      "type": "/Tx"
+    },
+    "ROI_024_Limits_on_what_may_be_shared_if_any": {
+      "page": 0,
+      "rect": [
+        50.0,
+        405.0,
+        562.0,
+        435.0
+      ],
+      "type": "/Tx"
+    },
+    "ROI_025_purpose_Coordinate_services": {
+      "page": 0,
+      "rect": [
+        54.0,
+        358.0,
+        64.0,
+        368.0
+      ],
+      "type": "/Btn"
+    },
+    "ROI_026_purpose_Service_planning_team_meetings": {
+      "page": 0,
+      "rect": [
+        157.106,
+        358.0,
+        167.106,
+        368.0
+      ],
+      "type": "/Btn"
+    },
+    "ROI_027_purpose_Health_care": {
+      "page": 0,
+      "rect": [
+        310.77,
+        358.0,
+        320.77,
+        368.0
+      ],
+      "type": "/Btn"
+    },
+    "ROI_028_purpose_Billing_funding": {
+      "page": 0,
+      "rect": [
+        382.2305,
+        358.0,
+        392.2305,
+        368.0
+      ],
+      "type": "/Btn"
+    },
+    "ROI_029_purpose_Requested_by_person_legal_rep": {
+      "page": 0,
+      "rect": [
+        54.0,
+        343.0,
+        64.0,
+        353.0
+      ],
+      "type": "/Btn"
+    },
+    "ROI_030_purpose_other": {
+      "page": 0,
+      "rect": [
+        202.479,
+        343.0,
+        212.479,
+        353.0
+      ],
+      "type": "/Btn"
+    },
+    "ROI_031_purpose_other_text": {
+      "page": 0,
+      "rect": [
+        250.479,
+        342.0,
+        562.0,
+        355.0
+      ],
+      "type": "/Tx"
+    },
+    "ROI_032_This_authorization_expires_on_date_or_ev": {
+      "page": 0,
+      "rect": [
+        50.0,
+        279.0,
+        377.6,
+        296.0
+      ],
+      "type": "/Tx"
+    },
+    "ROI_033_Effective_date": {
+      "page": 0,
+      "rect": [
+        385.6,
+        279.0,
+        562.0,
+        296.0
+      ],
+      "type": "/Tx"
+    },
+    "ROI_034_Signature_Person_served": {
+      "page": 0,
+      "rect": [
+        50.0,
+        137.2,
+        275.28,
+        159.2
+      ],
+      "type": "/Tx"
+    },
+    "ROI_035_Printed_name_Person_served": {
+      "page": 0,
+      "rect": [
+        283.28,
+        137.2,
+        467.6,
+        159.2
+      ],
+      "type": "/Tx"
+    },
+    "ROI_036_Date_Person_served": {
+      "page": 0,
+      "rect": [
+        475.6,
+        137.2,
+        562.0,
+        159.2
+      ],
+      "type": "/Tx"
+    },
+    "ROI_037_Signature_Legal_representative_if_applic": {
+      "page": 0,
+      "rect": [
+        50.0,
+        97.2,
+        275.28,
+        119.2
+      ],
+      "type": "/Tx"
+    },
+    "ROI_038_Printed_name_Legal_representative_if_app": {
+      "page": 0,
+      "rect": [
+        283.28,
+        97.2,
+        467.6,
+        119.2
+      ],
+      "type": "/Tx"
+    },
+    "ROI_039_Date_Legal_representative_if_applicable": {
+      "page": 0,
+      "rect": [
+        475.6,
+        97.2,
+        562.0,
+        119.2
+      ],
+      "type": "/Tx"
+    },
+    "ROI_040_pg2_Person_served_name": {
+      "page": 1,
+      "rect": [
+        50.0,
+        673.0,
+        352.4,
+        690.0
+      ],
+      "type": "/Tx"
+    },
+    "ROI_041_pg2_Date_of_birth": {
+      "page": 1,
+      "rect": [
+        360.4,
+        673.0,
+        562.0,
+        690.0
+      ],
+      "type": "/Tx"
+    },
+    "ROI_042_Signature_Radiant_Care_staff": {
+      "page": 1,
+      "rect": [
+        50.0,
+        635.0,
+        275.28,
+        657.0
+      ],
+      "type": "/Tx"
+    },
+    "ROI_043_Printed_name_Radiant_Care_staff": {
+      "page": 1,
+      "rect": [
+        283.28,
+        635.0,
+        467.6,
+        657.0
+      ],
+      "type": "/Tx"
+    },
+    "ROI_044_Date_Radiant_Care_staff": {
+      "page": 1,
+      "rect": [
+        475.6,
+        635.0,
+        562.0,
+        657.0
+      ],
+      "type": "/Tx"
+    }
+  }
+}

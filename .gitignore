@@ -5,3 +5,9 @@ coverage
 *.log
 *.tsbuildinfo
 .DS_Store
+
+# User-supplied intake PDFs may contain client PHI. Only sanitized templates are tracked.
+/reference/intake-forms/00_Intake_Checklist_Staff_Use.pdf
+/reference/intake-forms/01_Client_Information_Face_Sheet.pdf
+/reference/intake-forms/02_Service_Recipient_Rights_Acknowledgment.pdf
+/reference/intake-forms/04_Authorization_to_Release_Information.pdf

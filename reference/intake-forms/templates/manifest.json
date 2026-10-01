@@ -1,0 +1,67 @@
+{
+  "templates": [
+    {
+      "file": "00_Intake_Checklist_Staff_Use.pdf",
+      "title": "Radiant Care LLC - Intake Checklist",
+      "pages": 2,
+      "sha256": "a9b2a281b4525b2f37d2d7b8b655d45d3952f4a8f42fbf29c1df0bafcafe7ffd",
+      "requiredText": [
+        "BEFORE OR ON THE FIRST DAY OF SERVICE",
+        "WITHIN THE REQUIRED TIMELINES (INTENSIVE SERVICES, INCLUDING IHS WITH TRAINING)",
+        "Form 07 - Preliminary Support Plan / Self-Management Assessment completed (within 15 calendar days of service start)",
+        "Support team meeting held (within 45 calendar days of service start) - Form 08",
+        "Signature - Designated coordinator / manager review"
+      ]
+    },
+    {
+      "file": "01_Client_Information_Face_Sheet.pdf",
+      "title": "Radiant Care LLC - Client Information / Face Sheet",
+      "pages": 3,
+      "sha256": "38249a5c74fed3a829c5c21e03dace70af1aff9a7fef3b15a9b813f236f5eeb3",
+      "requiredText": [
+        "PERSON SERVED",
+        "SERVICES WITH RADIANT CARE",
+        "LEGAL REPRESENTATIVE",
+        "EMERGENCY CONTACTS",
+        "HEALTH INFORMATION",
+        "ABOUT THE PERSON",
+        "Signature - Person served or legal representative",
+        "Signature - Radiant Care staff completing form"
+      ]
+    },
+    {
+      "file": "02_Service_Recipient_Rights_Acknowledgment.pdf",
+      "title": "Radiant Care LLC - Service Recipient Rights",
+      "pages": 2,
+      "sha256": "e12e9461a1f7411c39ce359ff9ce2e7150144fdbe8c6768aa17ffa88a82e8ebc",
+      "requiredText": [
+        "Radiant Care must give you this notice when services start and explain these rights to you and your legal representative within five working days of starting services, and once a year after that.",
+        "SERVICE-RELATED RIGHTS",
+        "PROTECTION-RELATED RIGHTS",
+        "ADVOCACY AND REPORTING CONTACTS",
+        "I received a written copy of these rights.",
+        "These rights were explained to me in a way I understand (within 5 working days of service start).",
+        "Signature - Person served",
+        "Signature - Legal representative (if applicable)",
+        "Signature - Radiant Care staff"
+      ]
+    },
+    {
+      "file": "04_Authorization_to_Release_Information.pdf",
+      "title": "Radiant Care LLC - Authorization to Release Information",
+      "pages": 2,
+      "sha256": "f377ff9686a8f52be9b2db492ef7e7e02422181aed0746f8e347ff48405b07ba",
+      "requiredText": [
+        "Use one form per person or agency",
+        "Radiant Care may RELEASE information to",
+        "Radiant Care may RECEIVE information from",
+        "This authorization expires on (date or event, max 1 year)",
+        "You may cancel this authorization at any time by telling Radiant Care in writing.",
+        "You have the right to a copy of this signed form.",
+        "Signature - Person served",
+        "Signature - Legal representative (if applicable)",
+        "Signature - Radiant Care staff"
+      ]
+    }
+  ]
+}

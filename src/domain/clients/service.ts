@@ -28,9 +28,28 @@ export const intakeInput = z.object({
 async function authorize(user:Pick<User,"id">, organizationId:string, permission:string){const{membership}=await requireOrganizationAccess(user,organizationId);await requirePermission(membership.id,permission);}
 async function clientOrThrow(organizationId:string,id:string){const client=await prisma.client.findFirst({where:{id,organizationId}});if(!client)throw new ResourceNotFoundError("Client not found");return client;}
 async function audit(organizationId:string,actorUserId:string,eventType:string,entityType:string,entityId:string,metadataJson?:Prisma.InputJsonValue){await prisma.auditEvent.create({data:{organizationId,actorUserId,eventType,entityType,entityId,metadataJson}})}
-const intakeChecklist=["REFERRAL_CASE_MANAGER_RECEIVED","CSSP_ASSESSMENTS_RECEIVED","FUNDING_CONFIRMED","FACE_SHEET_COMPLETED","RIGHTS_NOTICE","POLICY_ACKNOWLEDGMENT","ROI_STATUS","MEDICATION_AUTHORIZATION_IF_APPLICABLE","FUNDS_PROPERTY_AUTHORIZATION_IF_APPLICABLE","PERSON_SPECIFIC_ORIENTATION","PRELIMINARY_SUPPORT_PLAN","SUPPORT_TEAM_MEETING","CSSP_ADDENDUM","PROGRESS_REVIEW_SCHEDULE","MAR_STARTED_IF_APPLICABLE","SIGNED_DOCUMENT_RECORD","STAFF_COMPLETING_INTAKE","MANAGER_REVIEW"];
+const intakeChecklist=[
+  ["REFERRAL_CASE_MANAGER_RECEIVED","Referral and case manager contact information received"],
+  ["CSSP_ASSESSMENTS_RECEIVED","Coordinated Service and Support Plan (CSSP) and any assessments received from case manager"],
+  ["FUNDING_CONFIRMED","Service authorization / funding confirmed"],
+  ["FACE_SHEET_COMPLETED","Form 01 - Client Information / Face Sheet completed"],
+  ["RIGHTS_NOTICE","Form 02 - Rights Notice given and signed (rights explained within 5 working days of service start)"],
+  ["POLICY_ACKNOWLEDGMENT","Form 03 - Policy Acknowledgment: all policies given and signed"],
+  ["ROI_STATUS","Form 04 - Release(s) of Information signed for each party who needs information"],
+  ["MEDICATION_AUTHORIZATION_IF_APPLICABLE","Form 05 - Medication Authorization signed (only if Radiant Care assists with or administers medication)"],
+  ["FUNDS_PROPERTY_AUTHORIZATION_IF_APPLICABLE","Form 06 - Funds and Property Authorization signed (only if Radiant Care assists with money or property)"],
+  ["PERSON_SPECIFIC_ORIENTATION","Person-specific orientation completed by every staff member before working with the person"],
+  ["PRELIMINARY_SUPPORT_PLAN","Form 07 - Preliminary Support Plan / Self-Management Assessment completed (within 15 calendar days of service start)"],
+  ["SUPPORT_TEAM_MEETING","Support team meeting held (within 45 calendar days of service start) - Form 08"],
+  ["CSSP_ADDENDUM","CSSP Addendum written and signed - Form 08"],
+  ["PROGRESS_REVIEW_SCHEDULE","Progress review schedule set per the person's request - Form 08"],
+  ["MAR_STARTED_IF_APPLICABLE","Medication Administration Record (MAR) started, if medication is administered"],
+  ["SIGNED_DOCUMENT_RECORD","All signed forms uploaded to the person's SharePoint record"],
+  ["STAFF_COMPLETING_INTAKE","Staff completing intake review"],
+  ["MANAGER_REVIEW","Designated coordinator / manager review"],
+] as const;
 
-export async function createClient(user:Pick<User,"id">,organizationId:string,input:z.input<typeof clientInput>){await authorize(user,organizationId,"client.create");const data=clientInput.parse(input);const client=await prisma.client.create({data:{...data,organizationId,createdByUserId:user.id,status:"INTAKE_IN_PROGRESS"}});const intake=await prisma.clientIntake.create({data:{organizationId,clientId:client.id,status:"IN_PROGRESS",checklistItems:{create:intakeChecklist.map((code,index)=>({code,label:code.toLowerCase().replaceAll("_"," "),sequence:index+1}))}}});await audit(organizationId,user.id,"client.created","Client",client.id,{intakeId:intake.id});return{client,intake};}
+export async function createClient(user:Pick<User,"id">,organizationId:string,input:z.input<typeof clientInput>){await authorize(user,organizationId,"client.create");const data=clientInput.parse(input);const client=await prisma.client.create({data:{...data,organizationId,createdByUserId:user.id,status:"INTAKE_IN_PROGRESS"}});const intake=await prisma.clientIntake.create({data:{organizationId,clientId:client.id,status:"IN_PROGRESS",checklistItems:{create:intakeChecklist.map(([code,label],index)=>({code,label,sequence:index+1}))}}});await audit(organizationId,user.id,"client.created","Client",client.id,{intakeId:intake.id});return{client,intake};}
 export async function listClients(user:Pick<User,"id">,organizationId:string,filters:{search?:string;status?:string}={}){
   await authorize(user,organizationId,"client.read");
   const search=filters.search?.trim();

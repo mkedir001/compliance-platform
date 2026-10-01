@@ -28,8 +28,8 @@ describe.sequential("Phase 22 compliance reporting and regulator-ready exports",
       await db.membershipRole.create({ data: { membershipId: membership.id, roleDefinitionId: role.id } });
     }
     const [employee, historical] = await Promise.all([
-      db.employee.create({ data: { organizationId, employeeNumber: "RPT-1", firstName: "Report", lastName: "Worker", employmentStatus: "ACTIVE", hireDate: new Date("2026-01-01") } }),
-      db.employee.create({ data: { organizationId, employeeNumber: "RPT-2", firstName: "Historical", lastName: "Worker", employmentStatus: "TERMINATED", hireDate: new Date("2025-01-01"), terminationDate: new Date("2026-06-01") } }),
+      db.employee.create({ data: { organizationId, employeeNumber: "RPT-1", firstName: "Report", lastName: "Worker", employmentStatus: "ACTIVE", hireDate: new Date("2026-01-01"), createdAt: new Date("2026-01-01") } }),
+      db.employee.create({ data: { organizationId, employeeNumber: "RPT-2", firstName: "Historical", lastName: "Worker", employmentStatus: "TERMINATED", hireDate: new Date("2025-01-01"), terminationDate: new Date("2026-06-01"), createdAt: new Date("2025-01-01") } }),
     ]);
     employeeId = employee.id; historicalEmployeeId = historical.id;
     const regulationVersion = await db.regulationVersion.findFirstOrThrow({ where: { status: "ACTIVE" } }), ruleset = await db.complianceRuleset.findFirstOrThrow({ where: { status: "ACTIVE" } });
