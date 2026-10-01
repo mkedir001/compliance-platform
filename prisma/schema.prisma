@@ -2657,6 +2657,11 @@ enum ClientDocumentStatus {
   EXPIRED
 }
 
+enum ClientDocumentSource {
+  GENERATED
+  IMPORTED
+}
+
 enum ClientDocumentRenewalPolicy {
   NONE
   ANNUAL
@@ -2985,6 +2990,10 @@ model ClientDocument {
   templateId               String
   documentType             ClientDocumentType
   status                   ClientDocumentStatus    @default(DRAFT)
+  source                   ClientDocumentSource    @default(GENERATED)
+  originalFileName         String?
+  sourceDocumentHash       String?
+  importedAt               DateTime?
   snapshotJson             Json
   renderedPdf              Bytes?
   finalPdf                 Bytes?

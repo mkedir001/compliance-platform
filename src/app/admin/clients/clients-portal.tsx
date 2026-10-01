@@ -43,9 +43,15 @@ type ClientDocument = {
   id: string;
   documentType: string;
   status: string;
+  source: "GENERATED"|"IMPORTED";
+  originalFileName: string|null;
+  importedAt: string|null;
   generatedAt: string;
+  invitationLifetimeHours:number;
   renewalOfDocumentId: string | null;
-  envelope: { id:string;status:string;mode:string;voidReason:string|null;signers:{id:string;role:string;name:string;email:string|null;status:string;signedAt:string|null;signatureMethod:string|null}[] } | null;
+  template:{name:string;versionNumber:number};
+  signatureRequirements:{key:string;label:string;allowedRoles:string[];candidates:{role:string;name:string;email:string|null;source:string}[]}[];
+  envelope: { id:string;status:string;mode:string;sentAt:string|null;completedAt:string|null;voidReason:string|null;signers:{id:string;role:string;name:string;email:string|null;status:string;sentAt:string|null;viewedAt:string|null;signedAt:string|null;signatureMethod:string|null;verificationMethod:string|null;invitations:{id:string;status:string;createdAt:string;deliveredAt:string|null;expiresAt:string;usedAt:string|null;revokedAt:string|null}[]}[] } | null;
 };
 type ClientRepresentative = { id: string; representativeType: string; name: string; relationship: string | null; email: string | null };
 type ClientDocumentRequest = { id: string; documentType: string; recipientType: string; recipientName: string; deliveryChannel: string; status: string; requestedAt: string | null; dueAt: string | null; latestFollowUpAt: string | null; followUpCount: number; obligationDocumentId: string | null; fulfilledDocumentId: string | null };
@@ -84,6 +90,9 @@ type ClientDetail = ClientRow & {
 };
 const pretty = (value: string) => value.toLowerCase().replaceAll("_", " ");
 const date = (value: string) => new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(value.length === 10 ? `${value}T12:00:00Z` : value));
+type PreparedSigner={role:string;name:string;email?:string};
+function invitationState(signer:NonNullable<ClientDocument["envelope"]>["signers"][number]){if(signer.status==="SIGNED")return"SIGNED";const latest=signer.invitations[0];if(!latest)return"AWAITING DELIVERY";if(latest.status==="ACTIVE"&&new Date(latest.expiresAt)<=new Date())return"EXPIRED";if(latest.status==="ACTIVE")return latest.deliveredAt?"AWAITING SIGNATURE":"AWAITING DELIVERY";return latest.status}
+function SignatureWorkflowPanel({document,busy,onCreate}:{document:ClientDocument;busy:boolean;onCreate:(mode:"SIGN_NOW"|"SEND_FOR_SIGNATURE",signers:PreparedSigner[],confirmed:boolean)=>Promise<void>}){const requirements=document.signatureRequirements,[selected,setSelected]=useState(()=>requirements.map(()=>0)),[staffNames,setStaffNames]=useState(()=>requirements.map(()=>"")),[emails,setEmails]=useState(() => requirements.map(requirement=>requirement.candidates[0]?.email??"")),[review,setReview]=useState<PreparedSigner[]|null>(null);function signer(index:number){const requirement=requirements[index],candidate=requirement.candidates[selected[index]];return{role:candidate?.role??requirement.allowedRoles[0],name:candidate?.source==="MANUAL_STAFF"?staffNames[index]:candidate?.name??"",email:emails[index]||undefined}}function updateCandidate(index:number,value:number){const next=[...selected];next[index]=value;setSelected(next);const nextEmails=[...emails];nextEmails[index]=requirements[index].candidates[value]?.email??"";setEmails(nextEmails);setReview(null)}const valid=requirements.length>0&&requirements.every((requirement,index)=>requirement.candidates.length&&signer(index).name.trim());return <div className="signature-workflow"><h5>Required signers</h5>{requirements.map((requirement,index)=>{const candidate=requirement.candidates[selected[index]];return <fieldset key={requirement.key}><legend>{requirement.label}</legend>{requirement.candidates.length>1?<label>Intended signer<select value={selected[index]} onChange={event=>updateCandidate(index,Number(event.target.value))}>{requirement.candidates.map((option,optionIndex)=><option key={`${option.role}:${option.name}`} value={optionIndex}>{option.name} - {pretty(option.role)}</option>)}</select></label>:candidate?.source==="MANUAL_STAFF"?<label>Intended signer<input value={staffNames[index]} onChange={event=>{const next=[...staffNames];next[index]=event.target.value;setStaffNames(next);setReview(null)}} placeholder="Confirm staff signer name" required/></label>:candidate?<p><strong>{candidate.name}</strong> · {pretty(candidate.role)}</p>:<p role="alert">Add the required canonical contact before sending this document.</p>}<label>Delivery email<input type="email" value={emails[index]} onChange={event=>{const next=[...emails];next[index]=event.target.value;setEmails(next);setReview(null)}} placeholder="Confirm or correct delivery email"/></label></fieldset>})}<div className="signature-actions"><button type="button" disabled={busy||!valid} onClick={()=>onCreate("SIGN_NOW",requirements.map((_,index)=>{const row=signer(index);return{role:row.role,name:row.name}}),true)}>Sign Now</button><button type="button" className="secondary" disabled={busy||!valid||emails.some(value=>!value)} onClick={()=>setReview(requirements.map((_,index)=>signer(index)))}>Review Send for Signature</button></div>{review?<section className="send-review" aria-label="Send for Signature review"><h5>Review before sending</h5><p><strong>{document.template.name}</strong> · {pretty(document.documentType)}</p><p>Each invitation expires after {document.invitationLifetimeHours} hours. The frozen document version shown above is the version each recipient will sign.</p>{review.map((row,index)=><p key={`${row.role}:${index}`}><strong>{row.name}</strong><br/>{pretty(row.role)} · {row.email}</p>)}<button type="button" disabled={busy} onClick={()=>onCreate("SEND_FOR_SIGNATURE",review,true)}>Send for Signature</button><button type="button" className="secondary" onClick={()=>setReview(null)}>Back</button></section>:null}</div>}
 
 export default function ClientsPortal({ initialOrganizationId = "", initialClientId = "", initialDocumentId = "", initialRequestId = "", initialView = "", productionIdentity = false }: { initialOrganizationId?: string; initialClientId?: string; initialDocumentId?: string; initialRequestId?: string; initialView?:string; productionIdentity?: boolean }) {
   const [userId, setUserId] = useState(""),
@@ -218,11 +227,8 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
       "Rights renewal draft created from current client data and reviewed form values. Finalize it before collecting new signatures.",
     );
   }
-  async function startSignature(event: FormEvent<HTMLFormElement>, documentId: string) {
-    event.preventDefault();
+  async function startSignature(documentId:string,mode:"SIGN_NOW"|"SEND_FOR_SIGNATURE",signers:PreparedSigner[],confirmed:boolean) {
     if (!selected) return;
-    const data = new FormData(event.currentTarget),
-      mode = String(data.get("mode"));
     await run(async () => {
       const created=await request(`/${selected.id}/signatures`, {
         method: "POST",
@@ -230,24 +236,15 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
           action: "CREATE",
           documentId,
           mode,
-          signers: [
-            {
-              role: "CLIENT",
-              name: data.get("clientName"),
-              email: mode === "SEND_FOR_SIGNATURE" ? data.get("clientEmail") || undefined : undefined,
-            },
-            {
-              role: "ORGANIZATION_STAFF",
-              name: data.get("staffName"),
-              email: mode === "SEND_FOR_SIGNATURE" ? data.get("staffEmail") || undefined : undefined,
-            },
-          ],
+          signers,
+          confirmed,
         }),
       });
       const links=(created as {deliveryLinks?:{url:string}[]}).deliveryLinks;
       await refresh(mode === "SIGN_NOW" ? "Sign Now envelope initiated. Open the intended signer below." : links?.length?`Secure invitation created in test mode: ${links.map(link=>link.url).join(" ")}`:"Secure signing invitations sent through the configured delivery adapter.");
     });
   }
+  async function importDocument(event:FormEvent<HTMLFormElement>){event.preventDefault();if(!selected)return;const form=event.currentTarget,data=new FormData(form),file=data.get("file");if(!(file instanceof File)||!file.size){setMessage("Select a PDF to import.");return}await run(async()=>{const bytes=new Uint8Array(await file.arrayBuffer());let binary="";for(let offset=0;offset<bytes.length;offset+=32768)binary+=String.fromCharCode(...bytes.subarray(offset,offset+32768));await request(`/${selected.id}/documents`,{method:"POST",body:JSON.stringify({action:"IMPORT",document:{documentType:data.get("documentType"),fileName:file.name,pdfBase64:btoa(binary),disposition:data.get("disposition"),completedAt:data.get("completedAt")||undefined}})});form.reset();await refresh(data.get("disposition")==="HISTORICAL_COMPLETE"?"Completed historical PDF preserved without a new signing request.":"Imported PDF preserved and prepared for the native signing workflow.")})}
   async function signatureAction(body:unknown,text:string,openUrl=false){if(!selected)return;await run(async()=>{const result=await request(`/${selected.id}/signatures`,{method:"POST",body:JSON.stringify(body)}) as {url?:string};if(openUrl&&result.url)window.open(result.url,"_blank","noopener,noreferrer");await refresh(text)})}
   useEffect(() => {
     if (productionIdentity && organizationId) {
@@ -648,10 +645,12 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
                 </button>
                 <button onClick={() => documentAction({ action: "GENERATE", documentType: "INTAKE_CHECKLIST" }, "Intake Checklist generated.")}>Generate Intake Checklist</button>
               </div>:null}
+              {permissions.includes("client.document.generate")?<details><summary>Import client PDF</summary><form className="inline-form" onSubmit={importDocument}><label>Document type<select name="documentType"><option value="FACE_SHEET">Face Sheet</option><option value="RIGHTS_ACKNOWLEDGMENT">Rights acknowledgment</option><option value="ROI">Release of information</option><option value="INTAKE_CHECKLIST">Intake checklist</option></select></label><label>PDF<input name="file" type="file" accept="application/pdf,.pdf" required/></label><label>Review outcome<select name="disposition"><option value="HISTORICAL_COMPLETE">Historical - already complete</option><option value="CURRENT_SIGNATURE_REQUIRED">Current signatures required</option></select></label><label>Historical completion date<input name="completedAt" type="date"/></label><button disabled={busy}>Import reviewed PDF</button><p>Complete historical uploads remain immutable and are not sent for signature. Incomplete current documents use the same native Sign Now or Send for Signature workflow.</p></form></details>:null}
               {selected.documents.map((document) => (
-                <article key={document.id}>
-                  <strong>{pretty(document.documentType)}</strong>
+                <article key={document.id} id={`document-${document.id}`}>
+                  <strong>{document.template.name}</strong>
                   {document.renewalOfDocumentId ? <span className="renewal-badge"> Renewal cycle</span> : null}
+                  {document.source==="IMPORTED"?<span className="renewal-badge"> Imported</span>:null}
                   <p>
                     {pretty(document.status)} · {new Date(document.generatedAt).toLocaleString()}
                   </p>
@@ -661,39 +660,13 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
                       Ready for Signature
                     </button>
                   ) : null}
-                  {permissions.includes("client.signature.manage")&&document.status === "READY_FOR_SIGNATURE" && !document.envelope ? (
-                    <form className="inline-form" onSubmit={(event) => startSignature(event, document.id)}>
-                      <label>
-                        Client/signer name
-                        <input name="clientName" defaultValue={`${selected.legalFirstName} ${selected.legalLastName}`} required />
-                      </label>
-                      <label>
-                        Client email (remote)
-                        <input name="clientEmail" type="email" />
-                      </label>
-                      <label>
-                        Staff signer name
-                        <input name="staffName" required />
-                      </label>
-                      <label>
-                        Staff email (remote)
-                        <input name="staffEmail" type="email" />
-                      </label>
-                      <label>
-                        Workflow
-                        <select name="mode">
-                          <option value="SIGN_NOW">Sign Now</option>
-                          <option value="SEND_FOR_SIGNATURE">Send for Signature</option>
-                        </select>
-                      </label>
-                      <button disabled={busy}>Start signature workflow</button>
-                    </form>
-                  ) : null}
+                  {document.source==="IMPORTED"&&document.status==="COMPLETED"?<p>Accepted as already complete. No new signature request is required.</p>:null}
+                  {permissions.includes("client.signature.manage")&&document.status === "READY_FOR_SIGNATURE" && !document.envelope ? <SignatureWorkflowPanel document={document} busy={busy} onCreate={(mode,signers,confirmed)=>startSignature(document.id,mode,signers,confirmed)}/>:null}
                 </article>
               ))}
             </>
           ) : null}
-          {tab === "Signatures" ? <section><h3>Electronic signatures</h3><p>Each signer reviews the frozen document, affirmatively consents, and adopts their own signature. A document completes only after every required signer signs.</p>{selected.documents.filter(item=>item.envelope).map(document=><article key={document.id}><p className="eyebrow">{pretty(document.documentType)} · {pretty(document.envelope!.mode)}</p><h4>{pretty(document.envelope!.status)}</h4>{document.envelope!.status==="COMPLETED"?<p><a href={`/api/organizations/${organizationId}/clients/${selected.id}/signatures?envelopeId=${document.envelope!.id}`}>Download signing evidence</a></p>:null}{document.envelope!.signers.map(signer=><div className="signature-row" key={signer.id}><span><strong>{signer.name}</strong><small>{pretty(signer.role)} · {pretty(signer.status)}{signer.signatureMethod?` · ${pretty(signer.signatureMethod)}`:""}</small></span>{signer.status!=="SIGNED"?<button disabled={busy} onClick={()=>signatureAction({action:"SIGN_NOW_SESSION",envelopeId:document.envelope!.id,signerId:signer.id},`Sign Now opened for ${signer.name}.`,true)}>Open Sign Now</button>:null}{signer.status!=="SIGNED"&&document.envelope!.mode==="SEND_FOR_SIGNATURE"?<button disabled={busy} onClick={()=>signatureAction({action:"REISSUE",envelopeId:document.envelope!.id,signerId:signer.id},`Invitation replaced for ${signer.name}.`)}>Reissue invitation</button>:null}</div>)}{!["COMPLETED","VOIDED"].includes(document.envelope!.status)?<form className="inline-form" onSubmit={event=>{event.preventDefault();const reason=new FormData(event.currentTarget).get("reason");void signatureAction({action:"CANCEL",envelopeId:document.envelope!.id,reason},"Signing cycle voided; signatures were not transferred.")}}><label>Void reason<input name="reason" required/></label><button disabled={busy}>Void signing cycle</button></form>:null}</article>)}</section> : null}
+          {tab === "Signatures" ? <section><h3>Electronic signatures</h3><p>Each signer reviews the frozen document, affirmatively consents, and adopts their own signature. A document completes only after every required signer signs.</p>{selected.documents.filter(item=>item.envelope).map(document=><article key={document.id}><p className="eyebrow">{document.template.name} · {pretty(document.envelope!.mode)}</p><h4>{pretty(document.envelope!.status)}</h4><p>{document.envelope!.completedAt?`Completed ${date(document.envelope!.completedAt)}`:document.envelope!.sentAt?`Sent ${date(document.envelope!.sentAt)}`:"Prepared for signing"}</p>{document.envelope!.status==="COMPLETED"?<p><a href={`/api/organizations/${organizationId}/clients/${selected.id}/documents?documentId=${document.id}`}>Open completed document</a> · <a href={`/api/organizations/${organizationId}/clients/${selected.id}/signatures?envelopeId=${document.envelope!.id}`}>Download signing evidence</a></p>:null}{document.envelope!.signers.map(signer=>{const state=invitationState(signer),invitation=signer.invitations[0],active=!["COMPLETED","VOIDED"].includes(document.envelope!.status);return <div className="signature-row" key={signer.id}><span><strong>{signer.name}</strong><small>{pretty(signer.role)} · {pretty(state)}</small><small>{signer.email??"In-person signer"}{signer.signedAt?` · Signed ${date(signer.signedAt)}`:invitation?` · Invited ${date(invitation.createdAt)} · Expires ${date(invitation.expiresAt)}`:""}</small></span>{active&&signer.status!=="SIGNED"?<button disabled={busy} onClick={()=>signatureAction({action:"SIGN_NOW_SESSION",envelopeId:document.envelope!.id,signerId:signer.id},`Sign Now opened for ${signer.name}.`,true)}>Open Sign Now</button>:null}{active&&signer.status!=="SIGNED"&&document.envelope!.mode==="SEND_FOR_SIGNATURE"?<button disabled={busy} onClick={()=>signatureAction({action:"REISSUE",envelopeId:document.envelope!.id,signerId:signer.id},`${state==="EXPIRED"?"Replacement":"Reissued"} invitation created for ${signer.name}.`)}>Reissue invitation</button>:null}</div>})}{!["COMPLETED","VOIDED"].includes(document.envelope!.status)?<form className="inline-form" onSubmit={event=>{event.preventDefault();const reason=new FormData(event.currentTarget).get("reason");void signatureAction({action:"CANCEL",envelopeId:document.envelope!.id,reason},"Signing cycle voided and all active invitations revoked; signatures were not transferred.")}}><label>Cancellation reason<input name="reason" required/></label><button disabled={busy}>Cancel and revoke invitations</button></form>:document.envelope!.voidReason?<p>Cancellation reason: {document.envelope!.voidReason}</p>:null}</article>)}</section> : null}
           {tab === "History" ? <p>Historical completed documents and signatures remain immutable. Material renewal, signature, ROI, and export actions are preserved in the tenant audit stream.</p> : null}
         </section>
       ) : null}
