@@ -1,6 +1,7 @@
 "use client";
 /* eslint-disable react-hooks/exhaustive-deps -- production organization context is fixed by the authenticated landing route */
 import { FormEvent, useEffect, useState } from "react";
+import GuidedIntake from "./guided-intake";
 
 type RenewalCycle = {
   documentId: string;
@@ -57,22 +58,30 @@ type ClientDetail = ClientRow & {
   financialResponsibility: string | null;
   primaryLanguage: string | null;
   interpreterNeeded: boolean;
+  gender: string | null;
+  addressLine1: string | null;
+  addressLine2: string | null;
+  city: string | null;
+  state: string | null;
+  postalCode: string | null;
+  preferredCommunication: string | null;
+  livingSituation: string | null;
   strengthsInterests: string | null;
   culturalPractices: string | null;
   supportNeeds: string | null;
-  services: unknown[];
+  services: {id:string;serviceType:string;startDate:string|null;authorizedHours:number|null;status:"PROPOSED"|"ACTIVE"|"PAUSED"|"ENDED"|"CANCELLED"}[];
   representatives: ClientRepresentative[];
-  emergencyContacts: unknown[];
-  healthProfile: unknown;
-  medications: unknown[];
+  emergencyContacts: {id:string;name:string;relationship:string;phone:string;alternatePhone:string|null;informationSharingAllowed:boolean}[];
+  healthProfile: Record<string,string|null>|null;
+  medications: {id:string;medication:string;dose:string|null;times:string|null;reason:string|null;prescriber:string|null}[];
   contacts: {
-    professionalContact: { name: string; agency: string | null };
+    professionalContact: { id:string;name: string; agency: string | null;contactType:string;email:string|null;phone:string|null };
     role: string;
   }[];
   documents: ClientDocument[];
   documentRequests: ClientDocumentRequest[];
+  intakes:{status:string;currentStep:string;progressJson:unknown;lastSavedAt:string}[];
 };
-const steps = ["CLIENT", "SERVICES", "REPRESENTATIVE", "CASE_MANAGER", "EMERGENCY_CONTACTS", "HEALTH_MEDICATION", "ABOUT_PERSON", "DOCUMENTS", "SIGNATURES", "REVIEW_COMPLETE"];
 const pretty = (value: string) => value.toLowerCase().replaceAll("_", " ");
 const date = (value: string) => new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(value.length === 10 ? `${value}T12:00:00Z` : value));
 
@@ -85,6 +94,7 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
     [status, setStatus] = useState(""),
     [renewalStatus, setRenewalStatus] = useState(""),
     [readiness, setReadiness] = useState("ALL"),
+    [permissions,setPermissions]=useState<string[]>([]),
     [tab, setTab] = useState("Overview"),
     [message, setMessage] = useState(""),
     [busy, setBusy] = useState(false);
@@ -107,7 +117,7 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
     }
   }
   async function load() {
-    await run(async () => setClients((await request(`?search=${encodeURIComponent(search)}&status=${encodeURIComponent(status)}&renewalStatus=${encodeURIComponent(renewalStatus)}&readiness=${encodeURIComponent(readiness)}`)) as ClientRow[]));
+    await run(async () => {const[rows,accessResponse]=await Promise.all([request(`?search=${encodeURIComponent(search)}&status=${encodeURIComponent(status)}&renewalStatus=${encodeURIComponent(renewalStatus)}&readiness=${encodeURIComponent(readiness)}`),fetch(`/api/organizations/${organizationId}`,{headers})]),access=await accessResponse.json();if(!accessResponse.ok)throw new Error(access.error??"Organization access failed");setClients(rows as ClientRow[]);setPermissions(access.permissions??[])});
   }
   async function open(id: string) {
     await run(async () => setSelected((await request(`/${id}`)) as ClientDetail));
@@ -141,33 +151,6 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
       setMessage("Client created and resumable intake started.");
     });
   }
-  async function saveBasics(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!selected) return;
-    const data = new FormData(event.currentTarget);
-    await run(async () => {
-      await request(`/${selected.id}/intake`, {
-        method: "PUT",
-        body: JSON.stringify({
-          currentStep: data.get("currentStep"),
-          client: {
-            preferredName: data.get("preferredName") || null,
-            phone: data.get("phone") || null,
-            email: data.get("email") || null,
-            maPmiNumber: data.get("maPmiNumber") || null,
-            waiverProgram: data.get("waiverProgram") || null,
-            financialResponsibility: data.get("financialResponsibility") || null,
-            primaryLanguage: data.get("primaryLanguage") || null,
-            interpreterNeeded: data.get("interpreterNeeded") === "on",
-            strengthsInterests: data.get("strengthsInterests") || null,
-            culturalPractices: data.get("culturalPractices") || null,
-            supportNeeds: data.get("supportNeeds") || null,
-          },
-        }),
-      });
-      await refresh("Intake saved. You can safely resume later.");
-    });
-  }
   async function documentAction(body: unknown, text: string) {
     if (!selected) return;
     await run(async () => {
@@ -178,6 +161,9 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
       await refresh(text);
     });
   }
+  async function guidedSave(next:ClientDetail,text:string){setSelected(next);setClients((await request(`?search=${encodeURIComponent(search)}&status=${encodeURIComponent(status)}&renewalStatus=${encodeURIComponent(renewalStatus)}&readiness=${encodeURIComponent(readiness)}`)) as ClientRow[]);setMessage(text)}
+  async function guidedGenerate(body:unknown,text:string){if(!selected)return;const response=await fetch(`/api/organizations/${organizationId}/clients/${selected.id}/documents`,{method:"POST",headers,body:JSON.stringify(body)}),result=await response.json();if(!response.ok)throw new Error(result.error??"Document generation failed");await open(selected.id);setMessage(text)}
+  async function guidedComplete(){if(!selected)return;const response=await fetch(`/api/organizations/${organizationId}/clients/${selected.id}/intake`,{method:"POST",headers,body:JSON.stringify({action:"COMPLETE"})}),result=await response.json();if(!response.ok)throw new Error(result.error??"Intake completion failed");await open(selected.id);setMessage("Intake review completed. Finalized document history remains immutable.")}
   async function requestAction(body: unknown, text: string) {
     if (!selected) return;
     await run(async () => {
@@ -276,7 +262,7 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
   useEffect(() => {
     if (selected && initialRequestId && tab === "Documents") document.getElementById(`request-${initialRequestId}`)?.scrollIntoView({ block: "center" });
   }, [selected, initialRequestId, tab]);
-  const tabs = ["Overview", "Readiness", "Intake", "Services", "Contacts", "Health", "Documents", "Signatures", "History"];
+  const tabs = ["Overview", "Readiness", "Intake", "Documents", "Signatures", "History"];
   return (
     <main className="admin-shell">
       <header>
@@ -284,6 +270,7 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
         <h1>Clients, intake, and documents</h1>
         <p className="lede">Organization-scoped client records with resumable intake, immutable document history, and renewal management.</p>
       </header>
+      {permissions.length?<nav className="experience-nav" aria-label="Management application"><a href={`/admin/clients?organizationId=${encodeURIComponent(organizationId)}`}>Clients</a>{permissions.includes("compliance.operations.read")?<a href={`/admin/compliance-operations?organizationId=${encodeURIComponent(organizationId)}`}>Compliance</a>:null}{permissions.includes("employee.read")?<a href={`/admin/workforce-onboarding?organizationId=${encodeURIComponent(organizationId)}`}>Workforce</a>:null}{permissions.includes("audit.session.manage")?<a href={`/admin/audit-access?organizationId=${encodeURIComponent(organizationId)}`}>Auditor access</a>:null}{permissions.includes("audit.read")?<a href={`/admin/reporting?organizationId=${encodeURIComponent(organizationId)}`}>Reporting</a>:null}</nav>:null}
       {!productionIdentity ? (
         <section className="portal-signin">
           <div className="auth">
@@ -340,7 +327,7 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
             <button onClick={load}>Apply</button>
           </div>
         </div>
-        <details>
+        {permissions.includes("client.create")?<details>
           <summary>Add client</summary>
           <form className="inline-form" onSubmit={create}>
             <label>
@@ -373,7 +360,7 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
             </label>
             <button disabled={busy}>Create and begin intake</button>
           </form>
-        </details>
+        </details>:null}
         {clients.length ? (
           <div className="workforce-table" role="table">
             {clients.map((client) => (
@@ -429,100 +416,12 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
             </article>
           ) : null}
           {tab === "Readiness" ? <section className="renewal-panel"><h3>Documentation readiness</h3><p><strong>{pretty(selected.documentationReadiness.overallState)}</strong> · {selected.documentationReadiness.counts.satisfied} of {selected.documentationReadiness.counts.applicable} applicable requirement(s) currently satisfied</p><p>{selected.documentationReadiness.counts.missing} missing · {selected.documentationReadiness.counts.dueSoon} due soon · {selected.documentationReadiness.counts.overdue} overdue · {selected.documentationReadiness.counts.outstandingRequests} with collection underway</p><p>{selected.documentationReadiness.meaning}</p>{selected.documentationReadiness.requirements.map(item=><article key={item.id}><p className="eyebrow">{pretty(item.state)}{item.deadlinePhase?` · ${pretty(item.deadlinePhase)}`:""}</p><h4>{item.name}</h4><p>{item.reason}</p><p>{item.dueDate?`Due ${date(item.dueDate)}`:"No determinable deadline"}{item.signatureStatus?` · signature ${pretty(item.signatureStatus)}`:""}</p>{item.outstandingRequests.map(request=><p key={request.id}>Collection request {pretty(request.status)} for {request.recipientName}. <a href={request.actionHref}>Open request</a></p>)}<a href={item.actionHref}>Open document workflow</a></article>)}</section> : null}
-          {tab === "Intake" ? (
-            <form className="inline-form" onSubmit={saveBasics}>
-              <label>
-                Current step
-                <select name="currentStep" defaultValue={selected.intakes[0]?.currentStep ?? "CLIENT"}>
-                  {steps.map((step) => (
-                    <option key={step}>{step}</option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Preferred name
-                <input name="preferredName" defaultValue={selected.preferredName ?? ""} />
-              </label>
-              <label>
-                Phone
-                <input name="phone" defaultValue={selected.phone ?? ""} />
-              </label>
-              <label>
-                Email
-                <input name="email" type="email" defaultValue={selected.email ?? ""} />
-              </label>
-              <label>
-                MA/PMI
-                <input name="maPmiNumber" defaultValue={selected.maPmiNumber ?? ""} />
-              </label>
-              <label>
-                Waiver/funding program
-                <input name="waiverProgram" defaultValue={selected.waiverProgram ?? ""} />
-              </label>
-              <label>
-                County/tribe of financial responsibility
-                <input name="financialResponsibility" defaultValue={selected.financialResponsibility ?? ""} />
-              </label>
-              <label>
-                Primary language
-                <input name="primaryLanguage" defaultValue={selected.primaryLanguage ?? ""} />
-              </label>
-              <label className="check">
-                <input name="interpreterNeeded" type="checkbox" defaultChecked={selected.interpreterNeeded} /> Interpreter needed
-              </label>
-              <label>
-                Strengths, interests, and what is important
-                <textarea name="strengthsInterests" defaultValue={selected.strengthsInterests ?? ""} />
-              </label>
-              <label>
-                Cultural, religious, and personal practices
-                <textarea name="culturalPractices" defaultValue={selected.culturalPractices ?? ""} />
-              </label>
-              <label>
-                Safety, communication, and behavior supports
-                <textarea name="supportNeeds" defaultValue={selected.supportNeeds ?? ""} />
-              </label>
-              <button disabled={busy}>Save and continue</button>
-            </form>
-          ) : null}
-          {tab === "Services" ? <pre className="data-preview">{JSON.stringify(selected.services, null, 2)}</pre> : null}
-          {tab === "Contacts" ? (
-            <>
-              <h3>Professional contacts</h3>
-              <pre className="data-preview">{JSON.stringify(selected.contacts, null, 2)}</pre>
-              <h3>Representatives and emergency contacts</h3>
-              <pre className="data-preview">
-                {JSON.stringify(
-                  {
-                    representatives: selected.representatives,
-                    emergencyContacts: selected.emergencyContacts,
-                  },
-                  null,
-                  2,
-                )}
-              </pre>
-            </>
-          ) : null}
-          {tab === "Health" ? (
-            <>
-              <p>Client health context does not establish staff medication competence or authorization.</p>
-              <pre className="data-preview">
-                {JSON.stringify(
-                  {
-                    health: selected.healthProfile,
-                    medications: selected.medications,
-                  },
-                  null,
-                  2,
-                )}
-              </pre>
-            </>
-          ) : null}
+          {tab === "Intake" ? permissions.includes("client.intake.manage")?<GuidedIntake client={selected} organizationId={organizationId} headers={headers} canGenerate={permissions.includes("client.document.generate")} canReadDocuments={permissions.includes("client.document.read")} canSign={permissions.includes("client.signature.manage")} onSaved={(next,text)=>guidedSave(next as ClientDetail,text)} onGenerate={guidedGenerate} onComplete={guidedComplete}/>:<article><h3>Guided intake</h3><p>Your current permissions allow client review but not intake changes.</p></article> : null}
           {tab === "Documents" ? (
             <>
               <section className="renewal-panel">
                 <h3>Document requests</h3>
-                <details>
+                {permissions.includes("client.document.generate")?<details>
                   <summary>Create document request</summary>
                   <form className="inline-form" onSubmit={(event) => createRequest(event)}>
                     <label>
@@ -560,7 +459,7 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
                     </label>
                     <button disabled={busy}>Create request</button>
                   </form>
-                </details>
+                </details>:null}
                 {selected.documentRequests.length ? (
                   selected.documentRequests.map((item) => (
                     <article id={`request-${item.id}`} key={item.id}>
@@ -575,7 +474,7 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
                         {item.followUpCount} follow-up(s){item.latestFollowUpAt ? ` · latest ${date(item.latestFollowUpAt)}` : ""}
                         {item.fulfilledDocumentId ? " · fulfilled" : ""}
                       </p>
-                      {["DRAFT", "SENT", "OUTSTANDING"].includes(item.status) ? (
+                      {permissions.includes("client.document.generate")&&["DRAFT", "SENT", "OUTSTANDING"].includes(item.status) ? (
                         <div>
                           {item.status === "DRAFT" ? (
                             <button disabled={busy} onClick={() => requestAction({ action: "SEND", requestId: item.id }, "Document request sent and is now outstanding.")}>
@@ -626,7 +525,7 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
                       <p>
                         Completed {date(cycle.completedAt)} · renewal due {date(cycle.dueDate)} · {cycle.daysUntilDue < 0 ? `${Math.abs(cycle.daysUntilDue)} day(s) overdue` : `${cycle.daysUntilDue} day(s) until due`}
                       </p>
-                      {!cycle.workflow ? (
+                      {permissions.includes("client.document.generate")&&!cycle.workflow ? (
                         <details>
                           <summary>Request this renewal document</summary>
                           <form className="inline-form" onSubmit={(event) => createRequest(event, cycle.documentId)}>
@@ -659,7 +558,7 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
                           Renewal workflow: <strong>{pretty(cycle.workflow.status)}</strong>
                           {cycle.workflow.envelopeStatus ? ` · ${pretty(cycle.workflow.envelopeStatus)}` : ""}
                         </p>
-                      ) : cycle.documentType === "RIGHTS_ACKNOWLEDGMENT" ? (
+                      ) : permissions.includes("client.document.generate")&&cycle.documentType === "RIGHTS_ACKNOWLEDGMENT" ? (
                         <details>
                           <summary>Review / Renew Rights</summary>
                           <form className="inline-form" onSubmit={(event) => renewRights(event, cycle.documentId)}>
@@ -696,7 +595,7 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
                             <button disabled={busy}>Create renewal draft</button>
                           </form>
                         </details>
-                      ) : (
+                      ) : permissions.includes("client.document.generate") ? (
                         <details>
                           <summary>Review / Renew ROI</summary>
                           <form className="inline-form" onSubmit={(event) => renewRoi(event, cycle.documentId)}>
@@ -723,14 +622,14 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
                             <button disabled={busy}>Create renewal draft</button>
                           </form>
                         </details>
-                      )}
+                      ):null}
                     </article>
                   ))
                 ) : (
                   <p>No completed documents currently carry an automatic renewal policy.</p>
                 )}
               </section>
-              <div>
+              {permissions.includes("client.document.generate")?<div>
                 <button onClick={() => documentAction({ action: "GENERATE", documentType: "FACE_SHEET" }, "Face Sheet generated.")}>Generate Face Sheet</button>
                 <button
                   onClick={() =>
@@ -746,7 +645,7 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
                   Generate Rights acknowledgment
                 </button>
                 <button onClick={() => documentAction({ action: "GENERATE", documentType: "INTAKE_CHECKLIST" }, "Intake Checklist generated.")}>Generate Intake Checklist</button>
-              </div>
+              </div>:null}
               {selected.documents.map((document) => (
                 <article key={document.id}>
                   <strong>{pretty(document.documentType)}</strong>
@@ -754,13 +653,13 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
                   <p>
                     {pretty(document.status)} · {new Date(document.generatedAt).toLocaleString()}
                   </p>
-                  <a href={`/api/organizations/${organizationId}/clients/${selected.id}/documents?documentId=${document.id}`}>Preview / download PDF</a>
-                  {document.status === "DRAFT" ? (
+                  {permissions.includes("client.document.read")?<a href={`/api/organizations/${organizationId}/clients/${selected.id}/documents?documentId=${document.id}`}>Preview / download PDF</a>:null}
+                  {permissions.includes("client.document.generate")&&document.status === "DRAFT" ? (
                     <button disabled={busy} onClick={() => documentAction({ action: "FINALIZE", documentId: document.id }, "Document is ready for a new signature workflow.")}>
                       Ready for Signature
                     </button>
                   ) : null}
-                  {document.status === "READY_FOR_SIGNATURE" && !document.envelope ? (
+                  {permissions.includes("client.signature.manage")&&document.status === "READY_FOR_SIGNATURE" && !document.envelope ? (
                     <form className="inline-form" onSubmit={(event) => startSignature(event, document.id)}>
                       <label>
                         Client/signer name

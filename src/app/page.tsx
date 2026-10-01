@@ -12,7 +12,7 @@ export default async function Page() {
     const user = await requireAuthenticatedUser(request);
     const destinations = await resolveAuthenticatedLanding(user.id);
     if (destinations.length === 1) redirect(destinations[0].href);
-    if (destinations.length > 1) return <main className="portal-shell"><header className="portal-header"><p className="eyebrow">Compliance Platform</p><h1>Choose an organization</h1><p className="lede">Select an authorized organization experience.</p></header><section>{destinations.map(destination => <article key={`${destination.organizationId}-${destination.experience}`}><h2>{destination.organizationName}</h2><p>{destination.experience === "admin" ? "Employer administration" : "Employee self-service"}</p><a href={destination.href}>Continue</a></article>)}</section></main>;
+    if (destinations.length > 1) return <main className="portal-shell"><header className="portal-header"><p className="eyebrow">Compliance Platform</p><h1>Choose an experience</h1><p className="lede">Select an authorized organization experience. Available navigation and server access follow effective permissions.</p></header><section>{destinations.map((destination,index) => <article key={`${destination.organizationId}-${destination.experience}-${index}`}><h2>{destination.organizationName}</h2><p>{destination.experience === "admin" ? "Management / back-office" : destination.experience==="auditor"?"Temporary read-only auditor review":"Employee self-service"}</p><a href={destination.href}>Continue</a></article>)}</section></main>;
   } catch (error) {
     if (error && typeof error === "object" && "digest" in error) throw error;
   }

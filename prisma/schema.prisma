@@ -689,6 +689,7 @@ model Organization {
   professionalContacts      ProfessionalContact[]
   clientDocumentTemplates   ClientDocumentTemplate[]
   clientDocumentRequests    ClientDocumentRequest[]
+  auditAccessSessions       AuditAccessSession[]
 }
 
 model OrganizationLicense {
@@ -801,6 +802,9 @@ model User {
   completedClientIntakes        ClientIntake[]                           @relation("ClientIntakeCompletedBy")
   generatedClientDocuments      ClientDocument[]                         @relation("ClientDocumentGeneratedBy")
   createdClientDocumentRequests ClientDocumentRequest[]                  @relation("ClientDocumentRequestCreator")
+  inspectorAuditSessions        AuditAccessSession[]                     @relation("AuditAccessInspector")
+  createdAuditAccessSessions    AuditAccessSession[]                     @relation("AuditAccessCreator")
+  revokedAuditAccessSessions    AuditAccessSession[]                     @relation("AuditAccessRevoker")
 }
 
 model OrganizationMembership {
@@ -913,6 +917,7 @@ model Employee {
   assignmentEvaluations    ServiceAssignmentEligibilityEvaluation[]
   complianceIssues         ComplianceIssue[]
   portalInvitations        EmployeePortalInvitation[]
+  auditAccessScopes        AuditAccessEmployee[]
 
   @@unique([organizationId, employeeNumber])
   @@unique([organizationId, userId])
@@ -2456,6 +2461,75 @@ model AuditEvent {
   @@index([organizationId, entityType, entityId, occurredAt])
 }
 
+enum AuditAccessStatus {
+  ACTIVE
+  REVOKED
+}
+
+enum AuditAccessCategory {
+  CLIENTS
+  CLIENT_DOCUMENTS
+  STAFF
+  TRAINING_COMPLIANCE
+  CREDENTIALS_COMPETENCIES
+  POLICIES
+  EVIDENCE
+  AUDIT_PACKAGES
+}
+
+model AuditAccessSession {
+  id                 String                @id @default(cuid())
+  organizationId     String
+  name               String
+  inspectorName      String?
+  inspectorEmail     String
+  inspectorUserId    String
+  startsAt           DateTime
+  expiresAt          DateTime
+  status             AuditAccessStatus     @default(ACTIVE)
+  categories         AuditAccessCategory[]
+  includeActiveStaff Boolean               @default(false)
+  createdByUserId    String
+  revokedByUserId    String?
+  revokedAt          DateTime?
+  revocationReason   String?
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
+  organization       Organization          @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  inspector          User                  @relation("AuditAccessInspector", fields: [inspectorUserId], references: [id], onDelete: Restrict)
+  createdBy          User                  @relation("AuditAccessCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  revokedBy          User?                 @relation("AuditAccessRevoker", fields: [revokedByUserId], references: [id], onDelete: SetNull)
+  clients            AuditAccessClient[]
+  employees          AuditAccessEmployee[]
+
+  @@index([organizationId, status, startsAt, expiresAt])
+  @@index([inspectorUserId, status, startsAt, expiresAt])
+}
+
+model AuditAccessClient {
+  id        String             @id @default(cuid())
+  sessionId String
+  clientId  String
+  createdAt DateTime           @default(now())
+  session   AuditAccessSession @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+  client    Client             @relation(fields: [clientId], references: [id], onDelete: Restrict)
+
+  @@unique([sessionId, clientId])
+  @@index([clientId])
+}
+
+model AuditAccessEmployee {
+  id         String             @id @default(cuid())
+  sessionId  String
+  employeeId String
+  createdAt  DateTime           @default(now())
+  session    AuditAccessSession @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+  employee   Employee           @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+
+  @@unique([sessionId, employeeId])
+  @@index([employeeId])
+}
+
 model EmployeePortalInvitation {
   id               String                         @id @default(cuid())
   organizationId   String
@@ -2690,6 +2764,7 @@ model Client {
   roiAuthorizations       RoiAuthorization[]
   signatureEnvelopes      SignatureEnvelope[]
   documentRequests        ClientDocumentRequest[]
+  auditAccessScopes       AuditAccessClient[]
 
   @@index([organizationId, status, legalLastName, legalFirstName])
   @@index([organizationId, maPmiNumber])
