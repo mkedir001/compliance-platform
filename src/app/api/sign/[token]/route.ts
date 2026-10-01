@@ -1,0 +1,5 @@
+import { getPublicSigningSession, signWithInvitation } from "@/domain/clients/signatures";
+import { enforceRateLimit, requestRateKey } from "@/lib/rate-limit";
+const unavailable = () => Response.json({ error: "Signing invitation is invalid or unavailable" }, { status: 404, headers: { "cache-control": "no-store" } });
+export async function GET(request: Request, context: { params: Promise<{ token: string }> }) { try { const { token } = await context.params; await enforceRateLimit("public-signing-view", requestRateKey(request), 60, 3600); return Response.json(await getPublicSigningSession(token), { headers: { "cache-control": "no-store", "referrer-policy": "no-referrer" } }); } catch { return unavailable(); } }
+export async function POST(request: Request, context: { params: Promise<{ token: string }> }) { try { const { token } = await context.params; await enforceRateLimit("public-signing-submit", requestRateKey(request), 12, 3600); return Response.json(await signWithInvitation(token, await request.json()), { headers: { "cache-control": "no-store", "referrer-policy": "no-referrer" } }); } catch { return unavailable(); } }

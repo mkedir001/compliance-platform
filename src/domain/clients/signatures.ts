@@ -1,10 +1,19 @@
-import { PDFDocument, StandardFonts } from "pdf-lib";
-import type { SignatureMode, User } from "@prisma/client";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import { Prisma, type ClientDocumentType, type SignatureMethod, type SignatureMode, type SignerVerificationMethod, type User } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { AuthorizationError, ResourceNotFoundError } from "@/domain/auth/errors";
+import { AuthorizationError, ResourceNotFoundError, ValidationError } from "@/domain/auth/errors";
 import { requireOrganizationAccess, requirePermission } from "@/domain/permissions/authorization";
 import { reconcileCompletedDocumentRequests } from "@/domain/clients/document-requests";
+
+export const SIGNING_CONSENT_VERSION = "native-esign-consent-v1";
+export const SIGNING_CONSENT_TEXT = "I reviewed the identified document and intend the electronic signature I adopt to represent my signature on that document. Selecting Adopt & Sign applies my signature.";
+const invitationLifetimeHours = () => z.coerce.number().int().min(1).max(720).catch(72).parse(process.env.SIGNING_INVITATION_LIFETIME_HOURS);
+const digest = (value: Uint8Array | string) => createHash("sha256").update(value).digest("hex");
+const tokenDigest = (token: string) => digest(`native-signing-invitation:${token}`);
 
 export interface ESignatureProvider {
   readonly name: string;
@@ -14,265 +23,104 @@ export interface ESignatureProvider {
   retrieveCompletedDocument(envelopeId: string): Promise<Uint8Array | null>;
   void(envelopeId: string): Promise<void>;
 }
+/** Compatibility-only test boundary for records created before native signing. */
 export class LocalTestSignatureProvider implements ESignatureProvider {
   readonly name = "local-test-only";
-  private allowed() {
-    if (process.env.NODE_ENV === "production") throw new AuthorizationError("Local signature provider is disabled in production");
-  }
-  async createEnvelope(input: { documentId: string }) {
-    this.allowed();
-    return { providerEnvelopeId: `local:${input.documentId}` };
-  }
-  async createSigningSession(envelopeId: string, signerId: string) {
-    this.allowed();
-    return { url: `local-signing://${envelopeId}/${signerId}` };
-  }
-  async send() {
-    this.allowed();
-  }
-  async retrieveCompletedDocument() {
-    this.allowed();
-    return null;
-  }
-  async void() {
-    this.allowed();
-  }
+  private allowed() { if (process.env.NODE_ENV === "production") throw new AuthorizationError("Local signature provider is disabled in production"); }
+  async createEnvelope(input: { documentId: string }) { this.allowed(); return { providerEnvelopeId: `local:${input.documentId}` }; }
+  async createSigningSession(envelopeId: string, signerId: string) { this.allowed(); return { url: `local-signing://${envelopeId}/${signerId}` }; }
+  async send() { this.allowed(); }
+  async retrieveCompletedDocument() { this.allowed(); return null; }
+  async void() { this.allowed(); }
 }
 
-async function authorize(user: Pick<User, "id">, organizationId: string) {
-  const { membership } = await requireOrganizationAccess(user, organizationId);
-  await requirePermission(membership.id, "client.signature.manage");
+export interface SigningInvitationDelivery { readonly name: string; deliver(input: { recipientEmail: string; signingUrl: string; expiresAt: Date }): Promise<void>; }
+export class TestSigningInvitationDelivery implements SigningInvitationDelivery { readonly name = "test"; async deliver() { if (process.env.NODE_ENV === "production") throw new AuthorizationError("Test signing delivery is disabled in production"); } }
+export class EmailSigningInvitationDelivery implements SigningInvitationDelivery { readonly name = "email"; async deliver() { throw new ValidationError("Signing email delivery is not configured"); } }
+function delivery(): SigningInvitationDelivery { const mode = process.env.SIGNING_DELIVERY_MODE ?? (process.env.NODE_ENV === "production" ? "email" : "test"); if (mode === "test") return new TestSigningInvitationDelivery(); if (mode === "email") return new EmailSigningInvitationDelivery(); throw new ValidationError("Invalid SIGNING_DELIVERY_MODE configuration"); }
+function publicBaseUrl() { const configured = process.env.SIGNING_PUBLIC_BASE_URL ?? process.env.APP_BASE_URL; if (process.env.NODE_ENV === "production" && (!configured || !configured.startsWith("https://"))) throw new ValidationError("APP_BASE_URL or SIGNING_PUBLIC_BASE_URL must be an HTTPS URL in production"); return (configured ?? "http://localhost:3000").replace(/\/$/, ""); }
+async function authorize(user: Pick<User, "id">, organizationId: string) { const { membership } = await requireOrganizationAccess(user, organizationId); await requirePermission(membership.id, "client.signature.manage"); }
+
+const signerInput = z.array(z.object({ role: z.enum(["CLIENT", "LEGAL_REPRESENTATIVE", "CASE_MANAGER", "ORGANIZATION_STAFF", "OTHER"]), name: z.string().trim().min(1).max(200), email: z.string().email().optional(), required: z.boolean().optional() })).min(1).max(20);
+export const signatureInput = z.object({ consent: z.literal(true), consentVersion: z.literal(SIGNING_CONSENT_VERSION), method: z.enum(["TYPED", "DRAWN"]), adoptedName: z.string().trim().min(1).max(200), drawnSignature: z.string().max(200_000).optional() }).superRefine((value, context) => { if (value.method === "DRAWN" && !value.drawnSignature?.startsWith("data:image/png;base64,")) context.addIssue({ code: "custom", path: ["drawnSignature"], message: "A PNG drawn signature is required" }); });
+
+export async function createSignatureEnvelope(user: Pick<User, "id">, organizationId: string, clientId: string, documentId: string, mode: SignatureMode, signers: z.input<typeof signerInput>, provider?: ESignatureProvider) {
+  await authorize(user, organizationId); const rows = signerInput.parse(signers);
+  if (mode === "SEND_FOR_SIGNATURE" && rows.some(row => !row.email)) throw new ValidationError("Remote signers require an email address");
+  if (!provider && mode === "SEND_FOR_SIGNATURE" && delivery().name === "email") throw new ValidationError("Signing email delivery is not configured");
+  const document = await prisma.clientDocument.findFirst({ where: { id: documentId, organizationId, clientId, status: "READY_FOR_SIGNATURE", envelope: null }, include:{template:true} });
+  if (!document?.renderedPdf) throw new ResourceNotFoundError("Signature-ready document not found");
+  validateSignerRoles(document.template.contentJson,rows.map(row=>row.role));
+  const frozenPdf = Buffer.from(document.renderedPdf), frozenDocumentHash = digest(frozenPdf);
+  const envelope = await prisma.signatureEnvelope.create({ data: { organizationId, clientId, documentId, mode, provider: provider?.name ?? "native", status: "READY", frozenPdf, frozenDocumentHash, consentVersion: SIGNING_CONSENT_VERSION, signers: { create: rows.map(row => ({ ...row, status: "PENDING" })) } }, include: { signers: true } });
+  const deliveryLinks: { signerId: string; url: string; expiresAt: string }[] = [];
+  if (provider) {
+    const remote = await provider.createEnvelope({ documentId, mode, signers: envelope.signers.map(row => ({ id: row.id, name: row.name, email: row.email })) });
+    await prisma.signatureEnvelope.update({ where: { id: envelope.id }, data: { providerEnvelopeId: remote.providerEnvelopeId } });
+    if (mode === "SEND_FOR_SIGNATURE") for (const signer of envelope.signers) { await provider.send(envelope.id, signer.id); await prisma.signatureSigner.update({ where: { id: signer.id }, data: { status: "SENT", sentAt: new Date() } }); }
+  } else if (mode === "SEND_FOR_SIGNATURE") for (const signer of envelope.signers) deliveryLinks.push(await issueInvitation({ organizationId, envelopeId: envelope.id, signerId: signer.id, email: signer.email!, verificationMethod: "SECURE_INVITATION" }));
+  const sentAt = mode === "SEND_FOR_SIGNATURE" ? new Date() : null;
+  const updated = await prisma.signatureEnvelope.update({ where: { id: envelope.id }, data: { status: mode === "SEND_FOR_SIGNATURE" ? "SENT" : "READY", sentAt }, include: { signers: true } });
+  await audit(organizationId, user.id, "client.signing_cycle_created", envelope.id, { documentId, mode, signerCount: rows.length, provider: provider?.name ?? "native" });
+  await audit(organizationId, user.id, "client.document_frozen_for_signing", envelope.id, { documentId, digestAlgorithm: "SHA-256" });
+  if (mode === "SEND_FOR_SIGNATURE") await audit(organizationId, user.id, "client.signature_invitations_created", envelope.id, { signerCount: rows.length, delivery: provider?.name ?? delivery().name });
+  return Object.assign(updated, process.env.NODE_ENV === "production" ? {} : { deliveryLinks });
 }
-const signerInput = z
-  .array(
-    z.object({
-      role: z.enum(["CLIENT", "LEGAL_REPRESENTATIVE", "CASE_MANAGER", "ORGANIZATION_STAFF", "OTHER"]),
-      name: z.string().min(1).max(200),
-      email: z.string().email().optional(),
-      required: z.boolean().optional(),
-    }),
-  )
-  .min(1)
-  .max(20);
-export async function createSignatureEnvelope(user: Pick<User, "id">, organizationId: string, clientId: string, documentId: string, mode: SignatureMode, signers: z.input<typeof signerInput>, provider: ESignatureProvider = new LocalTestSignatureProvider()) {
-  await authorize(user, organizationId);
-  const rows = signerInput.parse(signers);
-  if (mode === "SEND_FOR_SIGNATURE" && rows.some((row) => !row.email)) throw new AuthorizationError("Remote signers require an email address");
-  const document = await prisma.clientDocument.findFirst({
-    where: {
-      id: documentId,
-      organizationId,
-      clientId,
-      status: { in: ["READY_FOR_SIGNATURE", "PARTIALLY_SIGNED"] },
-    },
-  });
-  if (!document) throw new ResourceNotFoundError("Signature-ready document not found");
-  const envelope = await prisma.signatureEnvelope.create({
-    data: {
-      organizationId,
-      clientId,
-      documentId,
-      mode,
-      provider: provider.name,
-      status: "READY",
-      signers: { create: rows.map((row) => ({ ...row, status: "PENDING" })) },
-    },
-    include: { signers: true },
-  });
-  const remote = await provider.createEnvelope({
-    documentId,
-    mode,
-    signers: envelope.signers.map((row) => ({
-      id: row.id,
-      name: row.name,
-      email: row.email,
-    })),
-  });
-  const status = mode === "SEND_FOR_SIGNATURE" ? "SENT" : "READY",
-    sentAt = mode === "SEND_FOR_SIGNATURE" ? new Date() : null;
-  const updated = await prisma.signatureEnvelope.update({
-    where: { id: envelope.id },
-    data: { providerEnvelopeId: remote.providerEnvelopeId, status, sentAt },
-    include: { signers: true },
-  });
-  if (mode === "SEND_FOR_SIGNATURE")
-    for (const signer of updated.signers) {
-      await provider.send(updated.id, signer.id);
-      await prisma.signatureSigner.update({
-        where: { id: signer.id },
-        data: { status: "SENT", sentAt: new Date() },
-      });
-    }
-  await prisma.auditEvent.create({
-    data: {
-      organizationId,
-      actorUserId: user.id,
-      eventType: document.renewalOfDocumentId ? (mode === "SIGN_NOW" ? "client.document_renewal_sign_now_initiated" : "client.document_renewal_sent_for_signature") : "client.signature_requested",
-      entityType: "SignatureEnvelope",
-      entityId: envelope.id,
-      metadataJson: {
-        documentId,
-        mode,
-        signerCount: rows.length,
-        provider: provider.name,
-        renewalOfDocumentId: document.renewalOfDocumentId,
-      },
-    },
-  });
-  return prisma.signatureEnvelope.findUniqueOrThrow({
-    where: { id: envelope.id },
-    include: { signers: true },
-  });
+
+async function issueInvitation(input: { organizationId: string; envelopeId: string; signerId: string; email: string; verificationMethod: SignerVerificationMethod; replaceId?: string }) {
+  const token = randomBytes(32).toString("base64url"), expiresAt = new Date(Date.now() + invitationLifetimeHours() * 3_600_000), url = `${publicBaseUrl()}/sign/${token}`, adapter = delivery();
+  const invitation = await prisma.$transaction(async tx => { if (input.replaceId) await tx.signatureInvitation.update({ where: { id: input.replaceId }, data: { status: "REVOKED", revokedAt: new Date() } }); const created = await tx.signatureInvitation.create({ data: { organizationId: input.organizationId, envelopeId: input.envelopeId, signerId: input.signerId, tokenDigest: tokenDigest(token), expiresAt } }); if (input.replaceId) await tx.signatureInvitation.update({ where: { id: input.replaceId }, data: { replacedById: created.id } }); await tx.signatureSigner.update({ where: { id: input.signerId }, data: { status: input.verificationMethod === "SECURE_INVITATION" ? "SENT" : "PENDING", sentAt: input.verificationMethod === "SECURE_INVITATION" ? new Date() : undefined, verificationMethod: input.verificationMethod } }); return created; });
+  if (input.verificationMethod === "SECURE_INVITATION") { await adapter.deliver({ recipientEmail: input.email, signingUrl: url, expiresAt }); await prisma.signatureInvitation.update({ where: { id: invitation.id }, data: { deliveredAt: new Date() } }); await audit(input.organizationId, null, "client.signature_invitation_delivery_requested", input.envelopeId, { signerId: input.signerId, delivery: adapter.name }); }
+  return { signerId: input.signerId, url, expiresAt: expiresAt.toISOString() };
 }
-export async function createSignNowSession(user: Pick<User, "id">, organizationId: string, clientId: string, envelopeId: string, signerId: string, provider: ESignatureProvider = new LocalTestSignatureProvider()) {
-  await authorize(user, organizationId);
-  const envelope = await prisma.signatureEnvelope.findFirst({
-    where: {
-      id: envelopeId,
-      organizationId,
-      clientId,
-      mode: "SIGN_NOW",
-      signers: { some: { id: signerId } },
-    },
-  });
-  if (!envelope) throw new ResourceNotFoundError("Signing session not found");
-  return provider.createSigningSession(envelope.id, signerId);
+
+export async function createSignNowSession(user: Pick<User, "id">, organizationId: string, clientId: string, envelopeId: string, signerId: string, provider?: ESignatureProvider) {
+  await authorize(user, organizationId); const envelope = await prisma.signatureEnvelope.findFirst({ where: { id: envelopeId, organizationId, clientId, status: { in: ["READY", "SENT", "PARTIALLY_SIGNED"] }, signers: { some: { id: signerId, status: { not: "SIGNED" } } } }, include: { signers: true } }); if (!envelope) throw new ResourceNotFoundError("Signing session not found"); if (provider) return provider.createSigningSession(envelope.id, signerId);
+  const signer = envelope.signers.find(row => row.id === signerId)!, active = await prisma.signatureInvitation.findFirst({ where: { organizationId, envelopeId, signerId, status: "ACTIVE" }, orderBy: { createdAt: "desc" } }), invitation = await issueInvitation({ organizationId, envelopeId, signerId, email: signer.email ?? "in-person@local.invalid", verificationMethod: "IN_PERSON_FACILITATED", replaceId: active?.id }); await prisma.signatureSigner.update({ where: { id: signerId }, data: { facilitatorUserId: user.id } }); await audit(organizationId, user.id, "client.sign_now_initiated", envelope.id, { signerRole: signer.role, signerId }); return { url: invitation.url };
 }
+export async function reissueSignatureInvitation(user: Pick<User, "id">, organizationId: string, clientId: string, envelopeId: string, signerId: string) {
+  await authorize(user, organizationId); const envelope = await prisma.signatureEnvelope.findFirst({ where: { id: envelopeId, organizationId, clientId, mode: "SEND_FOR_SIGNATURE", status: { in: ["SENT", "PARTIALLY_SIGNED"] } }, include: { signers: true } }); const signer = envelope?.signers.find(row => row.id === signerId); if (!envelope || !signer?.email || signer.status === "SIGNED") throw new ResourceNotFoundError("Signer invitation not found"); const active = await prisma.signatureInvitation.findFirst({ where: { organizationId, envelopeId, signerId, status: "ACTIVE" }, orderBy: { createdAt: "desc" } }); const result = await issueInvitation({ organizationId, envelopeId, signerId, email: signer.email, verificationMethod: "SECURE_INVITATION", replaceId: active?.id }); await audit(organizationId, user.id, "client.signature_invitation_reissued", envelope.id, { signerId }); return process.env.NODE_ENV === "production" ? { expiresAt: result.expiresAt } : result;
+}
+export async function cancelSignatureEnvelope(user: Pick<User, "id">, organizationId: string, clientId: string, envelopeId: string, reason: string) {
+  await authorize(user, organizationId); const parsedReason = z.string().trim().min(1).max(1000).parse(reason); const envelope = await prisma.signatureEnvelope.findFirst({ where: { id: envelopeId, organizationId, clientId, status: { notIn: ["COMPLETED", "VOIDED"] } } }); if (!envelope) throw new ResourceNotFoundError("Cancelable signing cycle not found"); const now = new Date(); await prisma.$transaction([prisma.signatureInvitation.updateMany({ where: { envelopeId, status: "ACTIVE" }, data: { status: "REVOKED", revokedAt: now } }), prisma.signatureEnvelope.update({ where: { id: envelopeId }, data: { status: "VOIDED", voidedAt: now, voidReason: parsedReason } }), prisma.clientDocument.update({ where: { id: envelope.documentId }, data: { status: "VOIDED", voidedAt: now } })]); await audit(organizationId, user.id, "client.signing_cycle_voided", envelopeId, { reason: parsedReason });
+}
+
+function safeToken(token: string) { return z.string().regex(/^[A-Za-z0-9_-]{43}$/).parse(token); }
+async function invitationForToken(token: string, markViewed = false) {
+  safeToken(token); const calculated = tokenDigest(token), candidate = await prisma.signatureInvitation.findUnique({ where: { tokenDigest: calculated }, include: { signer: true, envelope: { include: { document: { include: { template: true } } } } } });
+  if (!candidate || !timingSafeEqual(Buffer.from(candidate.tokenDigest), Buffer.from(calculated))) throw new ResourceNotFoundError("Signing invitation is invalid or unavailable");
+  if (candidate.status !== "ACTIVE" || candidate.expiresAt <= new Date() || candidate.signer.status === "SIGNED" || !["READY", "SENT", "PARTIALLY_SIGNED"].includes(candidate.envelope.status)) { if (candidate.status === "ACTIVE" && candidate.expiresAt <= new Date()) { await prisma.signatureInvitation.update({ where: { id: candidate.id }, data: { status: "EXPIRED" } }); await audit(candidate.organizationId, null, "client.signature_invitation_expired", candidate.envelopeId, { signerId: candidate.signerId }); } throw new ResourceNotFoundError("Signing invitation is invalid or unavailable"); }
+  if (markViewed) await prisma.signatureSigner.update({ where: { id: candidate.signerId }, data: { status: ["PENDING", "SENT"].includes(candidate.signer.status) ? "VIEWED" : candidate.signer.status, viewedAt: candidate.signer.viewedAt ?? new Date() } }); return candidate;
+}
+export async function getPublicSigningSession(token: string) { const invitation = await invitationForToken(token, true), organization = await prisma.organization.findUniqueOrThrow({ where: { id: invitation.organizationId }, select: { displayName: true } }); return { organizationName: organization.displayName, documentName: invitation.envelope.document.template.name, signerName: invitation.signer.name, signerRole: invitation.signer.role, consentVersion: SIGNING_CONSENT_VERSION, consentText: SIGNING_CONSENT_TEXT, expiresAt: invitation.expiresAt.toISOString(), status: invitation.envelope.status }; }
+export async function getPublicSigningDocument(token: string) { const invitation = await invitationForToken(token); if (!invitation.envelope.frozenPdf) throw new ResourceNotFoundError("Signing document unavailable"); return Buffer.from(invitation.envelope.frozenPdf); }
+export async function getSigningEvidencePdf(user:Pick<User,"id">,organizationId:string,clientId:string,envelopeId:string){await authorize(user,organizationId);const envelope=await prisma.signatureEnvelope.findFirst({where:{id:envelopeId,organizationId,clientId,status:"COMPLETED"},select:{evidencePdf:true}});if(!envelope?.evidencePdf)throw new ResourceNotFoundError("Signing evidence unavailable");return Buffer.from(envelope.evidencePdf)}
+export async function signWithInvitation(token: string, input: unknown) {
+  const data = signatureInput.parse(input), invitation = await invitationForToken(token), now = new Date(), signatureData = data.method === "DRAWN" ? parseDrawn(data.drawnSignature!) : null;
+  const result = await prisma.$transaction(async tx => { const locked = await tx.signatureInvitation.updateMany({ where: { id: invitation.id, status: "ACTIVE", expiresAt: { gt: now } }, data: { status: "USED", usedAt: now } }); if (locked.count !== 1) throw new ResourceNotFoundError("Signing invitation is invalid or unavailable"); await tx.signatureSigner.update({ where: { id: invitation.signerId }, data: { status: "SIGNED", signatureMethod: data.method, adoptedName: data.adoptedName, signatureData, consentVersion: SIGNING_CONSENT_VERSION, consentedAt: now, signedAt: now, auditJson: { consentText: SIGNING_CONSENT_TEXT } } }); return finalizeIfComplete(tx, invitation.envelopeId, now); });
+  await audit(invitation.organizationId, null, "client.signer_consented", invitation.envelopeId, { signerId: invitation.signerId, consentVersion: SIGNING_CONSENT_VERSION }); await audit(invitation.organizationId, null, "client.signer_completed", invitation.envelopeId, { signerId: invitation.signerId, method: data.method, verificationMethod: invitation.signer.verificationMethod }); if (result.complete) await postCompletion(invitation.organizationId, invitation.envelope.clientId, invitation.envelope.documentId, invitation.envelopeId, result.completedAt!); else await audit(invitation.organizationId, null, "client.signature_envelope_partially_signed", invitation.envelopeId, { signerId: invitation.signerId }); return { complete: result.complete, status: result.complete ? "COMPLETED" : "PARTIALLY_SIGNED" };
+}
+
+async function finalizeIfComplete(tx: Prisma.TransactionClient, envelopeId: string, signedAt: Date) {
+  await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "SignatureEnvelope" WHERE "id" = ${envelopeId} FOR UPDATE`);
+  const envelope = await tx.signatureEnvelope.findUniqueOrThrow({ where: { id: envelopeId }, include: { signers: { orderBy: { createdAt: "asc" } }, document: true } }); if (envelope.status === "COMPLETED") return { complete: true, completedAt: envelope.completedAt }; const required = envelope.signers.filter(row => row.required), complete = required.every(row => row.status === "SIGNED");
+  if (!complete) { await tx.signatureEnvelope.update({ where: { id: envelopeId }, data: { status: "PARTIALLY_SIGNED" } }); await tx.clientDocument.update({ where: { id: envelope.documentId }, data: { status: "PARTIALLY_SIGNED" } }); return { complete: false, completedAt: null }; }
+  const frozenPdf = envelope.frozenPdf ?? envelope.document.renderedPdf; if (!frozenPdf) throw new ValidationError("Frozen signing document unavailable"); const frozenDocumentHash = envelope.frozenDocumentHash ?? digest(frozenPdf), completedAt = new Date(Math.max(...required.map(row => row.signedAt!.getTime()))), finalPdf = await renderFinalPdf(Buffer.from(frozenPdf), envelope.document.documentType, envelope.signers, frozenDocumentHash), finalDocumentHash = digest(finalPdf), evidence = evidenceSnapshot({ ...envelope, frozenDocumentHash }, completedAt, finalDocumentHash), evidencePdf = await renderEvidencePdf(evidence);
+  await tx.signatureEnvelope.update({ where: { id: envelopeId }, data: { status: "COMPLETED", completedAt, frozenPdf: envelope.frozenPdf ?? Buffer.from(frozenPdf), frozenDocumentHash, finalDocumentHash, evidenceJson: evidence as Prisma.InputJsonValue, evidencePdf: Buffer.from(evidencePdf) } }); await tx.clientDocument.update({ where: { id: envelope.documentId }, data: { status: "COMPLETED", finalPdf: finalPdf, authoritativeCompletedAt: completedAt, finalizedAt: envelope.document.finalizedAt ?? signedAt } }); return { complete: true, completedAt };
+}
+function evidenceSnapshot(envelope: Prisma.SignatureEnvelopeGetPayload<{ include: { signers: true; document: true } }>, completedAt: Date, finalDocumentHash: string) { return { evidenceVersion: "native-signing-evidence-v1", organizationId: envelope.organizationId, documentId: envelope.documentId, templateId: envelope.document.templateId, envelopeId: envelope.id, frozenDocumentHash: envelope.frozenDocumentHash, finalDocumentHash, requiredSignerRoles: envelope.signers.filter(row => row.required).map(row => row.role), signers: envelope.signers.map(row => ({ signerId: row.id, name: row.name, role: row.role, required: row.required, signatureMethod: row.signatureMethod, verificationMethod: row.verificationMethod, consentVersion: row.consentVersion, consentedAt: row.consentedAt?.toISOString(), signedAt: row.signedAt?.toISOString(), facilitatorUserId: row.facilitatorUserId })), completedAt: completedAt.toISOString() }; }
+async function postCompletion(organizationId: string, clientId: string, documentId: string, envelopeId: string, completedAt: Date) {
+  const document = await prisma.clientDocument.findUniqueOrThrow({ where: { id: documentId } }); await audit(organizationId, null, document.renewalOfDocumentId ? "client.document_renewal_cycle_established" : "client.signature_envelope_completed", envelopeId, { documentId, authoritativeCompletedAt: completedAt.toISOString() }); await audit(organizationId, null, "client.signature_final_document_generated", envelopeId, { documentId, digestAlgorithm: "SHA-256" }); if (document.renewalOfDocumentId) await prisma.auditEvent.createMany({ data: [{ organizationId, eventType: "client.document_previous_cycle_superseded", entityType: "ClientDocument", entityId: document.renewalOfDocumentId, metadataJson: { renewalDocumentId: documentId } }, { organizationId, eventType: "client.document_renewal_issue_resolved", entityType: "ClientDocument", entityId: documentId, metadataJson: { previousDocumentId: document.renewalOfDocumentId } }] }); await reconcileCompletedDocumentRequests(organizationId, clientId, documentId, null, completedAt);
+}
+
 export async function recordLocalTestSignature(user: Pick<User, "id">, organizationId: string, clientId: string, envelopeId: string, signerId: string, provider: ESignatureProvider = new LocalTestSignatureProvider()) {
-  await authorize(user, organizationId);
-  if (provider.name !== "local-test-only" || process.env.NODE_ENV === "production") throw new AuthorizationError("Test signatures cannot be recorded as production execution");
-  const envelope = await prisma.signatureEnvelope.findFirst({
-    where: { id: envelopeId, organizationId, clientId },
-    include: { signers: true, document: true },
-  });
-  if (!envelope) throw new ResourceNotFoundError("Signature envelope not found");
-  const signer = envelope.signers.find((row) => row.id === signerId);
-  if (!signer) throw new ResourceNotFoundError("Signer not found");
-  if (signer.status === "SIGNED")
-    return prisma.signatureEnvelope.findUniqueOrThrow({
-      where: { id: envelope.id },
-      include: { signers: true, document: true },
-    });
-  const signedAt = new Date();
-  await prisma.signatureSigner.update({
-    where: { id: signer.id },
-    data: {
-      status: "SIGNED",
-      viewedAt: signer.viewedAt ?? signedAt,
-      signedAt,
-      auditJson: { provider: "local-test-only", legalExecution: false },
-    },
-  });
-  const signers = await prisma.signatureSigner.findMany({
-      where: { envelopeId },
-      orderBy: { createdAt: "asc" },
-    }),
-    required = signers.filter((row) => row.required),
-    complete = required.every((row) => row.status === "SIGNED"),
-    status = complete ? "COMPLETED" : "PARTIALLY_SIGNED",
-    authoritativeCompletedAt = complete ? new Date(Math.max(...required.map((row) => row.signedAt!.getTime()))) : null;
-  await prisma.signatureEnvelope.update({
-    where: { id: envelope.id },
-    data: { status, completedAt: authoritativeCompletedAt },
-  });
-  if (complete) {
-    if (!envelope.document.renderedPdf) throw new AuthorizationError("Rendered document unavailable");
-    const finalPdf = await addLocalAuditPage(Buffer.from(envelope.document.renderedPdf), signers);
-    await prisma.clientDocument.update({
-      where: { id: envelope.documentId },
-      data: {
-        status: "COMPLETED",
-        finalPdf: Buffer.from(finalPdf),
-        finalizedAt: envelope.document.finalizedAt ?? signedAt,
-        authoritativeCompletedAt,
-      },
-    });
-  } else
-    await prisma.clientDocument.update({
-      where: { id: envelope.documentId },
-      data: { status: "PARTIALLY_SIGNED" },
-    });
-  await prisma.auditEvent.create({
-    data: {
-      organizationId,
-      actorUserId: user.id,
-      eventType: "client.signer_completed",
-      entityType: "SignatureEnvelope",
-      entityId: envelope.id,
-      metadataJson: {
-        signerId,
-        provider: "local-test-only",
-        legalExecution: false,
-        renewalOfDocumentId: envelope.document.renewalOfDocumentId,
-      },
-    },
-  });
-  if (complete)
-    await prisma.auditEvent.create({
-      data: {
-        organizationId,
-        actorUserId: user.id,
-        eventType: envelope.document.renewalOfDocumentId ? "client.document_renewal_cycle_established" : "client.signature_envelope_completed",
-        entityType: "SignatureEnvelope",
-        entityId: envelope.id,
-        metadataJson: {
-          provider: "local-test-only",
-          legalExecution: false,
-          authoritativeCompletedAt: authoritativeCompletedAt!.toISOString(),
-          renewalOfDocumentId: envelope.document.renewalOfDocumentId,
-        },
-      },
-    });
-  if (complete && envelope.document.renewalOfDocumentId)
-    await prisma.auditEvent.createMany({
-      data: [
-        {
-          organizationId,
-          actorUserId: user.id,
-          eventType: "client.document_previous_cycle_superseded",
-          entityType: "ClientDocument",
-          entityId: envelope.document.renewalOfDocumentId,
-          metadataJson: { renewalDocumentId: envelope.documentId },
-        },
-        {
-          organizationId,
-          actorUserId: user.id,
-          eventType: "client.document_renewal_issue_resolved",
-          entityType: "ClientDocument",
-          entityId: envelope.documentId,
-          metadataJson: {
-            previousDocumentId: envelope.document.renewalOfDocumentId,
-          },
-        },
-      ],
-    });
-  if (complete) await reconcileCompletedDocumentRequests(organizationId, clientId, envelope.documentId, user.id, authoritativeCompletedAt!);
-  return prisma.signatureEnvelope.findUniqueOrThrow({
-    where: { id: envelope.id },
-    include: { signers: true, document: true },
-  });
+  await authorize(user, organizationId); if (provider.name !== "local-test-only" || process.env.NODE_ENV === "production") throw new AuthorizationError("Test signatures cannot be recorded as production execution"); const envelope = await prisma.signatureEnvelope.findFirst({ where: { id: envelopeId, organizationId, clientId }, include: { signers: true, document: true } }); if (!envelope) throw new ResourceNotFoundError("Signature envelope not found"); const signer = envelope.signers.find(row => row.id === signerId); if (!signer) throw new ResourceNotFoundError("Signer not found"); if (signer.status === "SIGNED") return prisma.signatureEnvelope.findUniqueOrThrow({ where: { id: envelope.id }, include: { signers: true, document: true } });
+  const now = new Date(); await prisma.$transaction(async tx => { await tx.signatureSigner.update({ where: { id: signerId }, data: { status: "SIGNED", viewedAt: now, signedAt: now, consentedAt: now, consentVersion: SIGNING_CONSENT_VERSION, signatureMethod: "TYPED", adoptedName: signer.name, verificationMethod: "IN_PERSON_FACILITATED", facilitatorUserId: user.id, auditJson: { provider: "local-test-only", legalExecution: false } } }); await finalizeIfComplete(tx, envelopeId, now); }); const refreshed = await prisma.signatureEnvelope.findUniqueOrThrow({ where: { id: envelopeId }, include: { signers: true, document: true } }); await audit(organizationId, user.id, "client.signer_completed", envelopeId, { signerId, provider: "local-test-only", legalExecution: false }); if (refreshed.status === "COMPLETED") await postCompletion(organizationId, clientId, envelope.documentId, envelopeId, refreshed.completedAt!); return refreshed;
 }
-async function addLocalAuditPage(source: Buffer, signers: { role: string; name: string; signedAt: Date | null }[]) {
-  const pdf = await PDFDocument.load(source),
-    page = pdf.addPage([612, 792]),
-    font = await pdf.embedFont(StandardFonts.Helvetica),
-    bold = await pdf.embedFont(StandardFonts.HelveticaBold);
-  page.drawText("Development signature workflow record", {
-    x: 54,
-    y: 730,
-    size: 18,
-    font: bold,
-  });
-  page.drawText("NOT A PRODUCTION LEGAL SIGNATURE", {
-    x: 54,
-    y: 700,
-    size: 12,
-    font: bold,
-  });
-  let y = 660;
-  for (const signer of signers) {
-    page.drawText(`${signer.role}: ${signer.name} - ${signer.signedAt?.toISOString() ?? "pending"}`, { x: 54, y, size: 10, font });
-    y -= 24;
-  }
-  return pdf.save();
-}
+function parseDrawn(value: string) { const bytes = Buffer.from(value.slice("data:image/png;base64,".length), "base64"); if (!bytes.length || bytes.length > 150_000 || !bytes.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10]))) throw new ValidationError("Drawn signature must be a valid PNG"); return bytes; }
+function validateSignerRoles(content:Prisma.JsonValue,roles:string[]){const configured=((content as {signerRoles?:string[]})?.signerRoles??[]).flatMap(role=>role==="CLIENT_OR_LEGAL_REPRESENTATIVE"?["CLIENT","LEGAL_REPRESENTATIVE"]:role==="LEGAL_REPRESENTATIVE_IF_APPLICABLE"?["LEGAL_REPRESENTATIVE"]:role==="RADIANT_CARE_STAFF"?["ORGANIZATION_STAFF"]:[role]);if(configured.length&&roles.some(role=>!configured.includes(role)))throw new ValidationError("Signer role is not valid for this document template")}
+const placement:Partial<Record<ClientDocumentType,Partial<Record<string,[string,string,string]>>>>={INTAKE_CHECKLIST:{ORGANIZATION_STAFF:["CHK_041_Signature_Staff_completing_intake","CHK_042_Printed_name_Staff_completing_intake","CHK_043_Date_Staff_completing_intake"]},FACE_SHEET:{CLIENT:["FACE_110_Signature_Person_served_or_legal_represe","FACE_111_Printed_name_Person_served_or_legal_repr","FACE_112_Date_Person_served_or_legal_representati"],LEGAL_REPRESENTATIVE:["FACE_110_Signature_Person_served_or_legal_represe","FACE_111_Printed_name_Person_served_or_legal_repr","FACE_112_Date_Person_served_or_legal_representati"],ORGANIZATION_STAFF:["FACE_113_Signature_Radiant_Care_staff_completing_","FACE_114_Printed_name_Radiant_Care_staff_completi","FACE_115_Date_Radiant_Care_staff_completing_form"]},RIGHTS_ACKNOWLEDGMENT:{CLIENT:["RIGHTS_017_Signature_Person_served","RIGHTS_018_Printed_name_Person_served","RIGHTS_019_Date_Person_served"],LEGAL_REPRESENTATIVE:["RIGHTS_020_Signature_Legal_representative_if_applic","RIGHTS_021_Printed_name_Legal_representative_if_app","RIGHTS_022_Date_Legal_representative_if_applicable"],ORGANIZATION_STAFF:["RIGHTS_023_Signature_Radiant_Care_staff","RIGHTS_024_Printed_name_Radiant_Care_staff","RIGHTS_025_Date_Radiant_Care_staff"]},ROI:{CLIENT:["ROI_034_Signature_Person_served","ROI_035_Printed_name_Person_served","ROI_036_Date_Person_served"],LEGAL_REPRESENTATIVE:["ROI_037_Signature_Legal_representative_if_applic","ROI_038_Printed_name_Legal_representative_if_app","ROI_039_Date_Legal_representative_if_applicable"],ORGANIZATION_STAFF:["ROI_042_Signature_Radiant_Care_staff","ROI_043_Printed_name_Radiant_Care_staff","ROI_044_Date_Radiant_Care_staff"]}};
+async function renderFinalPdf(source: Buffer,documentType:ClientDocumentType,signers: { role: string; name: string; adoptedName: string | null; signatureMethod: SignatureMethod | null; signatureData: Uint8Array | null; signedAt: Date | null }[], frozenHash: string) { const pdf = await PDFDocument.load(source), font = await pdf.embedFont(StandardFonts.Helvetica), bold = await pdf.embedFont(StandardFonts.HelveticaBold),layoutFile:{[file:string]:Record<string,{page:number;rect:[number,number,number,number]}>}=JSON.parse(readFileSync(join(process.cwd(),"reference/intake-forms/templates/field-layout.json"),"utf8")),asset={INTAKE_CHECKLIST:"00_Intake_Checklist_Staff_Use.pdf",FACE_SHEET:"01_Client_Information_Face_Sheet.pdf",RIGHTS_ACKNOWLEDGMENT:"02_Service_Recipient_Rights_Acknowledgment.pdf",ROI:"04_Authorization_to_Release_Information.pdf"}[documentType],layout=layoutFile[asset]??{},pageAvailable=(box:{page:number}|undefined)=>Boolean(box&&box.page<pdf.getPageCount()),clear=(box:{page:number;rect:[number,number,number,number]})=>{const[x1,y1,x2,y2]=box.rect;pdf.getPage(box.page).drawRectangle({x:x1+1,y:y1+1,width:x2-x1-2,height:y2-y1-2,color:rgb(1,1,1)})};for(const signer of signers){if(!signer.signedAt)continue;const fields=placement[documentType]?.[signer.role];if(!fields)continue;const [signatureField,nameField,dateField]=fields,signatureBox=layout[signatureField],nameBox=layout[nameField],dateBox=layout[dateField];for(const box of [signatureBox,nameBox,dateBox])if(pageAvailable(box))clear(box);if(pageAvailable(signatureBox)){const[x1,y1,x2,y2]=signatureBox.rect,page=pdf.getPage(signatureBox.page);if(signer.signatureMethod==="DRAWN"&&signer.signatureData){const image=await pdf.embedPng(signer.signatureData),scale=Math.min((x2-x1-4)/image.width,(y2-y1-4)/image.height);page.drawImage(image,{x:x1+2,y:y1+2,width:image.width*scale,height:image.height*scale})}else page.drawText(`/s/ ${signer.adoptedName??signer.name}`,{x:x1+2,y:y1+5,size:Math.min(11,y2-y1-7),font})}if(pageAvailable(nameBox)){const[x1,y1]=nameBox.rect;pdf.getPage(nameBox.page).drawText(signer.name.slice(0,36),{x:x1+2,y:y1+5,size:8,font})}if(pageAvailable(dateBox)){const[x1,y1]=dateBox.rect;pdf.getPage(dateBox.page).drawText(signer.signedAt.toISOString().slice(0,10),{x:x1+2,y:y1+5,size:8,font})}}
+  const page = pdf.addPage([612,792]); page.drawText("Electronic signature record",{x:54,y:738,size:18,font:bold,color:rgb(.08,.24,.19)}); page.drawText("This page is part of the authoritative completed document.",{x:54,y:713,size:9,font}); let y=670; for(const signer of signers){if(!signer.signedAt)continue; page.drawText(signer.role.replaceAll("_"," "),{x:54,y,size:9,font:bold});y-=18;if(signer.signatureMethod==="DRAWN"&&signer.signatureData){const image=await pdf.embedPng(signer.signatureData),scale=Math.min(180/image.width,45/image.height,1);page.drawImage(image,{x:54,y:y-45,width:image.width*scale,height:image.height*scale})}else page.drawText(`/s/ ${signer.adoptedName??signer.name}`,{x:54,y:y-20,size:16,font});page.drawText(`${signer.name} · ${signer.signedAt.toISOString()}`,{x:260,y:y-20,size:9,font});y-=72}page.drawText(`Frozen document SHA-256: ${frozenHash}`,{x:54,y:54,size:7,font,color:rgb(.3,.3,.3)});return Buffer.from(await pdf.save()); }
+async function renderEvidencePdf(evidence: ReturnType<typeof evidenceSnapshot>) { const pdf=await PDFDocument.create(),page=pdf.addPage([612,792]),font=await pdf.embedFont(StandardFonts.Helvetica),bold=await pdf.embedFont(StandardFonts.HelveticaBold);let y=738;const line=(text:string,strong=false)=>{page.drawText(text.slice(0,95),{x:54,y,size:strong?14:9,font:strong?bold:font});y-=strong?26:16};line("Electronic signing evidence",true);line(`Evidence version: ${evidence.evidenceVersion}`);line(`Frozen document SHA-256: ${evidence.frozenDocumentHash}`);line(`Final document SHA-256: ${evidence.finalDocumentHash}`);line(`Completed: ${evidence.completedAt}`);y-=8;for(const signer of evidence.signers){line(`${signer.role}: ${signer.name}`,true);line(`Method: ${signer.signatureMethod} · Verification: ${signer.verificationMethod}`);line(`Consent: ${signer.consentVersion} at ${signer.consentedAt}`);line(`Signed: ${signer.signedAt}`);y-=6}return pdf.save(); }
+async function audit(organizationId: string, actorUserId: string | null, eventType: string, entityId: string, metadataJson: Prisma.InputJsonValue) { await prisma.auditEvent.create({ data: { organizationId, actorUserId, eventType, entityType: "SignatureEnvelope", entityId, metadataJson } }); }

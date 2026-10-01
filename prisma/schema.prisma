@@ -2706,6 +2706,24 @@ enum SignatureMode {
   SEND_FOR_SIGNATURE
 }
 
+enum SignatureMethod {
+  TYPED
+  DRAWN
+}
+
+enum SignerVerificationMethod {
+  IN_PERSON_FACILITATED
+  SECURE_INVITATION
+  AUTHENTICATED_USER
+}
+
+enum SignatureInvitationStatus {
+  ACTIVE
+  USED
+  REVOKED
+  EXPIRED
+}
+
 enum RoiDirection {
   RELEASE_TO
   RECEIVE_FROM
@@ -3073,34 +3091,72 @@ model SignatureEnvelope {
   provider           String
   providerEnvelopeId String?
   status             SignatureEnvelopeStatus @default(DRAFT)
+  frozenPdf          Bytes?
+  frozenDocumentHash String?
+  finalDocumentHash  String?
+  consentVersion     String                  @default("native-esign-consent-v1")
+  evidenceJson       Json?
+  evidencePdf        Bytes?
   sentAt             DateTime?
   completedAt        DateTime?
   voidedAt           DateTime?
+  voidReason         String?
   createdAt          DateTime                @default(now())
   updatedAt          DateTime                @updatedAt
   document           ClientDocument          @relation(fields: [documentId], references: [id], onDelete: Restrict)
   client             Client                  @relation(fields: [clientId], references: [id], onDelete: Restrict)
   signers            SignatureSigner[]
+  invitations        SignatureInvitation[]
 
   @@index([organizationId, clientId, status])
 }
 
 model SignatureSigner {
-  id               String                @id @default(cuid())
-  envelopeId       String
-  role             String
-  name             String
-  email            String?
-  required         Boolean               @default(true)
-  status           SignatureSignerStatus @default(PENDING)
-  providerSignerId String?
-  sentAt           DateTime?
-  viewedAt         DateTime?
-  signedAt         DateTime?
-  auditJson        Json?
-  createdAt        DateTime              @default(now())
-  updatedAt        DateTime              @updatedAt
-  envelope         SignatureEnvelope     @relation(fields: [envelopeId], references: [id], onDelete: Restrict)
+  id                 String                    @id @default(cuid())
+  envelopeId         String
+  role               String
+  name               String
+  email              String?
+  required           Boolean                   @default(true)
+  status             SignatureSignerStatus     @default(PENDING)
+  providerSignerId   String?
+  sentAt             DateTime?
+  viewedAt           DateTime?
+  signedAt           DateTime?
+  signatureMethod    SignatureMethod?
+  adoptedName        String?
+  signatureData      Bytes?
+  consentVersion     String?
+  consentedAt        DateTime?
+  verificationMethod SignerVerificationMethod?
+  facilitatorUserId  String?
+  auditJson          Json?
+  createdAt          DateTime                  @default(now())
+  updatedAt          DateTime                  @updatedAt
+  envelope           SignatureEnvelope         @relation(fields: [envelopeId], references: [id], onDelete: Restrict)
+  invitations        SignatureInvitation[]
 
   @@index([envelopeId, status])
+}
+
+model SignatureInvitation {
+  id             String                    @id @default(cuid())
+  organizationId String
+  envelopeId     String
+  signerId       String
+  tokenDigest    String                    @unique
+  status         SignatureInvitationStatus @default(ACTIVE)
+  expiresAt      DateTime
+  deliveredAt    DateTime?
+  usedAt         DateTime?
+  revokedAt      DateTime?
+  replacedById   String?                   @unique
+  createdAt      DateTime                  @default(now())
+  envelope       SignatureEnvelope         @relation(fields: [envelopeId], references: [id], onDelete: Restrict)
+  signer         SignatureSigner           @relation(fields: [signerId], references: [id], onDelete: Restrict)
+  replacedBy     SignatureInvitation?      @relation("InvitationReplacement", fields: [replacedById], references: [id], onDelete: Restrict)
+  replaces       SignatureInvitation?      @relation("InvitationReplacement")
+
+  @@index([organizationId, envelopeId, signerId, status])
+  @@index([expiresAt, status])
 }
