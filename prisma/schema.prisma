@@ -2581,6 +2581,12 @@ enum ClientDocumentStatus {
   EXPIRED
 }
 
+enum ClientDocumentRenewalPolicy {
+  NONE
+  ANNUAL
+  EXPIRATION_DATE_DRIVEN
+}
+
 enum SignatureEnvelopeStatus {
   DRAFT
   READY
@@ -2834,48 +2840,55 @@ model ClientIntakeChecklistItem {
 }
 
 model ClientDocumentTemplate {
-  id             String             @id @default(cuid())
-  organizationId String?
-  code           String
-  name           String
-  documentType   ClientDocumentType
-  versionNumber  Int
-  status         String             @default("ACTIVE")
-  contentJson    Json
-  effectiveFrom  DateTime?          @db.Date
-  createdAt      DateTime           @default(now())
-  organization   Organization?      @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  documents      ClientDocument[]
+  id                 String                      @id @default(cuid())
+  organizationId     String?
+  code               String
+  name               String
+  documentType       ClientDocumentType
+  versionNumber      Int
+  status             String                      @default("ACTIVE")
+  contentJson        Json
+  effectiveFrom      DateTime?                   @db.Date
+  renewalPolicy      ClientDocumentRenewalPolicy @default(NONE)
+  renewalWarningDays Int                         @default(30)
+  createdAt          DateTime                    @default(now())
+  organization       Organization?               @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  documents          ClientDocument[]
 
   @@unique([organizationId, code, versionNumber])
   @@index([organizationId, documentType, status])
 }
 
 model ClientDocument {
-  id                String                 @id @default(cuid())
-  organizationId    String
-  clientId          String
-  intakeId          String?
-  templateId        String
-  documentType      ClientDocumentType
-  status            ClientDocumentStatus   @default(DRAFT)
-  snapshotJson      Json
-  renderedPdf       Bytes?
-  finalPdf          Bytes?
-  generatedByUserId String
-  generatedAt       DateTime               @default(now())
-  finalizedAt       DateTime?
-  voidedAt          DateTime?
-  createdAt         DateTime               @default(now())
-  updatedAt         DateTime               @updatedAt
-  client            Client                 @relation(fields: [clientId], references: [id], onDelete: Restrict)
-  intake            ClientIntake?          @relation(fields: [intakeId], references: [id], onDelete: Restrict)
-  template          ClientDocumentTemplate @relation(fields: [templateId], references: [id], onDelete: Restrict)
-  generatedBy       User                   @relation("ClientDocumentGeneratedBy", fields: [generatedByUserId], references: [id], onDelete: Restrict)
-  envelope          SignatureEnvelope?
-  roiAuthorization  RoiAuthorization?
+  id                       String                 @id @default(cuid())
+  organizationId           String
+  clientId                 String
+  intakeId                 String?
+  templateId               String
+  documentType             ClientDocumentType
+  status                   ClientDocumentStatus   @default(DRAFT)
+  snapshotJson             Json
+  renderedPdf              Bytes?
+  finalPdf                 Bytes?
+  generatedByUserId        String
+  generatedAt              DateTime               @default(now())
+  finalizedAt              DateTime?
+  authoritativeCompletedAt DateTime?
+  renewalOfDocumentId      String?                @unique
+  voidedAt                 DateTime?
+  createdAt                DateTime               @default(now())
+  updatedAt                DateTime               @updatedAt
+  client                   Client                 @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  intake                   ClientIntake?          @relation(fields: [intakeId], references: [id], onDelete: Restrict)
+  template                 ClientDocumentTemplate @relation(fields: [templateId], references: [id], onDelete: Restrict)
+  generatedBy              User                   @relation("ClientDocumentGeneratedBy", fields: [generatedByUserId], references: [id], onDelete: Restrict)
+  envelope                 SignatureEnvelope?
+  roiAuthorization         RoiAuthorization?
+  renewalOf                ClientDocument?        @relation("ClientDocumentRenewals", fields: [renewalOfDocumentId], references: [id], onDelete: Restrict)
+  renewals                 ClientDocument[]       @relation("ClientDocumentRenewals")
 
   @@index([organizationId, clientId, documentType, status])
+  @@index([organizationId, clientId, authoritativeCompletedAt])
 }
 
 model RoiAuthorization {
