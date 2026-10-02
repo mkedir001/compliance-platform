@@ -49,6 +49,25 @@ never creates that identity link.
 
 Run verification with `pnpm test`, `pnpm typecheck`, `pnpm lint`, and `pnpm build`.
 
+## Production transactional email
+
+Native Send for Signature email uses Amazon SES as transport while Compliance
+Platform remains authoritative for invitations, tokens, consent, signatures,
+documents, and evidence. Configure `SIGNING_DELIVERY_MODE=email`,
+`EMAIL_PROVIDER=ses`, `EMAIL_FROM`, `AWS_REGION`, and the canonical HTTPS
+`APP_BASE_URL`. `EMAIL_FROM_NAME` and `EMAIL_REPLY_TO` are optional. The SES
+sender identity must be verified in the configured region before use.
+
+The SES client deliberately receives no static credentials. ECS supplies
+short-lived credentials through the task role and the AWS SDK default provider
+chain; the task role needs only `ses:SendEmail` for the verified sending
+identity. Missing or
+partial production signing-email configuration fails closed, and test delivery
+is rejected in production. SES acceptance records a provider message ID and an
+attempt timestamp but is not treated as human receipt, document review, or a
+completed signature. Bounce, complaint, and final-delivery event ingestion are
+not configured by the application in this phase.
+
 ## Training architecture
 
 Phase 3 adds a platform/global and organization-specific training catalog. Published course versions contain ordered modules, individually version-bound content items, acknowledgments, and assessments. Published or assigned versions are immutable; editing curriculum requires a new version, while assignments, attempts, responses, and completions continue to reference the historical version and content hash.
