@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { basename, join } from "node:path";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import type { ClientDocumentType, Prisma } from "@prisma/client";
+import { livingSituationValue, serviceTypeLabel } from "@/domain/clients/intake-state";
 
 type Layout = Record<string, Record<string, { page: number; type: string; rect: [number, number, number, number] }>>;
 type JsonObject = Record<string, unknown>;
@@ -32,7 +33,7 @@ export async function renderRadiantCareTemplate(
   const pdf = await PDFDocument.load(bytes);
   if(pdf.getPageCount()!==approved.pages||pdf.getForm().getFields().length)throw new Error("Approved intake template failed sanitation verification");
   const font = await pdf.embedFont(StandardFonts.Helvetica);
-  const values = mapFields(type, asObject(snapshot));
+  const values = mapRadiantCareTemplateFields(type, asObject(snapshot));
   for (const [field, value] of Object.entries(values)) {
     const target = layout[field];
     if (!target || value === null || value === undefined || value === "" || value === false) continue;
@@ -48,7 +49,7 @@ export async function renderRadiantCareTemplate(
   return pdf.save();
 }
 
-function mapFields(type: ClientDocumentType, snapshot: JsonObject): Record<string, string | boolean | null | undefined> {
+export function mapRadiantCareTemplateFields(type: ClientDocumentType, snapshot: JsonObject): Record<string, string | boolean | null | undefined> {
   const client = asObject(snapshot.client);
   const form = asObject(snapshot.form);
   if (type === "INTAKE_CHECKLIST") return checklistFields(client, form);
@@ -73,7 +74,7 @@ function checklistFields(client: JsonObject, form: JsonObject) {
   ];
   const fields: Record<string, string | boolean | null | undefined> = {
     CHK_001_Person_served: fullName(client), CHK_002_Date_of_birth: date(client.dateOfBirth),
-    CHK_003_Service_start_date: date(service.startDate), CHK_004_Service_s: asArray(client.services).map(row => text(asObject(row).serviceType)).filter(Boolean).join(", "),
+    CHK_003_Service_start_date: date(service.startDate), CHK_004_Service_s: asArray(client.services).map(row => serviceTypeLabel(asObject(row).serviceType)).filter(Boolean).join(", "),
     CHK_005_Intake_completed_by: text(form.intakeCompletedBy), CHK_038_Notes_follow_up_needed: text(form.notesFollowUp),
     CHK_039_pg2_Person_served_name: fullName(client), CHK_040_pg2_Date_of_birth: date(client.dateOfBirth),
     CHK_042_Printed_name_Staff_completing_intake: text(form.staffPrintedName), CHK_043_Date_Staff_completing_intake: date(form.staffCompletedDate),
@@ -94,12 +95,12 @@ function faceSheetFields(client: JsonObject, form: JsonObject) {
   const emergencies = asArray(client.emergencyContacts), health = asObject(client.healthProfile), medications = asArray(client.medications);
   const fields: Record<string, string | boolean | null | undefined> = {
     FACE_001_Legal_first_name:text(client.legalFirstName),FACE_002_Last_name:text(client.legalLastName),FACE_003_Preferred_name:text(client.preferredName),FACE_004_Date_of_birth:date(client.dateOfBirth),FACE_005_Gender:text(client.gender),FACE_006_Phone:text(client.phone),FACE_007_Email:text(client.email),FACE_008_Street_address:[text(client.addressLine1),text(client.addressLine2)].filter(Boolean).join(" "),FACE_009_City:text(client.city),FACE_010_State:text(client.state),FACE_011_ZIP:text(client.postalCode),FACE_012_MA_PMI_number:text(client.maPmiNumber),FACE_013_Waiver_or_funding_program:text(client.waiverProgram),FACE_014_County_tribe_of_financial_responsibility:text(client.financialResponsibility),FACE_015_Primary_language:text(client.primaryLanguage),FACE_016_Interpreter_needed_yes_no:client.interpreterNeeded?"Yes":"No",FACE_017_Preferred_way_to_communicate:text(client.preferredCommunication),
-    FACE_018_Living_situation_Own_home_apartment:contains(client.livingSituation,"own"),FACE_019_Living_situation_Family_home:contains(client.livingSituation,"family"),FACE_020_Living_situation_Other:Boolean(client.livingSituation&&!contains(client.livingSituation,"own")&&!contains(client.livingSituation,"family")),
-    FACE_021_Service_s_to_be_provided_Individualized_:services.some(row=>isIhsWithoutTraining(asObject(row).serviceType)),FACE_022_Service_s_to_be_provided_IHS_with_traini:services.some(row=>contains(asObject(row).serviceType,"with training")),FACE_023_Service_s_to_be_provided_other:services.some(row=>!isIhs(asObject(row).serviceType)),FACE_024_Service_s_to_be_provided_other_text:services.filter(row=>!isIhs(asObject(row).serviceType)).map(row=>text(asObject(row).serviceType)).join(", "),FACE_025_Service_start_date:date(service.startDate),FACE_026_Authorized_units_hours:[number(service.authorizedUnits," units"),number(service.authorizedHours," hours")].filter(Boolean).join(" / "),FACE_027_Authorization_dates:[date(service.authorizationStart),date(service.authorizationEnd)].filter(Boolean).join(" - "),FACE_028_Days_times_and_locations_services_will_b:jsonText(service.scheduleJson),
+    FACE_018_Living_situation_Own_home_apartment:livingSituationValue(client.livingSituation)==="OWN_HOME_APARTMENT",FACE_019_Living_situation_Family_home:livingSituationValue(client.livingSituation)==="FAMILY_HOME",FACE_020_Living_situation_Other:livingSituationValue(client.livingSituation)==="OTHER",
+    FACE_021_Service_s_to_be_provided_Individualized_:services.some(row=>isIhsWithoutTraining(asObject(row).serviceType)),FACE_022_Service_s_to_be_provided_IHS_with_traini:services.some(row=>isIhsWithTraining(asObject(row).serviceType)),FACE_023_Service_s_to_be_provided_other:services.some(row=>!isIhs(asObject(row).serviceType)),FACE_024_Service_s_to_be_provided_other_text:services.filter(row=>!isIhs(asObject(row).serviceType)).map(row=>serviceTypeLabel(asObject(row).serviceType)).join(", "),FACE_025_Service_start_date:date(service.startDate),FACE_026_Authorized_units_hours:authorizedAmount(service),FACE_027_Authorization_dates:[date(service.authorizationStart),date(service.authorizationEnd)].filter(Boolean).join(" - "),FACE_028_Days_times_and_locations_services_will_b:scheduleText(service.scheduleJson),
     FACE_029_legal_rep_type_None_person_is_own_guardi:!representative.name,FACE_030_legal_rep_type_Guardian:contains(representative.representativeType,"guardian"),FACE_031_legal_rep_type_Conservator:contains(representative.representativeType,"conservator"),FACE_032_legal_rep_type_Health_care_agent_POA:contains(representative.representativeType,"poa")||contains(representative.representativeType,"health"),FACE_033_legal_rep_type_Parent_of_minor:contains(representative.representativeType,"parent"),FACE_034_Name:text(representative.name),FACE_035_Relationship:text(representative.relationship),FACE_036_Phone:text(representative.phone),FACE_037_Address:jsonText(representative.addressJson),FACE_038_Email:text(representative.email),
     FACE_039_Case_manager_name:text(caseManager.name),FACE_040_Agency_county:text(caseManager.agency),FACE_041_Phone:text(caseManager.phone),FACE_042_Email:text(caseManager.email),FACE_043_Supervisor_name_and_phone:[text(caseManager.supervisorName),text(caseManager.supervisorPhone)].filter(Boolean).join(" - "),FACE_044_pg2_Person_served_name:fullName(client),FACE_045_pg2_Date_of_birth:date(client.dateOfBirth),
     FACE_061_Primary_care_provider:text(health.primaryCareProvider),FACE_062_Clinic:text(health.clinic),FACE_063_Phone:text(health.providerPhone),FACE_064_Dentist:text(health.dentist),FACE_065_Pharmacy:text(health.pharmacy),FACE_066_Pharmacy_phone:text(health.pharmacyPhone),FACE_067_Health_insurance_health_plan:text(health.healthInsurancePlan),FACE_068_Member_ID:text(health.memberId),FACE_069_Diagnoses_health_conditions:text(health.diagnoses),FACE_070_Allergies_medication_food_environmental_:text(health.allergiesReactions),FACE_071_Special_diet_texture:text(health.specialDietTexture),FACE_072_Choking_or_swallowing_risk_describe:text(health.chokingSwallowingRisk),FACE_073_Seizures_type_protocol:text(health.seizureProtocol),FACE_074_Mobility_adaptive_equipment:text(health.mobilityEquipment),
-    FACE_100_Medication_responsibility_Person_manages:contains(health.medicationResponsibility,"person"),FACE_101_Medication_responsibility_Family_other_m:contains(health.medicationResponsibility,"family"),FACE_102_Medication_responsibility_Radiant_Care_a:contains(health.medicationResponsibility,"assist"),FACE_103_Medication_responsibility_Radiant_Care_a:contains(health.medicationResponsibility,"administer"),FACE_104_Other_health_needs_treatments_or_protoco:text(health.otherHealthNeeds),
+    FACE_100_Medication_responsibility_Person_manages:medicationResponsibility(health.medicationResponsibility)==="PERSON_MANAGES",FACE_101_Medication_responsibility_Family_other_m:medicationResponsibility(health.medicationResponsibility)==="FAMILY_OTHER_MANAGES",FACE_102_Medication_responsibility_Radiant_Care_a:medicationResponsibility(health.medicationResponsibility)==="RADIANT_CARE_ASSISTS",FACE_103_Medication_responsibility_Radiant_Care_a:medicationResponsibility(health.medicationResponsibility)==="RADIANT_CARE_ADMINISTERS",FACE_104_Other_health_needs_treatments_or_protoco:text(health.otherHealthNeeds),
     FACE_105_pg3_Person_served_name:fullName(client),FACE_106_pg3_Date_of_birth:date(client.dateOfBirth),FACE_107_Strengths_interests_and_what_is_importan:text(client.strengthsInterests),FACE_108_Cultural_religious_or_personal_practices:text(client.culturalPractices),FACE_109_Supports_needed_for_safety_communication:text(client.supportNeeds),FACE_111_Printed_name_Person_served_or_legal_repr:text(form.clientOrRepresentativePrintedName),FACE_112_Date_Person_served_or_legal_representati:date(form.clientOrRepresentativeDate),FACE_114_Printed_name_Radiant_Care_staff_completi:text(form.staffPrintedName),FACE_115_Date_Radiant_Care_staff_completing_form:date(form.staffCompletedDate),
   };
   emergencies.slice(0,3).forEach((row,index)=>{const contact=asObject(row),n=index+1;fields[`FACE_${String(46+index*5).padStart(3,"0")}_Name_row${n}`]=text(contact.name);fields[`FACE_${String(47+index*5).padStart(3,"0")}_Relationship_row${n}`]=text(contact.relationship);fields[`FACE_${String(48+index*5).padStart(3,"0")}_Phone_row${n}`]=text(contact.phone);fields[`FACE_${String(49+index*5).padStart(3,"0")}_Alternate_phone_row${n}`]=text(contact.alternatePhone);fields[`FACE_${String(50+index*5).padStart(3,"0")}_May_we_share_info_Y_N_row${n}`]=contact.informationSharingAllowed?"Y":"N"});
@@ -128,10 +129,14 @@ function fullName(client:JsonObject){return [text(client.legalFirstName),text(cl
 function date(value:unknown){if(!value)return"";const parsed=new Date(String(value));return Number.isNaN(parsed.getTime())?"":new Intl.DateTimeFormat("en-US",{timeZone:"UTC",month:"2-digit",day:"2-digit",year:"numeric"}).format(parsed)}
 function contains(value:unknown,needle:string){return text(value).toLowerCase().includes(needle.toLowerCase())}
 function isIhs(value:unknown){const normalized=text(value).toLowerCase().replaceAll("_"," ");return normalized.includes("ihs")||normalized.includes("in home support")}
-function isIhsWithoutTraining(value:unknown){return isIhs(value)&&!contains(value,"with training")}
+function isIhsWithoutTraining(value:unknown){const normalized=text(value).toUpperCase();return normalized==="IHS_WITHOUT_TRAINING"||isIhs(value)&&!contains(value,"with training")&&!contains(value,"family training")}
+function isIhsWithTraining(value:unknown){const normalized=text(value).toUpperCase();return normalized==="IHS_WITH_TRAINING"||normalized==="IHS_WITH_FAMILY_TRAINING"||isIhs(value)&&(contains(value,"with training")||contains(value,"family training"))}
 function selected(value:unknown,item:string){return asArray(value).includes(item)}
 function number(value:unknown,suffix:string){return value===null||value===undefined||value===""?"":`${String(value)}${suffix}`}
 function jsonText(value:unknown){if(!value)return"";if(typeof value==="string")return value;return Object.entries(asObject(value)).map(([key,item])=>`${key}: ${Array.isArray(item)?item.join(", "):String(item)}`).join("; ")}
+function authorizedAmount(service:JsonObject){const period=asObject(service.scheduleJson).authorizationPeriod,hours=number(service.authorizedHours," hours");return[hours,typeof period==="string"?period:""].filter(Boolean).join(" ")||number(service.authorizedUnits," units")}
+function scheduleText(value:unknown){if(!value)return"";if(typeof value==="string")return value;const schedule=asObject(value);if(typeof schedule.serviceSchedule==="string")return schedule.serviceSchedule;return jsonText(Object.fromEntries(Object.entries(schedule).filter(([key])=>key!=="authorizationPeriod")))}
+function medicationResponsibility(value:unknown){const normalized=text(value).trim().toUpperCase().replaceAll(/[\s/-]+/g,"_");if(normalized.includes("PERSON")&&normalized.includes("MANAGE"))return"PERSON_MANAGES";if(normalized.includes("FAMILY"))return"FAMILY_OTHER_MANAGES";if(normalized.includes("ADMINISTER"))return"RADIANT_CARE_ADMINISTERS";if(normalized.includes("ASSIST"))return"RADIANT_CARE_ASSISTS";return normalized}
 
 // Field-name sets keep checklist pairing deterministic without coupling runtime behavior to source values.
 const layoutNames={INTAKE_CHECKLIST:{
