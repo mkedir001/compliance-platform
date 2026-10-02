@@ -690,6 +690,9 @@ model Organization {
   clientDocumentTemplates   ClientDocumentTemplate[]
   clientDocumentRequests    ClientDocumentRequest[]
   auditAccessSessions       AuditAccessSession[]
+  clientImportSessions      ClientImportSession[]
+  clientImportDocuments     ClientImportDocument[]
+  clientImportProposals     ClientImportProposal[]
 }
 
 model OrganizationLicense {
@@ -805,6 +808,8 @@ model User {
   inspectorAuditSessions        AuditAccessSession[]                     @relation("AuditAccessInspector")
   createdAuditAccessSessions    AuditAccessSession[]                     @relation("AuditAccessCreator")
   revokedAuditAccessSessions    AuditAccessSession[]                     @relation("AuditAccessRevoker")
+  uploadedClientImports         ClientImportSession[]                    @relation("ClientImportUploader")
+  reviewedClientImportProposals ClientImportProposal[]                   @relation("ClientImportProposalReviewer")
 }
 
 model OrganizationMembership {
@@ -2662,6 +2667,56 @@ enum ClientDocumentSource {
   IMPORTED
 }
 
+enum ClientImportStatus {
+  REVIEW_REQUIRED
+  CONFIRMED
+  CANCELED
+}
+
+enum ClientImportDocumentStatus {
+  EXTRACTED
+  OCR_REQUIRED
+  REVIEW_REQUIRED
+  ACCEPTED
+  REJECTED
+}
+
+enum ClientImportClassification {
+  INTAKE_CHECKLIST
+  FACE_SHEET
+  RIGHTS_ACKNOWLEDGMENT
+  ROI
+  UNKNOWN
+}
+
+enum ClientImportExtractionMethod {
+  PDF_FORM_FIELD
+  NATIVE_TEXT
+  KNOWN_TEMPLATE
+  MANUAL
+  DOCUMENT_AI
+}
+
+enum ClientImportProposalState {
+  PROPOSED
+  CORROBORATED
+  CONFLICT
+  ACCEPTED
+  CORRECTED
+  REJECTED
+}
+
+enum ClientImportTarget {
+  CREATE_NEW
+  UPDATE_EXISTING
+}
+
+enum ClientImportDocumentDisposition {
+  PRESERVE_ONLY
+  HISTORICAL_COMPLETE
+  CURRENT_SIGNATURE_REQUIRED
+}
+
 enum ClientDocumentRenewalPolicy {
   NONE
   ANNUAL
@@ -2788,6 +2843,7 @@ model Client {
   signatureEnvelopes      SignatureEnvelope[]
   documentRequests        ClientDocumentRequest[]
   auditAccessScopes       AuditAccessClient[]
+  importSessions          ClientImportSession[]
 
   @@index([organizationId, status, legalLastName, legalFirstName])
   @@index([organizationId, maPmiNumber])
@@ -3015,9 +3071,84 @@ model ClientDocument {
   renewals                 ClientDocument[]        @relation("ClientDocumentRenewals")
   requestObligations       ClientDocumentRequest[] @relation("DocumentRequestObligation")
   fulfilledRequests        ClientDocumentRequest[] @relation("DocumentRequestFulfillment")
+  confirmedImportDocument  ClientImportDocument?
 
   @@index([organizationId, clientId, documentType, status])
   @@index([organizationId, clientId, authoritativeCompletedAt])
+}
+
+model ClientImportSession {
+  id               String                 @id @default(cuid())
+  organizationId   String
+  uploadedByUserId String
+  existingClientId String?
+  target           ClientImportTarget
+  status           ClientImportStatus     @default(REVIEW_REQUIRED)
+  confirmedAt      DateTime?
+  canceledAt       DateTime?
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+  organization     Organization           @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  uploadedBy       User                   @relation("ClientImportUploader", fields: [uploadedByUserId], references: [id], onDelete: Restrict)
+  existingClient   Client?                @relation(fields: [existingClientId], references: [id], onDelete: Restrict)
+  documents        ClientImportDocument[]
+  proposals        ClientImportProposal[]
+
+  @@index([organizationId, status, createdAt])
+  @@index([organizationId, existingClientId])
+}
+
+model ClientImportDocument {
+  id                    String                          @id @default(cuid())
+  organizationId        String
+  sessionId             String
+  originalFileName      String
+  mimeType              String
+  originalBytes         Bytes
+  sha256                String
+  classification        ClientImportClassification      @default(UNKNOWN)
+  status                ClientImportDocumentStatus      @default(REVIEW_REQUIRED)
+  extractionMethod      ClientImportExtractionMethod?
+  pageCount             Int
+  ocrRequired           Boolean                         @default(false)
+  extractedText         String?
+  classificationSignals Json?
+  disposition           ClientImportDocumentDisposition @default(PRESERVE_ONLY)
+  confirmedDocumentId   String?                         @unique
+  createdAt             DateTime                        @default(now())
+  updatedAt             DateTime                        @updatedAt
+  organization          Organization                    @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  session               ClientImportSession             @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+  confirmedDocument     ClientDocument?                 @relation(fields: [confirmedDocumentId], references: [id], onDelete: Restrict)
+  proposals             ClientImportProposal[]
+
+  @@unique([sessionId, sha256])
+  @@index([organizationId, sessionId, classification])
+}
+
+model ClientImportProposal {
+  id               String                       @id @default(cuid())
+  organizationId   String
+  sessionId        String
+  documentId       String
+  fieldPath        String
+  proposedValue    Json
+  correctedValue   Json?
+  sourceLocation   String?
+  extractionMethod ClientImportExtractionMethod
+  confidence       Float?
+  state            ClientImportProposalState    @default(PROPOSED)
+  reviewedByUserId String?
+  reviewedAt       DateTime?
+  createdAt        DateTime                     @default(now())
+  updatedAt        DateTime                     @updatedAt
+  organization     Organization                 @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  session          ClientImportSession          @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+  document         ClientImportDocument         @relation(fields: [documentId], references: [id], onDelete: Restrict)
+  reviewedBy       User?                        @relation("ClientImportProposalReviewer", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, sessionId, fieldPath])
+  @@index([documentId])
 }
 
 model ClientDocumentRequest {

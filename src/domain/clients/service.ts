@@ -35,7 +35,7 @@ export const intakeInput = z.object({
 async function authorize(user:Pick<User,"id">, organizationId:string, permission:string){const{membership}=await requireOrganizationAccess(user,organizationId);await requirePermission(membership.id,permission);}
 async function clientOrThrow(organizationId:string,id:string){const client=await prisma.client.findFirst({where:{id,organizationId}});if(!client)throw new ResourceNotFoundError("Client not found");return client;}
 async function audit(organizationId:string,actorUserId:string,eventType:string,entityType:string,entityId:string,metadataJson?:Prisma.InputJsonValue){await prisma.auditEvent.create({data:{organizationId,actorUserId,eventType,entityType,entityId,metadataJson}})}
-const intakeChecklist=[
+export const clientIntakeChecklistDefinitions=[
   ["REFERRAL_CASE_MANAGER_RECEIVED","Referral and case manager contact information received"],
   ["CSSP_ASSESSMENTS_RECEIVED","Coordinated Service and Support Plan (CSSP) and any assessments received from case manager"],
   ["FUNDING_CONFIRMED","Service authorization / funding confirmed"],
@@ -56,7 +56,7 @@ const intakeChecklist=[
   ["MANAGER_REVIEW","Designated coordinator / manager review"],
 ] as const;
 
-export async function createClient(user:Pick<User,"id">,organizationId:string,input:z.input<typeof clientInput>){await authorize(user,organizationId,"client.create");const data=clientInput.parse(input);const client=await prisma.client.create({data:{...data,organizationId,createdByUserId:user.id,status:"INTAKE_IN_PROGRESS"}});const intake=await prisma.clientIntake.create({data:{organizationId,clientId:client.id,status:"IN_PROGRESS",checklistItems:{create:intakeChecklist.map(([code,label],index)=>({code,label,sequence:index+1}))}}});await audit(organizationId,user.id,"client.created","Client",client.id,{intakeId:intake.id});return{client,intake};}
+export async function createClient(user:Pick<User,"id">,organizationId:string,input:z.input<typeof clientInput>){await authorize(user,organizationId,"client.create");const data=clientInput.parse(input);const client=await prisma.client.create({data:{...data,organizationId,createdByUserId:user.id,status:"INTAKE_IN_PROGRESS"}});const intake=await prisma.clientIntake.create({data:{organizationId,clientId:client.id,status:"IN_PROGRESS",checklistItems:{create:clientIntakeChecklistDefinitions.map(([code,label],index)=>({code,label,sequence:index+1}))}}});await audit(organizationId,user.id,"client.created","Client",client.id,{intakeId:intake.id});return{client,intake};}
 export async function listClients(user:Pick<User,"id">,organizationId:string,filters:{search?:string;status?:string;renewalStatus?:ClientRenewalStatus;readiness?:DocumentationReadinessFilter}={}){
   await authorize(user,organizationId,"client.read");
   const search=filters.search?.trim();

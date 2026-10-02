@@ -1,10 +1,12 @@
 import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { basename, join } from "node:path";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import type { ClientDocumentType, Prisma } from "@prisma/client";
 
 type Layout = Record<string, Record<string, { page: number; type: string; rect: [number, number, number, number] }>>;
 type JsonObject = Record<string, unknown>;
+type Manifest = {templates:Array<{file:string;pages:number;sha256:string}>};
 
 const assetFiles: Record<ClientDocumentType, string> = {
   INTAKE_CHECKLIST: "00_Intake_Checklist_Staff_Use.pdf",
@@ -25,7 +27,10 @@ export async function renderRadiantCareTemplate(
   const layouts = JSON.parse(readFileSync(join(assetRoot, "field-layout.json"), "utf8")) as Layout;
   const layout = layouts[file];
   if (!layout || basename(file) !== file) throw new Error("Approved intake template asset is unavailable");
-  const pdf = await PDFDocument.load(readFileSync(join(assetRoot, file)));
+  const bytes=readFileSync(join(assetRoot,file)),manifest=JSON.parse(readFileSync(join(assetRoot,"manifest.json"),"utf8")) as Manifest,approved=manifest.templates.find(item=>item.file===file);
+  if(!approved||createHash("sha256").update(bytes).digest("hex")!==approved.sha256)throw new Error("Approved intake template failed integrity verification");
+  const pdf = await PDFDocument.load(bytes);
+  if(pdf.getPageCount()!==approved.pages||pdf.getForm().getFields().length)throw new Error("Approved intake template failed sanitation verification");
   const font = await pdf.embedFont(StandardFonts.Helvetica);
   const values = mapFields(type, asObject(snapshot));
   for (const [field, value] of Object.entries(values)) {

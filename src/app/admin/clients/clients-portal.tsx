@@ -2,6 +2,7 @@
 /* eslint-disable react-hooks/exhaustive-deps -- production organization context is fixed by the authenticated landing route */
 import { FormEvent, useEffect, useState } from "react";
 import GuidedIntake from "./guided-intake";
+import ClientImportWorkflow from "./client-import-workflow";
 
 type RenewalCycle = {
   documentId: string;
@@ -360,6 +361,7 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
             <button disabled={busy}>Create and begin intake</button>
           </form>
         </details>:null}
+        {permissions.includes("client.create")&&permissions.includes("client.update")?<ClientImportWorkflow organizationId={organizationId} headers={headers} busy={busy} onBusy={setBusy} onComplete={async clientId=>{await load();await open(clientId)}}/>:null}
         {clients.length ? (
           <div className="workforce-table" role="table">
             {clients.map((client) => (

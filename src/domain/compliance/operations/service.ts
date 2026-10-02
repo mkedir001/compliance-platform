@@ -8,7 +8,7 @@ import { computeEmployeeWorkReadiness, evaluateEmployeeWorkReadiness, scopeAffec
 import { deriveTemporalStatus, getExpiringSoonDays } from "./deadlines";
 
 export const COMPLIANCE_OPERATIONS_ENGINE_VERSION = "phase8-v1";
-export type OperationalStatus = "READY" | "NOT_READY" | "ACTION_REQUIRED" | "EXPIRING_SOON" | "OVERDUE" | "BLOCKED";
+export type OperationalStatus = "READY" | "NOT_READY" | "REQUIREMENTS_PENDING" | "ACTION_REQUIRED" | "EXPIRING_SOON" | "OVERDUE" | "BLOCKED";
 export type RemediationType = "ASSIGN_REQUIRED_TRAINING" | "RESUME_INCOMPLETE_TRAINING" | "RETAKE_FAILED_ASSESSMENT" | "COMPLETE_COMPETENCY_ASSESSMENT" | "OBTAIN_ASSESSOR_SIGN_OFF" | "RENEW_EXPIRED_CREDENTIAL" | "UPLOAD_VERIFY_EXTERNAL_EVIDENCE" | "ACKNOWLEDGE_REQUIRED_POLICY" | "COMPLETE_ONBOARDING_STEP" | "OBTAIN_REQUIRED_ATTESTATION" | "OBTAIN_MEDICATION_COMPETENCY_EVIDENCE";
 export type RemediationAction = { type: RemediationType; resourceType: string; resourceId: string; requirementVersionId?: string; executable: boolean; message: string };
 
@@ -83,7 +83,8 @@ export async function computeEmployeeOperationalProfile(organizationId: string, 
   const readiness = await computeEmployeeWorkReadiness(organizationId, employeeId, evaluatedAt);
   const remediations = [...requirements.flatMap(item => item.remediations), ...policyRemediations, ...onboardingRemediations];
   const blocked = readiness.scopes.some(scope => scope.state === "BLOCKED") || requirements.some(item => item.blocking);
-  const overallStatus: OperationalStatus = blocked ? "BLOCKED" : requirements.some(item => item.status === "OVERDUE") ? "OVERDUE" : requirements.some(item => item.status === "EXPIRING_SOON") ? "EXPIRING_SOON" : remediations.length ? "ACTION_REQUIRED" : requirements.every(item => item.status === "READY") ? "READY" : "NOT_READY";
+  const readinessPending = readiness.scopes.some(scope => scope.state === "REQUIREMENTS_PENDING");
+  const overallStatus: OperationalStatus = blocked ? "BLOCKED" : requirements.some(item => item.status === "OVERDUE") ? "OVERDUE" : requirements.some(item => item.status === "EXPIRING_SOON") ? "EXPIRING_SOON" : remediations.length ? "ACTION_REQUIRED" : readinessPending || requirements.length === 0 ? "REQUIREMENTS_PENDING" : requirements.every(item => item.status === "READY") && readiness.scopes.filter(scope => scope.state !== "NOT_APPLICABLE" && scope.scope !== "MEDICATION_ADMINISTRATION").every(scope => scope.state === "READY") ? "READY" : "NOT_READY";
   return { organizationId, employee: { id: employee.id, firstName: employee.firstName, lastName: employee.lastName, employeeNumber: employee.employeeNumber }, evaluatedAt: evaluatedAt.toISOString(), engineVersion: COMPLIANCE_OPERATIONS_ENGINE_VERSION, expiringSoonDays: getExpiringSoonDays(), overallStatus, requirements, remediations, readiness };
 }
 

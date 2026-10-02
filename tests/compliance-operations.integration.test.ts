@@ -42,7 +42,9 @@ describe.sequential("Phase 8 compliance operations", () => {
 
   it("derives ready, overdue, and deterministic blocking requirement states", async () => {
     const readyEmployee = await employee(), overdueEmployee = await employee();
-    await instance(readyEmployee.id, { status: "SATISFIED" });
+    const readyRequirement=await instance(readyEmployee.id, { status: "SATISFIED", blockingScope:"GENERAL_WORK" });
+    await db.complianceEvaluationRun.create({data:{organizationId,scopeType:"EMPLOYEE",scopeReference:readyEmployee.id,rulesetId,rulesetVersionSnapshot:(await db.complianceRuleset.findUniqueOrThrow({where:{id:rulesetId}})).version,trigger:"MANUAL",status:"COMPLETED",completedAt:at}});
+    await db.complianceInstanceEvidence.create({data:{complianceInstanceId:readyRequirement.compliance.id,evidenceType:"ATTESTATION",evidenceReferenceId:`phase8-evidence:${readyRequirement.compliance.id}`}});
     const overdue = await instance(overdueEmployee.id, { status: "PAST_DUE", dueAt: new Date("2026-09-01"), blockingScope: "DIRECT_CONTACT" });
     expect((await computeEmployeeOperationalProfile(organizationId, readyEmployee.id, at)).overallStatus).toBe("READY");
     const profile = await computeEmployeeOperationalProfile(organizationId, overdueEmployee.id, at);
