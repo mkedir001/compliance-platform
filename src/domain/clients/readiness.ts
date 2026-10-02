@@ -1,6 +1,6 @@
 import type { ClientDocumentType, User } from "@prisma/client";
 import { ResourceNotFoundError } from "@/domain/auth/errors";
-import { deriveClientRenewalSummary, renewalDocumentSelect, type RenewalDocument } from "@/domain/clients/renewals";
+import { deriveClientRenewalSummary, hasAuthoritativeDocumentCompletion, renewalDocumentSelect, type RenewalDocument } from "@/domain/clients/renewals";
 import { requireOrganizationAccess, requirePermission } from "@/domain/permissions/authorization";
 import { prisma } from "@/lib/prisma";
 
@@ -23,7 +23,7 @@ async function authorize(user: Pick<User, "id">, organizationId: string) { const
 function activeTemplates(rows: Template[], organizationId: string) { const selected = new Map<ClientDocumentType, Template>(); for (const row of rows.sort((a,b) => Number(b.organizationId === organizationId)-Number(a.organizationId === organizationId) || b.versionNumber-a.versionNumber || a.id.localeCompare(b.id))) if (!selected.has(row.documentType)) selected.set(row.documentType,row); return [...selected.values()].sort((a,b)=>a.code.localeCompare(b.code)||a.id.localeCompare(b.id)); }
 function datePhase(days: number | null) { return days === null ? null : days < 0 ? "OVERDUE" as const : days === 0 ? "DUE_TODAY" as const : days <= 7 ? "DUE_SOON" as const : "APPROACHING" as const; }
 function actionHref(organizationId:string,clientId:string,documentId?:string|null,requestId?:string|null){const query=new URLSearchParams({organizationId,clientId,view:"Documents"});if(documentId)query.set("documentId",documentId);if(requestId)query.set("requestId",requestId);return`/admin/clients?${query}`;}
-function isValidCompleted(document: RenewalDocument){return document.status === "COMPLETED" && Boolean(document.authoritativeCompletedAt ?? document.envelope?.completedAt) && !["REVOKED","VOIDED"].includes(document.roiAuthorization?.status ?? "");}
+function isValidCompleted(document: RenewalDocument){return hasAuthoritativeDocumentCompletion(document) && !["REVOKED","VOIDED"].includes(document.roiAuthorization?.status ?? "");}
 
 function deriveRequirement(template:Template,documents:RenewalDocument[],requests:Request[],intake:Intake,renewal:ReturnType<typeof deriveClientRenewalSummary>,organizationId:string,clientId:string):DocumentationRequirementResult[]{
   const checklistCode=checklistCodes[template.documentType],checklist=checklistCode?intake?.checklistItems.find(item=>item.code===checklistCode):undefined;
