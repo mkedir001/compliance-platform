@@ -35,8 +35,9 @@ type ClientRow = {
   legalLastName: string;
   preferredName: string | null;
   updatedAt: string;
-  intakes: { status: string; currentStep: string }[];
-  _count: { services: number; documents: number };
+  intakes: { status: string; currentStep: string; progressJson:unknown }[];
+  services: {id:string;serviceType:string;startDate:string|null;authorizedHours:number|null;status:"PROPOSED"|"ACTIVE"|"PAUSED"|"ENDED"|"CANCELLED"}[];
+  _count: { documents: number; documentRequests:number; importSessions:number };
   renewalSummary: RenewalSummary;
   documentationReadiness: DocumentationReadiness;
 };
@@ -76,7 +77,6 @@ type ClientDetail = ClientRow & {
   strengthsInterests: string | null;
   culturalPractices: string | null;
   supportNeeds: string | null;
-  services: {id:string;serviceType:string;startDate:string|null;authorizedHours:number|null;status:"PROPOSED"|"ACTIVE"|"PAUSED"|"ENDED"|"CANCELLED"}[];
   representatives: ClientRepresentative[];
   emergencyContacts: {id:string;name:string;relationship:string;phone:string;alternatePhone:string|null;informationSharingAllowed:boolean}[];
   healthProfile: Record<string,string|null>|null;
@@ -88,6 +88,8 @@ type ClientDetail = ClientRow & {
   documents: ClientDocument[];
   documentRequests: ClientDocumentRequest[];
   intakes:{status:string;currentStep:string;progressJson:unknown;lastSavedAt:string}[];
+  importSessions:{id:string;status:string;target:string;confirmedAt:string|null;canceledAt:string|null;createdAt:string;updatedAt:string;_count:{documents:number;proposals:number}}[];
+  history:{id:string;eventType:string;entityType:string;entityId:string;occurredAt:string;actor:{email:string}|null;metadataJson:unknown}[];
 };
 const pretty = (value: string) => value.toLowerCase().replaceAll("_", " ");
 const date = (value: string) => new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(value.length === 10 ? `${value}T12:00:00Z` : value));
@@ -104,6 +106,7 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
     [status, setStatus] = useState(""),
     [renewalStatus, setRenewalStatus] = useState(""),
     [readiness, setReadiness] = useState("ALL"),
+    [operational, setOperational] = useState(""),
     [permissions,setPermissions]=useState<string[]>([]),
     [tab, setTab] = useState("Overview"),
     [message, setMessage] = useState(""),
@@ -127,7 +130,7 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
     }
   }
   async function load() {
-    await run(async () => {const[rows,accessResponse]=await Promise.all([request(`?search=${encodeURIComponent(search)}&status=${encodeURIComponent(status)}&renewalStatus=${encodeURIComponent(renewalStatus)}&readiness=${encodeURIComponent(readiness)}`),fetch(`/api/organizations/${organizationId}`,{headers})]),access=await accessResponse.json();if(!accessResponse.ok)throw new Error(access.error??"Organization access failed");setClients(rows as ClientRow[]);setPermissions(access.permissions??[])});
+    await run(async () => {const[rows,accessResponse]=await Promise.all([request(`?search=${encodeURIComponent(search)}&status=${encodeURIComponent(status)}&renewalStatus=${encodeURIComponent(renewalStatus)}&readiness=${encodeURIComponent(readiness)}&operational=${encodeURIComponent(operational)}`),fetch(`/api/organizations/${organizationId}`,{headers})]),access=await accessResponse.json();if(!accessResponse.ok)throw new Error(access.error??"Organization access failed");setClients(rows as ClientRow[]);setPermissions(access.permissions??[])});
   }
   async function open(id: string) {
     await run(async () => setSelected((await request(`/${id}`)) as ClientDetail));
@@ -135,7 +138,7 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
   async function refresh(text: string) {
     if (!selected) return;
     setSelected((await request(`/${selected.id}`)) as ClientDetail);
-    setClients((await request(`?search=${encodeURIComponent(search)}&status=${encodeURIComponent(status)}&renewalStatus=${encodeURIComponent(renewalStatus)}&readiness=${encodeURIComponent(readiness)}`)) as ClientRow[]);
+    setClients((await request(`?search=${encodeURIComponent(search)}&status=${encodeURIComponent(status)}&renewalStatus=${encodeURIComponent(renewalStatus)}&readiness=${encodeURIComponent(readiness)}&operational=${encodeURIComponent(operational)}`)) as ClientRow[]);
     setMessage(text);
   }
   async function create(event: FormEvent<HTMLFormElement>) {
@@ -171,7 +174,8 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
       await refresh(text);
     });
   }
-  async function guidedSave(next:ClientDetail,text:string){setSelected(next);setClients((await request(`?search=${encodeURIComponent(search)}&status=${encodeURIComponent(status)}&renewalStatus=${encodeURIComponent(renewalStatus)}&readiness=${encodeURIComponent(readiness)}`)) as ClientRow[]);setMessage(text)}
+  async function guidedSave(next:ClientDetail,text:string){setSelected(next);setClients((await request(`?search=${encodeURIComponent(search)}&status=${encodeURIComponent(status)}&renewalStatus=${encodeURIComponent(renewalStatus)}&readiness=${encodeURIComponent(readiness)}&operational=${encodeURIComponent(operational)}`)) as ClientRow[]);setMessage(text)}
+  async function changeLifecycle(nextStatus:"ACTIVE"|"DISCHARGED"|"ARCHIVED"){if(!selected)return;const reason=window.prompt(`Reason for changing this client to ${pretty(nextStatus)}`)?.trim();if(!reason)return;await run(async()=>{const next=await request(`/${selected.id}`,{method:"PATCH",body:JSON.stringify({status:nextStatus,reason})}) as ClientDetail;setSelected(next);await refresh(`Client lifecycle changed to ${pretty(nextStatus)}. Historical records were preserved.`)})}
   async function guidedGenerate(body:unknown,text:string){if(!selected)return;const response=await fetch(`/api/organizations/${organizationId}/clients/${selected.id}/documents`,{method:"POST",headers,body:JSON.stringify(body)}),result=await response.json();if(!response.ok)throw new Error(result.error??"Document generation failed");await open(selected.id);setMessage(text)}
   async function guidedComplete(){if(!selected)return;const response=await fetch(`/api/organizations/${organizationId}/clients/${selected.id}/intake`,{method:"POST",headers,body:JSON.stringify({action:"COMPLETE"})}),result=await response.json();if(!response.ok)throw new Error(result.error??"Intake completion failed");await open(selected.id);setMessage("Intake review completed. Finalized document history remains immutable.")}
   async function requestAction(body: unknown, text: string) {
@@ -262,7 +266,7 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
   useEffect(() => {
     if (selected && initialRequestId && tab === "Documents") document.getElementById(`request-${initialRequestId}`)?.scrollIntoView({ block: "center" });
   }, [selected, initialRequestId, tab]);
-  const tabs = ["Overview", "Readiness", "Intake", "Documents", "Signatures", "History"];
+  const tabs = ["Overview", "Intake", "Services", "Documents", "Signatures", "Readiness", "Contacts", "History"];
   return (
     <main className="admin-shell">
       <header>
@@ -324,6 +328,15 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
                 <option value="ALL">All</option><option value="CURRENT">Ready / current</option><option value="ATTENTION_NEEDED">Attention needed</option><option value="MISSING">Missing documents</option><option value="DUE_SOON">Due soon</option><option value="OVERDUE">Overdue</option><option value="OUTSTANDING_REQUESTS">Outstanding requests</option>
               </select>
             </label>
+            <label>
+              Operational attention
+              <select value={operational} onChange={(e)=>setOperational(e.target.value)}>
+                <option value="">All</option>
+                <option value="OUTSTANDING_SIGNATURE">Outstanding signature</option>
+                <option value="OUTSTANDING_REQUEST">Outstanding document request</option>
+                <option value="IMPORTED_HISTORY">Imported history</option>
+              </select>
+            </label>
             <button onClick={load}>Apply</button>
           </div>
         </div>
@@ -372,12 +385,14 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
                   </strong>
                 </span>
                 <span>{pretty(client.status)}</span>
+                <span><strong>{client.intakes[0]?.status?pretty(client.intakes[0].status):"No intake"}</strong><small>{client.intakes[0]?client.intakes[0].status==="COMPLETED"?"Intake complete":`Next: ${pretty(client.intakes[0].currentStep)}`:"No guided intake record"}</small></span>
+                <span><strong>{client.services.length?client.services.map(item=>pretty(item.serviceType)).join(", "):"No current services"}</strong><small>{client.services.map(item=>pretty(item.status)).join(", ")}</small></span>
                 <span className="renewal-badge">
                   Documentation: {pretty(client.documentationReadiness.overallState)}
                   <small>{client.documentationReadiness.counts.overdue} overdue · {client.documentationReadiness.counts.missing} missing · {client.documentationReadiness.counts.outstandingRequests} collection underway</small>
                   <small>{client.documentationReadiness.nearestActionableDeadline ? `Nearest ${date(client.documentationReadiness.nearestActionableDeadline)}` : "No determinable deadline"}</small>
                 </span>
-                <span>{client._count.documents} awaiting signature</span>
+                <span>{client._count.documents} awaiting signature<small>{client._count.documentRequests} outstanding request(s) · {client._count.importSessions} confirmed import(s)</small></span>
               </button>
             ))}
           </div>
@@ -406,18 +421,16 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
             ))}
           </nav>
           {tab === "Overview" ? (
-            <article>
-              <h3>Operational summary</h3>
-              <p>
-                {selected.services.length} service(s) · {selected.contacts.find((x) => x.role === "CASE_MANAGER")?.professionalContact.name ?? "No case manager selected"} · {selected.documents.filter((x) => ["READY_FOR_SIGNATURE", "PARTIALLY_SIGNED"].includes(x.status)).length} document(s) awaiting signature
-              </p>
-              <p>
-                {selected.renewalSummary.overdueCount} renewal(s) overdue · {selected.renewalSummary.dueSoonCount} due soon
-              </p>
-            </article>
+            <section>
+              <article><p className="eyebrow">Lifecycle</p><h3>{pretty(selected.status)}</h3><p>{selected.intakes[0]?.status==="COMPLETED"?"Guided intake completed.":`Intake ${pretty(selected.intakes[0]?.status??"not started")} · next ${pretty(selected.intakes[0]?.currentStep??"client")}.`}</p>{permissions.includes("client.update")?<div className="signature-actions">{selected.intakes[0]?.status==="COMPLETED"&&selected.status!=="ACTIVE"&&selected.status!=="ARCHIVED"?<button disabled={busy} onClick={()=>changeLifecycle("ACTIVE")}>Activate client</button>:null}{selected.status==="ACTIVE"||selected.status==="INTAKE_IN_PROGRESS"?<button className="secondary" disabled={busy} onClick={()=>changeLifecycle("DISCHARGED")}>Discharge client</button>:null}{selected.status==="DISCHARGED"?<button className="secondary" disabled={busy} onClick={()=>changeLifecycle("ARCHIVED")}>Archive closed record</button>:null}</div>:null}</article>
+              <article><p className="eyebrow">Operational attention</p><h3>{selected.documentationReadiness.highestPriorityIssue?.name??"No documentation issue"}</h3><p>{selected.documentationReadiness.highestPriorityIssue?.reason??selected.documentationReadiness.meaning}</p><div className="signature-actions">{selected.intakes[0]?.status!=="COMPLETED"?<button onClick={()=>setTab("Intake")}>Resume intake</button>:null}{selected.documentationReadiness.highestPriorityIssue?<button onClick={()=>setTab("Readiness")}>Resolve documentation issue</button>:null}{selected.documents.some(item=>["READY_FOR_SIGNATURE","PARTIALLY_SIGNED"].includes(item.status))?<button onClick={()=>setTab("Signatures")}>Review signature progress</button>:null}{selected.documentRequests.some(item=>["SENT","OUTSTANDING"].includes(item.status))?<button onClick={()=>setTab("Documents")}>Review document requests</button>:null}</div></article>
+              <article><h3>Current operations</h3><p>{selected.services.filter(item=>item.status==="ACTIVE").length} active service(s) · {selected.contacts.find((x) => x.role === "CASE_MANAGER")?.professionalContact.name ?? "No case manager selected"} · {selected.documents.filter((x) => ["READY_FOR_SIGNATURE", "PARTIALLY_SIGNED"].includes(x.status)).length} document(s) awaiting signature</p><p>{selected.renewalSummary.overdueCount} renewal(s) overdue · {selected.renewalSummary.dueSoonCount} due soon · {selected.documentRequests.filter(item=>["SENT","OUTSTANDING"].includes(item.status)).length} outstanding request(s)</p></article>
+              {permissions.includes("client.update")?<ClientImportWorkflow organizationId={organizationId} headers={headers} busy={busy} onBusy={setBusy} existingClientId={selected.id} onComplete={async()=>{await open(selected.id);await load()}}/>:null}
+            </section>
           ) : null}
           {tab === "Readiness" ? <section className="renewal-panel"><h3>Documentation readiness</h3><p><strong>{pretty(selected.documentationReadiness.overallState)}</strong> · {selected.documentationReadiness.counts.satisfied} of {selected.documentationReadiness.counts.applicable} applicable requirement(s) currently satisfied</p><p>{selected.documentationReadiness.counts.missing} missing · {selected.documentationReadiness.counts.dueSoon} due soon · {selected.documentationReadiness.counts.overdue} overdue · {selected.documentationReadiness.counts.outstandingRequests} with collection underway</p><p>{selected.documentationReadiness.meaning}</p>{selected.documentationReadiness.requirements.map(item=><article key={item.id}><p className="eyebrow">{pretty(item.state)}{item.deadlinePhase?` · ${pretty(item.deadlinePhase)}`:""}</p><h4>{item.name}</h4><p>{item.reason}</p><p>{item.dueDate?`Due ${date(item.dueDate)}`:"No determinable deadline"}{item.signatureStatus?` · signature ${pretty(item.signatureStatus)}`:""}</p>{item.outstandingRequests.map(request=><p key={request.id}>Collection request {pretty(request.status)} for {request.recipientName}. <a href={request.actionHref}>Open request</a></p>)}<a href={item.actionHref}>Open document workflow</a></article>)}</section> : null}
           {tab === "Intake" ? permissions.includes("client.intake.manage")?<GuidedIntake client={selected} organizationId={organizationId} headers={headers} canGenerate={permissions.includes("client.document.generate")} canReadDocuments={permissions.includes("client.document.read")} canSign={permissions.includes("client.signature.manage")} onSaved={(next,text)=>guidedSave(next as ClientDetail,text)} onGenerate={guidedGenerate} onComplete={guidedComplete}/>:<article><h3>Guided intake</h3><p>Your current permissions allow client review but not intake changes.</p></article> : null}
+          {tab === "Services" ? <section><h3>Services</h3><p>Service information is shown from the canonical guided-intake record. Authorization is not inferred from this view.</p>{selected.services.length?selected.services.map(service=><article key={service.id}><p className="eyebrow">{pretty(service.status)}</p><h4>{pretty(service.serviceType)}</h4><p>{service.startDate?`Started ${date(service.startDate)}`:"Start date not recorded"}{service.authorizedHours!==null?` · ${Number(service.authorizedHours)} recorded hour(s)`:""}</p></article>):<div className="empty-state">No services are associated with this client.</div>}<button onClick={()=>setTab("Intake")}>Manage through guided intake</button></section>:null}
           {tab === "Documents" ? (
             <>
               <section className="renewal-panel">
@@ -650,6 +663,7 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
               {permissions.includes("client.document.generate")?<details><summary>Import client PDF</summary><form className="inline-form" onSubmit={importDocument}><label>Document type<select name="documentType"><option value="FACE_SHEET">Face Sheet</option><option value="RIGHTS_ACKNOWLEDGMENT">Rights acknowledgment</option><option value="ROI">Release of information</option><option value="INTAKE_CHECKLIST">Intake checklist</option></select></label><label>PDF<input name="file" type="file" accept="application/pdf,.pdf" required/></label><label>Review outcome<select name="disposition"><option value="HISTORICAL_COMPLETE">Historical - already complete</option><option value="CURRENT_SIGNATURE_REQUIRED">Current signatures required</option></select></label><label>Historical completion date<input name="completedAt" type="date"/></label><button disabled={busy}>Import reviewed PDF</button><p>Complete historical uploads remain immutable and are not sent for signature. Incomplete current documents use the same native Sign Now or Send for Signature workflow.</p></form></details>:null}
               {selected.documents.map((document) => (
                 <article key={document.id} id={`document-${document.id}`}>
+                  <p className="eyebrow">{document.source==="IMPORTED"?(document.status==="COMPLETED"?"Imported historical document":"Imported current document"):"Platform generated document"}</p>
                   <strong>{document.template.name}</strong>
                   {document.renewalOfDocumentId ? <span className="renewal-badge"> Renewal cycle</span> : null}
                   {document.source==="IMPORTED"?<span className="renewal-badge"> Imported</span>:null}
@@ -662,14 +676,15 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
                       Ready for Signature
                     </button>
                   ) : null}
-                  {document.source==="IMPORTED"&&document.status==="COMPLETED"?<p>Accepted as already complete. No new signature request is required.</p>:null}
+                  {document.source==="IMPORTED"&&document.status==="COMPLETED"?<p>Accepted as already complete historical evidence. Compliance Platform did not witness or create its prior signatures.</p>:null}
                   {permissions.includes("client.signature.manage")&&document.status === "READY_FOR_SIGNATURE" && !document.envelope ? <SignatureWorkflowPanel document={document} busy={busy} onCreate={(mode,signers,confirmed)=>startSignature(document.id,mode,signers,confirmed)}/>:null}
                 </article>
               ))}
             </>
           ) : null}
           {tab === "Signatures" ? <section><h3>Electronic signatures</h3><p>Each signer reviews the frozen document, affirmatively consents, and adopts their own signature. A document completes only after every required signer signs.</p>{selected.documents.filter(item=>item.envelope).map(document=><article key={document.id}><p className="eyebrow">{document.template.name} · {pretty(document.envelope!.mode)}</p><h4>{pretty(document.envelope!.status)}</h4><p>{document.envelope!.completedAt?`Completed ${date(document.envelope!.completedAt)}`:document.envelope!.sentAt?`Sent ${date(document.envelope!.sentAt)}`:"Prepared for signing"}</p>{document.envelope!.status==="COMPLETED"?<p><a href={`/api/organizations/${organizationId}/clients/${selected.id}/documents?documentId=${document.id}`}>Open completed document</a> · <a href={`/api/organizations/${organizationId}/clients/${selected.id}/signatures?envelopeId=${document.envelope!.id}`}>Download signing evidence</a></p>:null}{document.envelope!.signers.map(signer=>{const state=invitationState(signer),invitation=signer.invitations[0],active=!["COMPLETED","VOIDED"].includes(document.envelope!.status);return <div className="signature-row" key={signer.id}><span><strong>{signer.name}</strong><small>{pretty(signer.role)} · {pretty(state)}</small><small>{signer.email??"In-person signer"}{signer.signedAt?` · Signed ${date(signer.signedAt)}`:invitation?` · Invited ${date(invitation.createdAt)} · Expires ${date(invitation.expiresAt)}`:""}</small></span>{active&&signer.status!=="SIGNED"?<button disabled={busy} onClick={()=>signatureAction({action:"SIGN_NOW_SESSION",envelopeId:document.envelope!.id,signerId:signer.id},`Sign Now opened for ${signer.name}.`,true)}>Open Sign Now</button>:null}{active&&signer.status!=="SIGNED"&&document.envelope!.mode==="SEND_FOR_SIGNATURE"?<button disabled={busy} onClick={()=>signatureAction({action:"REISSUE",envelopeId:document.envelope!.id,signerId:signer.id},`${state==="EXPIRED"?"Replacement":"Reissued"} invitation created for ${signer.name}.`)}>Reissue invitation</button>:null}</div>})}{!["COMPLETED","VOIDED"].includes(document.envelope!.status)?<form className="inline-form" onSubmit={event=>{event.preventDefault();const reason=new FormData(event.currentTarget).get("reason");void signatureAction({action:"CANCEL",envelopeId:document.envelope!.id,reason},"Signing cycle voided and all active invitations revoked; signatures were not transferred.")}}><label>Cancellation reason<input name="reason" required/></label><button disabled={busy}>Cancel and revoke invitations</button></form>:document.envelope!.voidReason?<p>Cancellation reason: {document.envelope!.voidReason}</p>:null}</article>)}</section> : null}
-          {tab === "History" ? <p>Historical completed documents and signatures remain immutable. Material renewal, signature, ROI, and export actions are preserved in the tenant audit stream.</p> : null}
+          {tab === "Contacts" ? <section><h3>Contacts and representatives</h3><p>Only people associated with this client in the current tenant are shown.</p>{selected.contacts.map(item=><article key={`${item.professionalContact.id}:${item.role}`}><p className="eyebrow">{pretty(item.role)} · reusable professional contact</p><h4>{item.professionalContact.name}</h4><p>{item.professionalContact.agency??"No agency"} · {item.professionalContact.email??"No email"} · {item.professionalContact.phone??"No phone"}</p></article>)}{selected.representatives.map(item=><article key={item.id}><p className="eyebrow">{pretty(item.representativeType)}</p><h4>{item.name}</h4><p>{item.relationship??"Relationship not recorded"} · {item.email??"No email"}</p></article>)}{selected.emergencyContacts.map(item=><article key={item.id}><p className="eyebrow">Emergency contact</p><h4>{item.name}</h4><p>{item.relationship} · {item.phone}{item.informationSharingAllowed?" · information sharing authorized":" · no information-sharing authorization recorded"}</p></article>)}{!selected.contacts.length&&!selected.representatives.length&&!selected.emergencyContacts.length?<div className="empty-state">No contacts or representatives are recorded.</div>:null}<button onClick={()=>setTab("Intake")}>Manage through guided intake</button></section>:null}
+          {tab === "History" ? <section><h3>Client history and provenance</h3><p>Historical completed documents, signatures, imports, renewals, and lifecycle records remain immutable.</p>{selected.importSessions.map(item=><article key={item.id}><p className="eyebrow">Import · {pretty(item.status)}</p><h4>{item._count.documents} preserved document(s)</h4><p>{item.confirmedAt?`Confirmed ${date(item.confirmedAt)}`:`Updated ${date(item.updatedAt)}`} · {item._count.proposals} reviewed proposal(s)</p></article>)}{selected.history.length?selected.history.map(item=><article key={item.id}><p className="eyebrow">{date(item.occurredAt)} · {pretty(item.entityType)}</p><h4>{pretty(item.eventType.replace(/^client\./,""))}</h4><p>{item.actor?.email?`Recorded by ${item.actor.email}`:"Recorded by the platform workflow"}</p></article>):<div className="empty-state">No material client events have been recorded.</div>}</section> : null}
         </section>
       ) : null}
     </main>
