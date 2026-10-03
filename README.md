@@ -51,22 +51,22 @@ Run verification with `pnpm test`, `pnpm typecheck`, `pnpm lint`, and `pnpm buil
 
 ## Production transactional email
 
-Native Send for Signature email uses Amazon SES as transport while Compliance
-Platform remains authoritative for invitations, tokens, consent, signatures,
-documents, and evidence. Configure `SIGNING_DELIVERY_MODE=email`,
-`EMAIL_PROVIDER=ses`, `EMAIL_FROM`, `AWS_REGION`, and the canonical HTTPS
-`APP_BASE_URL`. `EMAIL_FROM_NAME` and `EMAIL_REPLY_TO` are optional. The SES
-sender identity must be verified in the configured region before use.
+The shared transport supports `EMAIL_PROVIDER=ses` and `EMAIL_PROVIDER=paubox`.
+Compliance Platform remains authoritative for invitations, tokens, consent,
+signatures, documents, and evidence regardless of transport. Both providers
+require `SIGNING_DELIVERY_MODE=email`, `EMAIL_FROM`, `AWS_REGION`, and the
+canonical HTTPS `APP_BASE_URL`; `EMAIL_FROM_NAME` and `EMAIL_REPLY_TO` remain
+optional.
 
-The SES client deliberately receives no static credentials. ECS supplies
-short-lived credentials through the task role and the AWS SDK default provider
-chain; the task role needs only `ses:SendEmail` for the verified sending
-identity. Missing or
-partial production signing-email configuration fails closed, and test delivery
-is rejected in production. SES acceptance records a provider message ID and an
-attempt timestamp but is not treated as human receipt, document review, or a
-completed signature. Bounce, complaint, and final-delivery event ingestion are
-not configured by the application in this phase.
+SES uses the AWS SDK default ECS task-role chain and its verified sending
+identity. Paubox requires `EMAIL_FROM=signatures@email.waldah.com` and
+`PAUBOX_RELAY_FUNCTION_NAME`. The private application invokes that one Lambda
+through IAM and the Lambda interface endpoint. Only the relay role reads the
+Paubox secret; the application never receives it or calls Paubox directly.
+Provider acceptance records a provider message ID and attempt time, but never
+means human receipt, document review, or signature completion. Missing or
+partial production configuration fails closed, and test delivery remains
+disabled in production.
 
 ## Training architecture
 

@@ -1,0 +1,22 @@
+{
+  "name": "compliance-platform-paubox-relay",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.15.1",
+  "scripts": {
+    "test": "node --test test/*.node.mjs",
+    "build": "esbuild src/handler.mjs --bundle --platform=node --target=node22 --format=cjs --outfile=dist/index.js",
+    "package": "pnpm build && cd dist && rm -f paubox-relay.zip && zip -q paubox-relay.zip index.js",
+    "test:package": "node test/package-smoke.mjs"
+  },
+  "dependencies": {
+    "@aws-sdk/client-secrets-manager": "3.1145.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild"]
+  }
+}

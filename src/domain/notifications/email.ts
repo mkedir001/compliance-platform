@@ -1,4 +1,5 @@
 import { SendEmailCommand, SESv2Client, type SendEmailCommandInput, type SendEmailCommandOutput } from "@aws-sdk/client-sesv2";
+import { InvokeCommand, LambdaClient, type InvokeCommandOutput } from "@aws-sdk/client-lambda";
 import { z } from "zod";
 import { emailEnvironment, type EmailEnvironment } from "@/lib/env";
 
@@ -42,4 +43,23 @@ export class SesEmailProvider implements EmailProvider{
   }
 }
 
-export function configuredEmailProvider(source:NodeJS.ProcessEnv|Record<string,string|undefined>=process.env):EmailProvider{const config=emailEnvironment(source);if(!config)return new LocalNoopEmailProvider();return config.provider==="ses"?new SesEmailProvider(config):new HttpEmailProvider(config)}
+type PauboxConfig=Extract<EmailEnvironment,{provider:"paubox"}>;
+export type LambdaClientLike={send(command:InvokeCommand):Promise<InvokeCommandOutput>};
+const relayResponseSchema=z.discriminatedUnion("accepted",[
+  z.object({accepted:z.literal(true),messageId:z.string().trim().min(1).max(200),acceptedAt:z.string().datetime()}).strict(),
+  z.object({accepted:z.literal(false),code:z.string().regex(/^PAUBOX_[A-Z0-9_]+$/),retryable:z.boolean()}).strict(),
+]);
+export function pauboxLambdaClientOptions(config:PauboxConfig){return{region:config.region,maxAttempts:1}}
+export class PauboxRelayEmailProvider implements EmailProvider{
+  name="paubox";configured=true;private readonly client:LambdaClientLike;
+  constructor(private readonly config:PauboxConfig,client?:LambdaClientLike){this.client=client??new LambdaClient(pauboxLambdaClientOptions(config))}
+  async send(message:ComplianceEmail):Promise<EmailSendResult>{
+    const payload={version:1,from:addressSchema.parse(this.config.from),fromName:this.config.fromName?headerSchema.parse(this.config.fromName):undefined,replyTo:this.config.replyTo?addressSchema.parse(this.config.replyTo):undefined,to:addressSchema.parse(message.to),subject:headerSchema.parse(message.subject),text:z.string().min(1).max(100_000).parse(message.text),html:message.html?z.string().min(1).max(200_000).parse(message.html):undefined};
+    let invoked:InvokeCommandOutput;try{invoked=await this.client.send(new InvokeCommand({FunctionName:this.config.relayFunctionName,InvocationType:"RequestResponse",Payload:Buffer.from(JSON.stringify(payload))}))}catch{throw new EmailDeliveryError("Paubox relay unavailable",true,"PAUBOX_RELAY_UNAVAILABLE")}
+    if(invoked.FunctionError||!invoked.Payload)throw new EmailDeliveryError("Paubox relay failed",true,"PAUBOX_RELAY_FAILED");
+    let parsed:z.infer<typeof relayResponseSchema>;try{parsed=relayResponseSchema.parse(JSON.parse(Buffer.from(invoked.Payload).toString("utf8")))}catch{throw new EmailDeliveryError("Paubox relay returned an invalid response",true,"PAUBOX_RELAY_RESPONSE_INVALID")}
+    if(!parsed.accepted)throw new EmailDeliveryError("Paubox email delivery failed",parsed.retryable,parsed.code);return{messageId:parsed.messageId,acceptedAt:new Date(parsed.acceptedAt)};
+  }
+}
+
+export function configuredEmailProvider(source:NodeJS.ProcessEnv|Record<string,string|undefined>=process.env):EmailProvider{const config=emailEnvironment(source);if(!config)return new LocalNoopEmailProvider();if(config.provider==="ses")return new SesEmailProvider(config);if(config.provider==="paubox")return new PauboxRelayEmailProvider(config);return new HttpEmailProvider(config)}

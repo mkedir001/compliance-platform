@@ -3305,6 +3305,7 @@ model SignatureInvitation {
   deliveryErrorCode            String?
   providerMessageId            String?
   expiresAt                    DateTime
+  providerAcceptedAt           DateTime?
   deliveredAt                  DateTime?
   usedAt                       DateTime?
   revokedAt                    DateTime?
