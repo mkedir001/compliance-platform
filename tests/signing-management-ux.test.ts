@@ -24,15 +24,20 @@ describe("facilitated signing and document lifecycle UX",()=>{
     expect(portal).toContain('document.addEventListener("visibilitychange", revalidate)');
   });
 
-  it("labels unsigned source, signed final, evidence, and multi-signer progress distinctly",()=>{
+  it("exposes only the current authoritative document action and signer-row controls",()=>{
     const portal=source("src","app","admin","clients","clients-portal.tsx");
-    expect(portal).toContain("Preview unsigned frozen document");
-    expect(portal).toContain("View / download current signed document");
-    expect(portal).toContain("View frozen unsigned source");
-    expect(portal).toContain("View / download signed PDF");
-    expect(portal).toContain("View original frozen document");
+    expect(portal).toContain("Preview document");
+    expect(portal).toContain("View current signed document");
+    expect(portal).toContain("View signed document");
+    expect(portal).not.toContain("View frozen unsigned source");
+    expect(portal).not.toContain("View original frozen document");
     expect(portal).toContain("Download signature evidence");
-    expect(portal).toContain("required signatures completed");
-    expect(portal).not.toContain(">Preview / download PDF<");
+    expect(portal).toContain("signatures completed");
+    expect(portal).toContain("Required signatures");
+    expect(portal).toContain("Send for signature");
+    expect(portal).toContain("Revoke");
+    expect(portal).toContain("No delivery email is required");
   });
+
+  it("uses reusable responsive intake and directory layout primitives",()=>{const portal=source("src","app","admin","clients","clients-portal.tsx"),styles=source("src","app","globals.css");expect(portal).toContain("client-directory-row");expect(styles).toContain(".guided-section>section>fieldset");expect(styles).toContain(".signer-requirement")});
 });
