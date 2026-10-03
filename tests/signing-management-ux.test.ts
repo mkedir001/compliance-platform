@@ -36,8 +36,13 @@ describe("facilitated signing and document lifecycle UX",()=>{
     expect(portal).toContain("Required signatures");
     expect(portal).toContain("Send for signature");
     expect(portal).toContain("Revoke");
-    expect(portal).toContain("No delivery email is required");
+    expect(portal).toContain('onStart(index,"SIGN_NOW",roster(),false)');
+    expect(portal).not.toContain("Prepare Sign now");
+    expect(portal).not.toContain("Continue to signing");
+    expect(portal).toContain("Identity will be confirmed in the signing ceremony");
+    expect(portal).toContain("Delivery email");
+    expect(portal).toContain('remoteIndex!==null');
   });
 
-  it("uses reusable responsive intake and directory layout primitives",()=>{const portal=source("src","app","admin","clients","clients-portal.tsx"),styles=source("src","app","globals.css");expect(portal).toContain("client-directory-row");expect(styles).toContain(".guided-section>section>fieldset");expect(styles).toContain(".signer-requirement")});
+  it("uses reusable responsive intake, directory, and document-stack layout primitives",()=>{const portal=source("src","app","admin","clients","clients-portal.tsx"),styles=source("src","app","globals.css");expect(portal).toContain("client-directory-row");expect(styles).toContain(".guided-section>section>fieldset");expect(styles).toContain(".signer-requirement");expect(portal).toContain("document-generation-actions");expect(portal).toContain("document-import-control");expect(portal).toContain("document-card-list");expect(portal).toContain("document-card");expect(styles).toContain(".document-card-list{display:grid;gap:1.25rem");expect(styles).toContain(".document-card>.signature-workflow{margin-top:1.25rem")});
 });

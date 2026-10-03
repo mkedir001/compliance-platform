@@ -505,6 +505,19 @@ enum MedicationAuthorizationStatus {
   SUPERSEDED
 }
 
+enum WorkforceEvidenceReadinessStatus {
+  NOT_RECORDED
+  EVIDENCE_SUBMITTED
+  NEEDS_TRAINING
+}
+
+enum WorkforceMedicationReadinessStatus {
+  NOT_RECORDED
+  EVIDENCE_SUBMITTED
+  NEEDS_TRAINING
+  NOT_CURRENTLY_APPLICABLE
+}
+
 enum ServiceAssignmentStatus {
   PROPOSED
   BLOCKED
@@ -682,6 +695,7 @@ model Organization {
   auditPackages             AuditPackage[]
   auditEvents               AuditEvent[]
   employeePortalInvitations EmployeePortalInvitation[]
+  workforceReadinessIntakes EmployeeWorkforceReadiness[]
   notifications             Notification[]
   notificationDeliveries    NotificationDelivery[]
   notificationPreferences   NotificationPreference[]
@@ -922,6 +936,7 @@ model Employee {
   assignmentEvaluations    ServiceAssignmentEligibilityEvaluation[]
   complianceIssues         ComplianceIssue[]
   portalInvitations        EmployeePortalInvitation[]
+  workforceReadiness       EmployeeWorkforceReadiness?
   auditAccessScopes        AuditAccessEmployee[]
 
   @@unique([organizationId, employeeNumber])
@@ -1700,8 +1715,30 @@ model ExternalTrainingRecord {
   employee             Employee                         @relation(fields: [employeeId], references: [id], onDelete: Restrict)
   reviewedBy           User?                            @relation("ExternalTrainingReviewedBy", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
   equivalencyDecisions RequirementEquivalencyDecision[]
+  firstAidReadiness    EmployeeWorkforceReadiness?        @relation("FirstAidReadinessEvidence")
+  medicationReadiness  EmployeeWorkforceReadiness?        @relation("MedicationReadinessEvidence")
 
   @@index([organizationId, employeeId])
+}
+
+model EmployeeWorkforceReadiness {
+  id                         String                              @id @default(cuid())
+  organizationId             String
+  employeeId                 String                              @unique
+  firstAidStatus             WorkforceEvidenceReadinessStatus   @default(NOT_RECORDED)
+  firstAidEvidenceRecordId   String?                             @unique
+  medicationStatus           WorkforceMedicationReadinessStatus @default(NOT_RECORDED)
+  medicationEvidenceRecordId String?                             @unique
+  updatedByUserId            String
+  createdAt                  DateTime                            @default(now())
+  updatedAt                  DateTime                            @updatedAt
+  organization               Organization                        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  employee                   Employee                            @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  firstAidEvidence           ExternalTrainingRecord?             @relation("FirstAidReadinessEvidence", fields: [firstAidEvidenceRecordId], references: [id], onDelete: Restrict)
+  medicationEvidence         ExternalTrainingRecord?             @relation("MedicationReadinessEvidence", fields: [medicationEvidenceRecordId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId, firstAidStatus])
+  @@index([organizationId, medicationStatus])
 }
 
 model RequirementEquivalencyDecision {
@@ -3265,6 +3302,7 @@ model SignatureSigner {
   envelopeId             String
   role                   String
   name                   String
+  identityPending        Boolean                   @default(false)
   email                  String?
   required               Boolean                   @default(true)
   status                 SignatureSignerStatus     @default(PENDING)

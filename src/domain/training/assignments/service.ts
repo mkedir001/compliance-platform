@@ -6,6 +6,7 @@ import { requireEmployeeAccess, requireOrganizationAccess, requirePermission } f
 import { assignmentSchema, bulkAssignmentSchema, cancellationSchema } from "../schemas";
 import { getAssignableCourseVersion } from "../catalog/service";
 import { validateCourseVersion } from "../curriculum/service";
+import { recomputeComplianceInstance } from "@/domain/evidence/service";
 
 const terminalStatuses: TrainingAssignmentStatus[] = ["COMPLETED", "TRAINING_COMPLETE_COMPETENCY_PENDING", "CANCELLED", "SUPERSEDED"];
 
@@ -53,8 +54,15 @@ export async function assignTrainingForCompliance(complianceInstanceId: string) 
   if (!option) return null;
   const fingerprint = `compliance:${instance.id}:${option.trainingCourseVersionId}`;
   const activeKey = `${instance.organizationId}:${instance.employeeId}:${option.trainingCourseVersionId}`;
-  const existing = await prisma.trainingAssignment.findUnique({ where: { activeKey } });
-  if (existing) return existing;
+  const existing = await prisma.trainingAssignment.findUnique({ where: { activeKey }, include: { completion: true } });
+  if (existing) {
+    const linked = existing.complianceInstanceId ? existing : await prisma.trainingAssignment.update({ where: { id: existing.id }, data: { complianceInstanceId: instance.id, sourceReferenceId: existing.sourceReferenceId ?? instance.id, dueAt: existing.dueAt ?? instance.nominalDueAt } });
+    if (existing.completion) await prisma.$transaction(async tx => {
+      await tx.complianceInstanceEvidence.upsert({ where: { complianceInstanceId_evidenceType_evidenceReferenceId: { complianceInstanceId: instance.id, evidenceType: "TRAINING_COMPLETION", evidenceReferenceId: existing.completion!.id } }, create: { complianceInstanceId: instance.id, evidenceType: "TRAINING_COMPLETION", evidenceReferenceId: existing.completion!.id }, update: {} });
+      await recomputeComplianceInstance(tx, instance.id);
+    });
+    return linked;
+  }
   const existingForInstance = await prisma.trainingAssignment.findUnique({ where: { fingerprint } });
   if (existingForInstance && existingForInstance.status !== "CANCELLED") return existingForInstance.activeKey ? existingForInstance : prisma.trainingAssignment.update({ where: { id: existingForInstance.id }, data: { activeKey, dueAt: instance.nominalDueAt } });
   const createFingerprint = existingForInstance ? `${fingerprint}:${randomUUID()}` : fingerprint;
