@@ -3247,68 +3247,111 @@ model SignatureEnvelope {
   completedAt        DateTime?
   voidedAt           DateTime?
   voidReason         String?
+  currentRenditionId String?                 @unique
   createdAt          DateTime                @default(now())
   updatedAt          DateTime                @updatedAt
   document           ClientDocument          @relation(fields: [documentId], references: [id], onDelete: Restrict)
   client             Client                  @relation(fields: [clientId], references: [id], onDelete: Restrict)
   signers            SignatureSigner[]
   invitations        SignatureInvitation[]
+  renditions         SignatureRendition[]    @relation("EnvelopeRenditions")
+  currentRendition   SignatureRendition?     @relation("CurrentEnvelopeRendition", fields: [currentRenditionId], references: [id], onDelete: Restrict)
 
   @@index([organizationId, clientId, status])
 }
 
 model SignatureSigner {
-  id                 String                    @id @default(cuid())
-  envelopeId         String
-  role               String
-  name               String
-  email              String?
-  required           Boolean                   @default(true)
-  status             SignatureSignerStatus     @default(PENDING)
-  providerSignerId   String?
-  sentAt             DateTime?
-  viewedAt           DateTime?
-  signedAt           DateTime?
-  signatureMethod    SignatureMethod?
-  adoptedName        String?
-  signatureData      Bytes?
-  consentVersion     String?
-  consentedAt        DateTime?
-  verificationMethod SignerVerificationMethod?
-  facilitatorUserId  String?
-  auditJson          Json?
-  createdAt          DateTime                  @default(now())
-  updatedAt          DateTime                  @updatedAt
-  envelope           SignatureEnvelope         @relation(fields: [envelopeId], references: [id], onDelete: Restrict)
-  invitations        SignatureInvitation[]
+  id                     String                    @id @default(cuid())
+  envelopeId             String
+  role                   String
+  name                   String
+  email                  String?
+  required               Boolean                   @default(true)
+  status                 SignatureSignerStatus     @default(PENDING)
+  providerSignerId       String?
+  sentAt                 DateTime?
+  viewedAt               DateTime?
+  signedAt               DateTime?
+  signatureMethod        SignatureMethod?
+  adoptedName            String?
+  signatureData          Bytes?
+  consentVersion         String?
+  consentedAt            DateTime?
+  verificationMethod     SignerVerificationMethod?
+  facilitatorUserId      String?
+  reviewedRenditionId    String?
+  reviewedRenditionHash  String?
+  resultingRenditionId   String?
+  resultingRenditionHash String?
+  auditJson              Json?
+  createdAt              DateTime                  @default(now())
+  updatedAt              DateTime                  @updatedAt
+  envelope               SignatureEnvelope         @relation(fields: [envelopeId], references: [id], onDelete: Restrict)
+  invitations            SignatureInvitation[]
 
   @@index([envelopeId, status])
 }
 
 model SignatureInvitation {
-  id                    String                            @id @default(cuid())
-  organizationId        String
-  envelopeId            String
-  signerId              String
-  tokenDigest           String                            @unique
-  status                SignatureInvitationStatus         @default(ACTIVE)
-  deliveryStatus        SignatureInvitationDeliveryStatus @default(PENDING)
-  deliveryAttempts      Int                               @default(0)
-  deliveryAttemptedAt   DateTime?
-  deliveryErrorCode     String?
-  providerMessageId     String?
-  expiresAt             DateTime
-  deliveredAt           DateTime?
-  usedAt                DateTime?
-  revokedAt             DateTime?
-  replacedById          String?                           @unique
-  createdAt             DateTime                          @default(now())
-  envelope              SignatureEnvelope                 @relation(fields: [envelopeId], references: [id], onDelete: Restrict)
-  signer                SignatureSigner                   @relation(fields: [signerId], references: [id], onDelete: Restrict)
-  replacedBy            SignatureInvitation?              @relation("InvitationReplacement", fields: [replacedById], references: [id], onDelete: Restrict)
-  replaces              SignatureInvitation?              @relation("InvitationReplacement")
+  id                           String                            @id @default(cuid())
+  organizationId               String
+  envelopeId                   String
+  signerId                     String
+  tokenDigest                  String                            @unique
+  status                       SignatureInvitationStatus         @default(ACTIVE)
+  deliveryStatus               SignatureInvitationDeliveryStatus @default(PENDING)
+  deliveryAttempts             Int                               @default(0)
+  deliveryAttemptedAt          DateTime?
+  deliveryErrorCode            String?
+  providerMessageId            String?
+  expiresAt                    DateTime
+  deliveredAt                  DateTime?
+  usedAt                       DateTime?
+  revokedAt                    DateTime?
+  replacedById                 String?                           @unique
+  reviewedRenditionId          String?
+  reviewedRenditionHash        String?
+  reviewedAt                   DateTime?
+  pendingSignatureMethod       SignatureMethod?
+  pendingAdoptedName           String?
+  pendingSignatureData         Bytes?
+  pendingConsentVersion        String?
+  pendingConsentedAt           DateTime?
+  pendingReviewedRenditionId   String?
+  pendingReviewedRenditionHash String?
+  createdAt                    DateTime                          @default(now())
+  envelope                     SignatureEnvelope                 @relation(fields: [envelopeId], references: [id], onDelete: Restrict)
+  signer                       SignatureSigner                   @relation(fields: [signerId], references: [id], onDelete: Restrict)
+  replacedBy                   SignatureInvitation?              @relation("InvitationReplacement", fields: [replacedById], references: [id], onDelete: Restrict)
+  replaces                     SignatureInvitation?              @relation("InvitationReplacement")
 
   @@index([organizationId, envelopeId, signerId, status])
   @@index([organizationId, deliveryStatus, deliveryAttemptedAt])
   @@index([expiresAt, status])
+}
+
+model SignatureRendition {
+  id                    String                    @id @default(cuid())
+  envelopeId            String
+  sequence              Int
+  previousRenditionId   String?
+  signerId              String?
+  pdf                   Bytes
+  renditionHash         String
+  sourceContentHash     String
+  reviewedRenditionId   String?
+  reviewedRenditionHash String?
+  verificationMethod    SignerVerificationMethod?
+  acceptedAt            DateTime?
+  isFinal               Boolean                   @default(false)
+  createdAt             DateTime                  @default(now())
+  envelope              SignatureEnvelope         @relation("EnvelopeRenditions", fields: [envelopeId], references: [id], onDelete: Restrict)
+  currentForEnvelope    SignatureEnvelope?        @relation("CurrentEnvelopeRendition")
+  previous              SignatureRendition?       @relation("RenditionLineage", fields: [previousRenditionId], references: [id], onDelete: Restrict)
+  next                  SignatureRendition[]      @relation("RenditionLineage")
+
+  @@unique([envelopeId, sequence])
+  @@unique([envelopeId, signerId])
+  @@index([previousRenditionId])
+  @@index([envelopeId, isFinal])
 }
