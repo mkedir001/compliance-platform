@@ -53,6 +53,25 @@ async function baselineCatalog(organizationId: string, employeeId: string, at = 
   return { registry, courses: courses.map(courseProjection) };
 }
 
+async function firstAidTrainingOption(organizationId: string, requirementVersionId: string | undefined, at = new Date()) {
+  if (!requirementVersionId) return null;
+  return prisma.requirementTrainingOption.findFirst({ where: {
+    complianceRequirementVersionId: requirementVersionId, isDefault: true,
+    trainingCourseVersion: { status: { in: ["PUBLISHED", "ACTIVE"] }, effectiveFrom: { lte: at }, OR: [{ effectiveUntil: null }, { effectiveUntil: { gte: at } }], course: { status: "ACTIVE", OR: [{ organizationId: null }, { organizationId }] } },
+  }, orderBy: { createdAt: "asc" }, select: { trainingCourseVersionId: true } });
+}
+
+async function medicationTrainingPathways(organizationId: string, employeeId: string, at = new Date()) {
+  const pathways = await prisma.medicationQualificationPathway.findMany({ where: { organizationId }, include: { requirementVersion: { include: { requirement: true } }, courseVersion: { include: { course: true, clinicalApprovals: { where: { organizationId, status: "APPROVED" } }, assignments: { where: { organizationId, employeeId, status: { in: [...activeAssignmentStatuses] } }, include: { completion: { select: { id: true } } }, orderBy: { assignedAt: "desc" } } } } } });
+  return pathways.map(pathway => {
+    const versionCurrent = ["PUBLISHED", "ACTIVE"].includes(pathway.courseVersion.status) && pathway.courseVersion.effectiveFrom <= at && (!pathway.courseVersion.effectiveUntil || pathway.courseVersion.effectiveUntil >= at);
+    const courseAvailable = pathway.courseVersion.course.status === "ACTIVE" && (!pathway.courseVersion.course.organizationId || pathway.courseVersion.course.organizationId === organizationId);
+    const clinicallyApproved = !pathway.courseVersion.clinicalGovernanceRequired || pathway.courseVersion.clinicalApprovals.some(approval => approval.contentHashSnapshot === pathway.courseVersion.contentHash);
+    const unavailableReason = !versionCurrent || !courseAvailable ? "The configured medication course is not currently published and assignable." : !clinicallyApproved ? "The governed medication curriculum requires current clinical approval before assignment." : null;
+    return { pathway, assignable: unavailableReason === null, unavailableReason };
+  });
+}
+
 async function personSpecificCatalog(organizationId: string, employeeId: string, at = new Date()) {
   const assignments = await prisma.serviceAssignment.findMany({ where: { organizationId, employeeId, serviceRecipientRef: { not: null }, status: { in: ["PROPOSED", "BLOCKED", "ACTIVE"] }, startsAt: { lte: at }, OR: [{ endsAt: null }, { endsAt: { gte: at } }] }, include: { duties: true }, orderBy: { startsAt: "desc" } });
   if (!assignments.length) return [];
@@ -67,21 +86,25 @@ async function personSpecificCatalog(organizationId: string, employeeId: string,
 
 export async function getEmployeeTrainingReadiness(user: Pick<User, "id">, organizationId: string, employeeId: string, at = new Date()) {
   await authorize(user, organizationId, employeeId);
-  const [{ registry, courses }, personSpecific, readiness, pathways, qualifications] = await Promise.all([
+  const [{ registry, courses }, personSpecific, readiness, medicationPathwayRows, qualifications] = await Promise.all([
     baselineCatalog(organizationId, employeeId, at),
     personSpecificCatalog(organizationId, employeeId, at),
     prisma.employeeWorkforceReadiness.findUnique({ where: { employeeId }, include: { firstAidEvidence: true, medicationEvidence: true } }),
-    prisma.medicationQualificationPathway.findMany({ where: { organizationId }, include: { requirementVersion: { include: { requirement: true } }, courseVersion: { include: { course: true, assignments: { where: { organizationId, employeeId, status: { in: [...activeAssignmentStatuses] } }, include: { completion: { select: { id: true } } }, orderBy: { assignedAt: "desc" } } } } } }),
+    medicationTrainingPathways(organizationId, employeeId, at),
     prisma.medicationQualification.findMany({ where: { organizationId, employeeId, status: "ACTIVE", decision: "APPROVED" }, select: { courseVersionId: true } }),
   ]);
   const qualifiedCourseVersions = new Set(qualifications.map(row => row.courseVersionId));
   const firstAidRequirement = registry.requirementVersions.find(row => row.requirement.code === "245D-WF-012");
+  const firstAidOption = await firstAidTrainingOption(organizationId, firstAidRequirement?.id, at);
+  const configurationState = !registry.licenseTypes.length ? "REQUIRED" : !registry.activeRulesets.length ? "UNAVAILABLE" : "ACTIVE";
+  const configurationReason = configurationState === "REQUIRED" ? "Select and activate a supported organization program/license before assigning baseline training." : configurationState === "UNAVAILABLE" ? "The active organization license has no current approved platform ruleset." : null;
+  const medicationAssignable = medicationPathwayRows.filter(row => row.assignable);
   return {
     employeeId,
     generatedAt: at.toISOString(),
-    baseline: { licenseTypes: registry.licenseTypes, courses, meaning: courses.length ? "Registry-mapped workforce training available from the organization’s active program/license configuration. Assignment does not require a client relationship." : "No active registry-mapped baseline catalog is available for this organization configuration." },
-    firstAid: { status: readiness?.firstAidStatus ?? "NOT_RECORDED", evidence: readiness?.firstAidEvidence ? { id: readiness.firstAidEvidence.id, providerName: readiness.firstAidEvidence.providerName, trainingName: readiness.firstAidEvidence.trainingName, trainingDate: readiness.firstAidEvidence.trainingDate, expiresAt: readiness.firstAidEvidence.expiresAt, reviewStatus: readiness.firstAidEvidence.reviewStatus } : null, requirement: firstAidRequirement ? { id: firstAidRequirement.id, code: firstAidRequirement.requirement.code, name: firstAidRequirement.requirement.name } : null, meaning: "Submitted evidence remains unverified until authorized review and a mapped equivalency decision; internal course completion is not an external certification." },
-    medication: { status: readiness?.medicationStatus ?? "NOT_RECORDED", evidence: readiness?.medicationEvidence ? { id: readiness.medicationEvidence.id, providerName: readiness.medicationEvidence.providerName, trainingName: readiness.medicationEvidence.trainingName, trainingDate: readiness.medicationEvidence.trainingDate, expiresAt: readiness.medicationEvidence.expiresAt, reviewStatus: readiness.medicationEvidence.reviewStatus } : null, pathways: pathways.map(pathway => ({ id: pathway.id, requirementCode: pathway.requirementVersion.requirement.code, title: pathway.courseVersion.course.title, courseVersionId: pathway.courseVersionId, assignment: assignmentState(pathway.courseVersion.assignments), qualificationState: qualifiedCourseVersions.has(pathway.courseVersionId) ? "QUALIFIED" : "NOT_QUALIFIED" })), meaning: "Training, external evidence, observed competency, clinical approval, person-specific instruction, and medication authorization remain separate." },
+    baseline: { licenseTypes: registry.licenseTypes, configurationState, configurationReason, courses, meaning: courses.length ? "Registry-mapped workforce training available from the organization’s active program/license configuration. Assignment does not require a client relationship." : configurationReason ?? "No active registry-mapped baseline catalog is available for this organization configuration." },
+    firstAid: { status: readiness?.firstAidStatus ?? "NOT_RECORDED", evidence: readiness?.firstAidEvidence ? { id: readiness.firstAidEvidence.id, providerName: readiness.firstAidEvidence.providerName, trainingName: readiness.firstAidEvidence.trainingName, trainingDate: readiness.firstAidEvidence.trainingDate, expiresAt: readiness.firstAidEvidence.expiresAt, reviewStatus: readiness.firstAidEvidence.reviewStatus } : null, requirement: firstAidRequirement ? { id: firstAidRequirement.id, code: firstAidRequirement.requirement.code, name: firstAidRequirement.requirement.name } : null, trainingAction: { available: Boolean(firstAidOption), reason: firstAidOption ? null : firstAidRequirement ? "No current registry-mapped internal First Aid training is available to assign." : configurationReason ?? "No applicable First Aid requirement is active for this organization." }, meaning: "Submitted evidence remains unverified until authorized review and a mapped equivalency decision; internal course completion is not an external certification." },
+    medication: { status: readiness?.medicationStatus ?? "NOT_RECORDED", evidence: readiness?.medicationEvidence ? { id: readiness.medicationEvidence.id, providerName: readiness.medicationEvidence.providerName, trainingName: readiness.medicationEvidence.trainingName, trainingDate: readiness.medicationEvidence.trainingDate, expiresAt: readiness.medicationEvidence.expiresAt, reviewStatus: readiness.medicationEvidence.reviewStatus } : null, trainingAction: { available: medicationAssignable.length > 0, reason: medicationAssignable.length ? null : medicationPathwayRows[0]?.unavailableReason ?? "No governed medication training pathway is configured for this organization." }, pathways: medicationPathwayRows.map(({ pathway, assignable, unavailableReason }) => ({ id: pathway.id, requirementCode: pathway.requirementVersion.requirement.code, title: pathway.courseVersion.course.title, courseVersionId: pathway.courseVersionId, assignable, unavailableReason, assignment: assignmentState(pathway.courseVersion.assignments), qualificationState: qualifiedCourseVersions.has(pathway.courseVersionId) ? "QUALIFIED" : "NOT_QUALIFIED" })), meaning: "Training, external evidence, observed competency, clinical approval, person-specific instruction, and medication authorization remain separate." },
     personSpecific: { assignments: personSpecific, meaning: personSpecific.length ? "Requirements are derived from configured service-assignment rules and the employee’s assigned person/responsibilities." : "No person-specific service assignments currently establish training requirements." },
   };
 }
@@ -102,8 +125,7 @@ export async function updateFirstAidReadiness(user: Pick<User, "id">, organizati
   else {
     const registry = await registryContext(organizationId), applicable = registry.requirementVersions.find(row => row.requirement.code === "245D-WF-012");
     if (!applicable) throw new ValidationError("No applicable First Aid requirement is available for this organization configuration");
-    const requirement = await prisma.complianceRequirementVersion.findUnique({ where: { id: applicable.id }, include: { trainingOptions: { where: { isDefault: true, trainingCourseVersion: { status: { in: ["PUBLISHED", "ACTIVE"] }, course: { status: "ACTIVE", OR: [{ organizationId: null }, { organizationId }] } } }, orderBy: { createdAt: "asc" } } } });
-    const option = requirement?.trainingOptions[0];
+    const option = await firstAidTrainingOption(organizationId, applicable.id);
     if (!option) throw new ValidationError("No current registry-mapped First Aid training is available");
     assignmentId = (await createManualAssignment(user, organizationId, { employeeId, courseVersionId: option.trainingCourseVersionId })).id;
   }
@@ -117,9 +139,9 @@ export async function updateMedicationReadiness(user: Pick<User, "id">, organiza
   let evidenceRecordId: string | null = null; const assignmentIds: string[] = [];
   if (input.choice === "ALREADY_HAVE") evidenceRecordId = (await createExternalTrainingForEmployee(user, organizationId, employeeId, input.evidence)).id;
   if (input.choice === "NEEDS_TRAINING") {
-    const pathways = await prisma.medicationQualificationPathway.findMany({ where: { organizationId }, select: { id: true } });
-    if (!pathways.length) throw new ValidationError("No governed medication training pathway is configured for this organization");
-    for (const pathway of pathways) assignmentIds.push((await assignMedicationTraining(user, organizationId, employeeId, pathway.id)).id);
+    const pathways = (await medicationTrainingPathways(organizationId, employeeId)).filter(row => row.assignable);
+    if (!pathways.length) throw new ValidationError("No currently assignable governed medication training pathway is configured for this organization");
+    for (const { pathway } of pathways) assignmentIds.push((await assignMedicationTraining(user, organizationId, employeeId, pathway.id)).id);
   }
   const status = input.choice === "ALREADY_HAVE" ? "EVIDENCE_SUBMITTED" : input.choice;
   await prisma.$transaction([prisma.employeeWorkforceReadiness.upsert({ where: { employeeId }, create: { organizationId, employeeId, medicationStatus: status, medicationEvidenceRecordId: evidenceRecordId, updatedByUserId: user.id }, update: { medicationStatus: status, medicationEvidenceRecordId: evidenceRecordId, updatedByUserId: user.id } }), prisma.auditEvent.create({ data: { organizationId, employeeId, actorUserId: user.id, eventType: "workforce.readiness.medication_updated", entityType: "Employee", entityId: employeeId, metadataJson: { choice: input.choice, evidenceRecordId, assignmentIds } } })]);

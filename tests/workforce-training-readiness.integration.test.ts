@@ -16,7 +16,7 @@ import {
 const db = new PrismaClient();
 
 describe.sequential("workforce training and readiness operations", () => {
-  let organizationId = "", otherOrganizationId = "", ownerId = "", outsiderId = "", employeeId = "", evidenceEmployeeId = "", medicationEmployeeId = "", legacyClientId = "", medicationPathwayId = "", medicationDutyId = "";
+  let organizationId = "", otherOrganizationId = "", ownerId = "", outsiderId = "", employeeId = "", evidenceEmployeeId = "", medicationEmployeeId = "", unconfiguredEmployeeId = "", legacyClientId = "", medicationPathwayId = "", medicationDutyId = "";
   const at = new Date("2026-10-03T18:00:00.000Z");
   const owner = () => ({ id: ownerId });
   const evidence = (suffix: string) => ({ providerName: "Synthetic training provider", trainingName: suffix, trainingDate: "2026-09-01", expiresAt: "2027-09-01", credentialNumber: `TEST-${suffix}`, evidenceReference: `secure:test-${suffix}`, notes: "Synthetic non-production evidence." });
@@ -33,6 +33,9 @@ describe.sequential("workforce training and readiness operations", () => {
     const membership = await db.organizationMembership.create({ data: { organizationId, userId: ownerId, status: "ACTIVE" } });
     const ownerRole = await db.roleDefinition.findFirstOrThrow({ where: { organizationId: null, code: "ORGANIZATION_OWNER" } });
     await db.membershipRole.create({ data: { membershipId: membership.id, roleDefinitionId: ownerRole.id } });
+    const otherMembership = await db.organizationMembership.create({ data: { organizationId: otherOrganizationId, userId: outsiderId, status: "ACTIVE" } });
+    await db.membershipRole.create({ data: { membershipId: otherMembership.id, roleDefinitionId: ownerRole.id } });
+    unconfiguredEmployeeId = (await db.employee.create({ data: { organizationId: otherOrganizationId, firstName: "Unconfigured", lastName: "Worker", employmentStatus: "ACTIVE" } })).id;
     await db.organizationLicense.create({ data: { organizationId, licenseType: "MN_245D", licenseStatus: "ACTIVE", effectiveDate: new Date("2026-08-01"), issuingAuthority: "Synthetic test authority" } });
     const employees = await Promise.all([
       db.employee.create({ data: { organizationId, firstName: "Baseline", lastName: "Worker", employmentStatus: "ACTIVE" } }),
@@ -43,7 +46,7 @@ describe.sequential("workforce training and readiness operations", () => {
     legacyClientId = (await db.client.create({ data: { organizationId, legalFirstName: "Legacy", legalLastName: "Client", dateOfBirth: new Date("1990-01-01"), createdByUserId: ownerId } })).id;
 
     const requirement = await db.complianceRequirementVersion.findFirstOrThrow({ where: { status: "ACTIVE", requirement: { code: "245D-WF-014" } } });
-    const course = await db.trainingCourse.create({ data: { organizationId, catalogKey: `${tag}:medication`, code: `${tag}-MED`, title: "Synthetic governed medication training", category: "MEDICATION", ownershipType: "ORGANIZATION", versions: { create: { versionNumber: 1, status: "PUBLISHED", effectiveFrom: new Date("2026-08-01"), publishedAt: new Date("2026-08-01"), contentHash: `${tag}:medication:v1`, clinicalGovernanceRequired: true } } }, include: { versions: true } });
+    const course = await db.trainingCourse.create({ data: { organizationId, catalogKey: `${tag}:medication`, code: `${tag}-MED`, title: "Synthetic governed medication training", category: "MEDICATION", ownershipType: "ORGANIZATION", versions: { create: { versionNumber: 1, status: "PUBLISHED", effectiveFrom: new Date("2026-08-01"), publishedAt: new Date("2026-08-01"), contentHash: `${tag}:medication:v1` } } }, include: { versions: true } });
     const checklist = await db.skillChecklist.create({ data: { organizationId, code: `${tag}-MED`, name: "Synthetic medication observation", ownerType: "ORGANIZATION", versions: { create: { versionNumber: 1, status: "ACTIVE", effectiveFrom: new Date("2026-08-01"), contentHash: `${tag}:checklist:v1`, items: { create: { sequence: 1, description: "Synthetic observed step" } } } } }, include: { versions: true } });
     const competency = await db.competencyDefinition.create({ data: { organizationId, code: `${tag}-MED`, name: "Synthetic medication competency", method: "OBSERVED_SKILL", ownerType: "ORGANIZATION" } });
     medicationPathwayId = (await db.medicationQualificationPathway.create({ data: { organizationId, requirementVersionId: requirement.id, courseVersionId: course.versions[0].id, competencyDefinitionId: competency.id, skillChecklistVersionId: checklist.versions[0].id, allowedReviewerCredentialTypes: ["RN"] } })).id;
@@ -59,6 +62,23 @@ describe.sequential("workforce training and readiness operations", () => {
     expect(source).toContain("No applicable baseline courses found");
     expect(source).toContain("Catalog unavailable");
     expect(source).toContain("Assign selected baseline training");
+    expect(source).toContain("Select at least one available baseline course before assigning training.");
+    expect(source).toContain("first-aid-unavailable");
+    expect(source).toContain("medication-training-unavailable");
+    expect(source).toContain('type="button"');
+  });
+
+  it("returns explicit configuration and action-unavailable reasons without creating assignments", async () => {
+    const readiness = await getEmployeeTrainingReadiness({ id: outsiderId }, otherOrganizationId, unconfiguredEmployeeId, at);
+    expect(readiness.baseline).toMatchObject({ configurationState: "REQUIRED", courses: [] });
+    expect(readiness.baseline.configurationReason).toContain("Select and activate");
+    expect(readiness.firstAid.trainingAction).toMatchObject({ available: false });
+    expect(readiness.firstAid.trainingAction.reason).toContain("Select and activate");
+    expect(readiness.medication.trainingAction).toMatchObject({ available: false, reason: "No governed medication training pathway is configured for this organization." });
+    await expect(assignBaselineTraining({ id: outsiderId }, otherOrganizationId, unconfiguredEmployeeId, { courseVersionIds: [] })).rejects.toThrow();
+    await expect(updateFirstAidReadiness({ id: outsiderId }, otherOrganizationId, unconfiguredEmployeeId, { choice: "NEEDS_TRAINING" })).rejects.toThrow("No applicable First Aid requirement");
+    await expect(updateMedicationReadiness({ id: outsiderId }, otherOrganizationId, unconfiguredEmployeeId, { choice: "NEEDS_TRAINING" })).rejects.toThrow("No currently assignable governed medication training pathway");
+    expect(await db.trainingAssignment.count({ where: { organizationId: otherOrganizationId, employeeId: unconfiguredEmployeeId } })).toBe(0);
   });
 
   it("loads an existing organization, client, and employee before readiness initialization", async () => {
@@ -90,6 +110,7 @@ describe.sequential("workforce training and readiness operations", () => {
   it("loads and idempotently assigns registry-backed baseline training without a client assignment", async () => {
     expect(await db.serviceAssignment.count({ where: { organizationId, employeeId } })).toBe(0);
     const initial = await getEmployeeTrainingReadiness(owner(), organizationId, employeeId, at);
+    expect(initial.baseline.configurationState).toBe("ACTIVE");
     expect(initial.baseline.licenseTypes).toContain("MN_245D");
     expect(initial.baseline.courses.some(course => course.code === "245D-110")).toBe(true);
     const version = initial.baseline.courses.find(course => course.code === "245D-101")!.versions[0];
@@ -110,6 +131,8 @@ describe.sequential("workforce training and readiness operations", () => {
     const assigned = await updateFirstAidReadiness(owner(), organizationId, employeeId, { choice: "NEEDS_TRAINING" });
     expect(assigned.firstAid.status).toBe("NEEDS_TRAINING");
     expect(await db.trainingAssignment.count({ where: { organizationId, employeeId, courseVersion: { course: { code: "245D-110" } } } })).toBe(1);
+    await updateFirstAidReadiness(owner(), organizationId, employeeId, { choice: "NEEDS_TRAINING" });
+    expect(await db.trainingAssignment.count({ where: { organizationId, employeeId, courseVersion: { course: { code: "245D-110" } } } })).toBe(1);
   });
 
   it("preserves all three conditional medication paths without granting clinical authority", async () => {
@@ -118,6 +141,8 @@ describe.sequential("workforce training and readiness operations", () => {
     expect(await db.medicationQualification.count({ where: { organizationId, employeeId: evidenceEmployeeId } })).toBe(0);
     const needsTraining = await updateMedicationReadiness(owner(), organizationId, medicationEmployeeId, { choice: "NEEDS_TRAINING" });
     expect(needsTraining.medication.status).toBe("NEEDS_TRAINING");
+    expect(await db.trainingAssignment.count({ where: { organizationId, employeeId: medicationEmployeeId, courseVersionId: needsTraining.medication.pathways[0].courseVersionId } })).toBe(1);
+    await updateMedicationReadiness(owner(), organizationId, medicationEmployeeId, { choice: "NEEDS_TRAINING" });
     expect(await db.trainingAssignment.count({ where: { organizationId, employeeId: medicationEmployeeId, courseVersionId: needsTraining.medication.pathways[0].courseVersionId } })).toBe(1);
     const notApplicable = await updateMedicationReadiness(owner(), organizationId, employeeId, { choice: "NOT_CURRENTLY_APPLICABLE" });
     expect(notApplicable.medication.status).toBe("NOT_CURRENTLY_APPLICABLE");
