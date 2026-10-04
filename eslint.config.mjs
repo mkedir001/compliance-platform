@@ -1,4 +1,4 @@
 import { FlatCompat } from "@eslint/eslintrc";
 const compat = new FlatCompat({ baseDirectory: import.meta.dirname });
-const config = [{ ignores: [".next/**", "node_modules/**", "next-env.d.ts", "paubox-relay/dist/**"] }, ...compat.extends("next/core-web-vitals", "next/typescript")];
+const config = [{ ignores: [".next/**", "node_modules/**", "next-env.d.ts", "paubox-relay/dist/**", "rotation-controller/dist/**"] }, ...compat.extends("next/core-web-vitals", "next/typescript")];
 export default config;

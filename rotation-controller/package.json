@@ -1,0 +1,23 @@
+{
+  "name": "compliance-platform-rds-rotation-controller",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.15.1",
+  "scripts": {
+    "test": "node --test test/*.node.mjs",
+    "build": "esbuild src/handler.mjs --bundle --platform=node --target=node22 --format=cjs --outfile=dist/index.js",
+    "package": "pnpm build && cd dist && rm -f rotation-controller.zip && zip -q rotation-controller.zip index.js",
+    "test:package": "node test/package-smoke.mjs"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "3.1145.0",
+    "@aws-sdk/client-ecs": "3.1145.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild"]
+  }
+}
