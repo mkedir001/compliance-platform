@@ -6,7 +6,7 @@ import { deriveTemporalStatus } from "@/domain/compliance/operations/deadlines";
 import { getOrganizationRenewalActionsForNotificationReconciliation } from "@/domain/clients/renewals";
 import { getOrganizationDocumentRequestActions } from "@/domain/clients/document-requests";
 import { requireOrganizationAccess, requirePermission, resolvePermissionCodes } from "@/domain/permissions/authorization";
-import { configuredEmailProvider, EmailDeliveryError, type EmailProvider } from "@/domain/notifications/email";
+import { configuredEmailProviderForPurpose, EmailDeliveryError, type EmailProvider } from "@/domain/notifications/email";
 import { prisma } from "@/lib/prisma";
 type Candidate = {
   recipientUserId: string;
@@ -735,6 +735,6 @@ export async function getNotificationOperations(user: Pick<User, "id">, organiza
       status: row.status,
       count: row._count,
     })),
-    liveEmailConfigured: configuredEmailProvider().configured,
+    liveEmailConfigured: configuredEmailProviderForPurpose("WORKFORCE_TRANSACTIONAL").configured,
   };
 }

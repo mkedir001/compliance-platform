@@ -2,7 +2,7 @@ import { Prisma, type ClientDocumentRequestRecipientType, type ClientDocumentTyp
 import { z } from "zod";
 import { AuthorizationError, ResourceNotFoundError } from "@/domain/auth/errors";
 import { getClientRenewalSummary, renewalState } from "@/domain/clients/renewals";
-import { configuredEmailProvider, type EmailProvider } from "@/domain/notifications/email";
+import { configuredEmailProviderForPurpose, type EmailProvider } from "@/domain/notifications/email";
 import { requireOrganizationAccess, requirePermission } from "@/domain/permissions/authorization";
 import { prisma } from "@/lib/prisma";
 
@@ -89,14 +89,14 @@ export async function updateDocumentRequest(user: Pick<User, "id">, organization
 
 function minimalMessage(documentType: ClientDocumentType) { return { subject: "Document request from your service organization", text: `Your service organization is requesting a ${documentType.toLowerCase().replaceAll("_", " ")} document. Please use your established secure contact or signing process to respond. Do not send sensitive records through an unapproved channel.` }; }
 
-export async function sendDocumentRequest(user: Pick<User, "id">, organizationId: string, clientId: string, requestId: string, provider: EmailProvider = configuredEmailProvider(), at = new Date()) {
+export async function sendDocumentRequest(user: Pick<User, "id">, organizationId: string, clientId: string, requestId: string, provider: EmailProvider = configuredEmailProviderForPurpose("CLIENT_SECURE"), at = new Date()) {
   await authorize(user, organizationId, "client.document.generate"); const request = await requestOrThrow(organizationId, clientId, requestId); if (request.status !== "DRAFT") return request;
   const claimed = await prisma.clientDocumentRequest.updateMany({ where: { id: request.id, status: "DRAFT" }, data: { status: "SENT", requestedAt: at } }); if (!claimed.count) return requestOrThrow(organizationId, clientId, request.id);
   try { if (request.deliveryChannel === "EMAIL") { if (!request.recipientEmail) throw new AuthorizationError("Request recipient has no email address"); await provider.send({ to: request.recipientEmail, ...minimalMessage(request.documentType) }); } const updated = await prisma.clientDocumentRequest.update({ where: { id: request.id }, data: { status: "OUTSTANDING", sentAt: at } }); await audit(organizationId, user.id, "client.document_request_sent", request.id, { clientId, documentType: request.documentType, deliveryChannel: request.deliveryChannel, obligationDocumentId: request.obligationDocumentId }); return updated; }
   catch (error) { await prisma.clientDocumentRequest.updateMany({ where: { id: request.id, status: "SENT" }, data: { status: "DRAFT", requestedAt: null } }); throw error; }
 }
 
-export async function followUpDocumentRequest(user: Pick<User, "id">, organizationId: string, clientId: string, requestId: string, provider: EmailProvider = configuredEmailProvider(), at = new Date()) {
+export async function followUpDocumentRequest(user: Pick<User, "id">, organizationId: string, clientId: string, requestId: string, provider: EmailProvider = configuredEmailProviderForPurpose("CLIENT_SECURE"), at = new Date()) {
   await authorize(user, organizationId, "client.document.generate"); const request = await requestOrThrow(organizationId, clientId, requestId); if (request.status !== "OUTSTANDING") throw new AuthorizationError("Only an outstanding request can receive follow-up");
   const claimed = await prisma.clientDocumentRequest.updateMany({ where: { id: request.id, status: "OUTSTANDING", followUpCount: request.followUpCount }, data: { followUpCount: { increment: 1 }, latestFollowUpAt: at } }); if (!claimed.count) return requestOrThrow(organizationId, clientId, request.id);
   try { if (request.deliveryChannel === "EMAIL") { if (!request.recipientEmail) throw new AuthorizationError("Request recipient has no email address"); await provider.send({ to: request.recipientEmail, ...minimalMessage(request.documentType) }); } await audit(organizationId, user.id, "client.document_request_follow_up_sent", request.id, { clientId, documentType: request.documentType, followUpNumber: request.followUpCount + 1 }); return requestOrThrow(organizationId, clientId, request.id); }

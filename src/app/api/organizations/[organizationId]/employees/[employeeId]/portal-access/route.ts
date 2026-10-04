@@ -10,7 +10,7 @@ export async function GET(request: Request, context: { params: Promise<{ organiz
   catch (error) { return errorResponse(error); }
 }
 export async function POST(request: Request, context: { params: Promise<{ organizationId: string; employeeId: string }> }) {
-  try { const user = await requireAuthenticatedUser(request), { organizationId, employeeId } = await context.params;await enforceRateLimit("employee-invitation",requestRateKey(request,user.id),20,3600);const result = await inviteEmployeeToPortal(user, organizationId, employeeId); return Response.json({ invitation: result.invitation, delivery: "SECURE_DELIVERY_REQUIRED" }, { status: 201 }); }
+  try { const user = await requireAuthenticatedUser(request), { organizationId, employeeId } = await context.params;await enforceRateLimit("employee-invitation",requestRateKey(request,user.id),20,3600);const result = await inviteEmployeeToPortal(user, organizationId, employeeId); return Response.json({ invitation: result.invitation, delivery: result.invitation.deliveryStatus }, { status: 201 }); }
   catch (error) { return errorResponse(error); }
 }
 export async function PATCH(request: Request, context: { params: Promise<{ organizationId: string; employeeId: string }> }) {

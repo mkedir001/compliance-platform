@@ -1,11 +1,12 @@
 import { SendEmailCommand, SESv2Client, type SendEmailCommandInput, type SendEmailCommandOutput } from "@aws-sdk/client-sesv2";
 import { InvokeCommand, LambdaClient, type InvokeCommandOutput } from "@aws-sdk/client-lambda";
 import { z } from "zod";
-import { emailEnvironment, type EmailEnvironment } from "@/lib/env";
+import { emailEnvironment, workforceEmailEnvironment, type EmailEnvironment } from "@/lib/env";
 
 export type ComplianceEmail={to:string;subject:string;text:string;html?:string;actionHref?:string|null};
 export type EmailSendResult={messageId:string;acceptedAt?:Date};
 export interface EmailProvider{name:string;configured:boolean;send(message:ComplianceEmail):Promise<EmailSendResult>}
+export type EmailCommunicationPurpose="CLIENT_SECURE"|"WORKFORCE_TRANSACTIONAL";
 export class EmailDeliveryError extends Error{constructor(message:string,public readonly retryable=true,public readonly code="EMAIL_DELIVERY_FAILED"){super(message)}}
 const addressSchema=z.string().trim().toLowerCase().email();
 const headerSchema=z.string().trim().min(1).max(200).refine(value=>!/[\r\n]/.test(value));
@@ -63,3 +64,11 @@ export class PauboxRelayEmailProvider implements EmailProvider{
 }
 
 export function configuredEmailProvider(source:NodeJS.ProcessEnv|Record<string,string|undefined>=process.env):EmailProvider{const config=emailEnvironment(source);if(!config)return new LocalNoopEmailProvider();if(config.provider==="ses")return new SesEmailProvider(config);if(config.provider==="paubox")return new PauboxRelayEmailProvider(config);return new HttpEmailProvider(config)}
+export function configuredEmailProviderForPurpose(purpose:EmailCommunicationPurpose,source:NodeJS.ProcessEnv|Record<string,string|undefined>=process.env):EmailProvider{
+  if(purpose==="CLIENT_SECURE")return configuredEmailProvider(source);
+  const config=workforceEmailEnvironment(source);
+  if(!config)return new LocalNoopEmailProvider();
+  if(config.provider==="ses")return new SesEmailProvider(config);
+  if(config.provider==="http")return new HttpEmailProvider(config);
+  return new LocalNoopEmailProvider();
+}

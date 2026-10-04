@@ -37,6 +37,14 @@ export async function getOwnerTrainingAssignment(user: Pick<User, "id">, organiz
   return getAssignment(organizationId, assignment.employeeId, assignment.id);
 }
 
+export async function getTrainingAssignmentDetail(user: Pick<User, "id">, organizationId: string, assignmentId: string) {
+  const { membership } = await requireOrganizationAccess(user, organizationId);
+  await requirePermission(membership.id, "compliance.operations.read");
+  const assignment = await prisma.trainingAssignment.findFirst({ where: { id: assignmentId, organizationId } });
+  if (!assignment) throw new ResourceNotFoundError("Training assignment not found");
+  return getAssignment(organizationId, assignment.employeeId, assignment.id);
+}
+
 export async function startOwnerAssessment(user: Pick<User, "id">, organizationId: string, assignmentId: string, assessmentId: string) {
   const assignment = await ownerAssignment(user, organizationId, assignmentId);
   return startAttempt(assignment.id, assignment.employeeId, assessmentId);

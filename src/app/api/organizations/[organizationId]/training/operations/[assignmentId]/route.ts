@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { requireAuthenticatedUser } from "@/domain/auth/authentication";
 import { errorResponse, ValidationError } from "@/domain/auth/errors";
-import { advanceOwnerContent, getOwnerTrainingAssignment, saveOwnerAssessmentResponse, startOwnerAssessment, submitOwnerAssessment } from "@/domain/training/operations/service";
+import { advanceOwnerContent, getTrainingAssignmentDetail, saveOwnerAssessmentResponse, startOwnerAssessment, submitOwnerAssessment } from "@/domain/training/operations/service";
 
 const inputSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("START_ASSESSMENT"), assessmentId: z.string().cuid() }).strict(),
@@ -11,7 +11,7 @@ const inputSchema = z.discriminatedUnion("action", [
 ]);
 
 export async function GET(request: Request, context: { params: Promise<{ organizationId: string; assignmentId: string }> }) {
-  try { const user = await requireAuthenticatedUser(request), params = await context.params; return Response.json(await getOwnerTrainingAssignment(user, params.organizationId, params.assignmentId)); }
+  try { const user = await requireAuthenticatedUser(request), params = await context.params; return Response.json(await getTrainingAssignmentDetail(user, params.organizationId, params.assignmentId)); }
   catch (error) { return errorResponse(error); }
 }
 

@@ -2,7 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import { AuthenticationError, ValidationError, errorResponse } from "@/domain/auth/errors";
 import { reconcileOrganizationIssues } from "@/domain/compliance-issues/service";
-import { configuredEmailProvider } from "@/domain/notifications/email";
+import { configuredEmailProviderForPurpose } from "@/domain/notifications/email";
 import { processEmailDeliveries, reconcileOrganizationNotifications } from "@/domain/notifications/service";
 import { validateProductionEnvironment } from "@/lib/env";
 import { recordOperationalEvent } from "@/lib/observability";
@@ -29,7 +29,7 @@ export async function POST(request: Request) {
       if (!lock?.locked) throw new ValidationError("Compliance job is already running for this organization");
       const issues = await reconcileOrganizationIssues(actor, organizationId!);
       const notifications = await reconcileOrganizationNotifications(actor, organizationId!);
-      const email = await processEmailDeliveries(organizationId!, configuredEmailProvider(), new Date(), 100);
+      const email = await processEmailDeliveries(organizationId!, configuredEmailProviderForPurpose("WORKFORCE_TRANSACTIONAL"), new Date(), 100);
       return { issues, notifications, email };
     }, { timeout: 120_000 });
     await recordOperationalEvent({ level: "info", operation: "compliance.job.completed", organizationId, actorUserId: actor.id });

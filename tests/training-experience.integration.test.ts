@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getAssignment } from "@/domain/training/assignments/service";
 import { saveAssessmentDraftResponse, startAttempt, submitAttempt } from "@/domain/training/assessments/service";
 import { completeContent } from "@/domain/training/progress/service";
-import { advanceOwnerContent, getOwnerTrainingAssignment, listTrainingOperations, saveOwnerAssessmentResponse, submitOwnerAssessment } from "@/domain/training/operations/service";
+import { advanceOwnerContent, getOwnerTrainingAssignment, getTrainingAssignmentDetail, listTrainingOperations, saveOwnerAssessmentResponse, submitOwnerAssessment } from "@/domain/training/operations/service";
 
 describe("production training experience", () => {
   const tag = `training-experience-${Date.now()}`;
@@ -55,10 +55,15 @@ describe("production training experience", () => {
   });
 
   it("enforces exact owner-only, tenant, and read-only role boundaries", async () => {
+    const before = await Promise.all([prisma.trainingContentProgress.count({ where: { assignmentId } }), prisma.assessmentAttempt.count({ where: { trainingAssignmentId: assignmentId } }), prisma.assessmentDraftResponse.count({ where: { attempt: { trainingAssignmentId: assignmentId } } })]);
+    const readOnly = await getTrainingAssignmentDetail({ id: adminId }, organizationId, assignmentId);
+    expect(readOnly.id).toBe(assignmentId);
+    expect(await Promise.all([prisma.trainingContentProgress.count({ where: { assignmentId } }), prisma.assessmentAttempt.count({ where: { trainingAssignmentId: assignmentId } }), prisma.assessmentDraftResponse.count({ where: { attempt: { trainingAssignmentId: assignmentId } } })])).toEqual(before);
     await expect(getOwnerTrainingAssignment({ id: adminId }, organizationId, assignmentId)).rejects.toThrow(/owner/i);
     await expect(getOwnerTrainingAssignment({ id: auditorId }, organizationId, assignmentId)).rejects.toThrow(/owner/i);
     await expect(getOwnerTrainingAssignment({ id: employeeUserId }, organizationId, assignmentId)).rejects.toThrow(/owner/i);
     await expect(getOwnerTrainingAssignment({ id: ownerId }, otherOrganizationId, assignmentId)).rejects.toThrow(/not found/i);
+    await expect(getTrainingAssignmentDetail({ id: ownerId }, otherOrganizationId, assignmentId)).rejects.toThrow(/not found/i);
   });
 
   it("uses the same prerequisites and lifecycle for owner submission and is retry safe", async () => {
@@ -80,6 +85,9 @@ describe("production training experience", () => {
     const source = await readFile("src/app/components/training-course-player.tsx", "utf8");
     expect(source).toContain("provider-hosted video"); expect(source).toContain("does not claim playback telemetry"); expect(source).toContain("video source is currently unavailable");
     const operationsSource = await readFile("src/app/admin/operations-portal.tsx", "utf8");
-    expect(operationsSource).toContain("No training assignments match this view"); expect(operationsSource).toContain("Attention or overdue"); expect(operationsSource).not.toContain("<Records rows={courses}");
+    expect(operationsSource).toContain("No training assignments match this view"); expect(operationsSource).toContain("View / assist"); expect(operationsSource).toContain("View training"); expect(operationsSource).toContain("readOnly={!training.canAssist}"); expect(operationsSource).toContain("Attention or overdue"); expect(operationsSource).not.toContain("Owner assistance required to modify"); expect(operationsSource).not.toContain("<Records rows={courses}");
+    const shortcutSource = await readFile("src/app/admin/employee-training-readiness.tsx", "utf8");
+    expect(shortcutSource).toContain("/admin/compliance-operations?"); expect(shortcutSource).not.toContain("href={`/admin?");
+    await expect(readFile("src/app/admin/compliance-operations/page.tsx", "utf8")).resolves.toContain("EmployerOperationsPortal");
   });
 });

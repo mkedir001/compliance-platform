@@ -10,7 +10,7 @@ import { requireOrganizationAccess, requirePermission } from "@/domain/permissio
 import { reconcileCompletedDocumentRequests } from "@/domain/clients/document-requests";
 import { buildSignatureRequirements, validateManagementSignerSelections } from "@/domain/clients/signature-requirements";
 import { renderSignatureInvitationEmail } from "@/domain/clients/signature-email";
-import { configuredEmailProvider, EmailDeliveryError, type EmailProvider, type EmailSendResult } from "@/domain/notifications/email";
+import { configuredEmailProviderForPurpose, EmailDeliveryError, type EmailProvider, type EmailSendResult } from "@/domain/notifications/email";
 
 export const SIGNING_CONSENT_VERSION = "native-esign-consent-v1";
 export const SIGNING_CONSENT_TEXT = "I reviewed the identified document and intend the electronic signature I adopt to represent my signature on that document. Selecting Adopt & Sign applies my signature.";
@@ -43,7 +43,7 @@ export interface SigningInvitationDelivery { readonly name: string; readonly con
 export class TestSigningInvitationDelivery implements SigningInvitationDelivery { readonly name="test";readonly configured=true;async deliver(){if(process.env.NODE_ENV==="production")throw new AuthorizationError("Test signing delivery is disabled in production");return{messageId:"test-accepted",acceptedAt:new Date()}} }
 export class EmailSigningInvitationDelivery implements SigningInvitationDelivery {
   readonly name:string;readonly configured:boolean;
-  constructor(private readonly provider:EmailProvider=configuredEmailProvider()){this.name=`email:${provider.name}`;this.configured=provider.configured}
+  constructor(private readonly provider:EmailProvider=configuredEmailProviderForPurpose("CLIENT_SECURE")){this.name=`email:${provider.name}`;this.configured=provider.configured}
   async deliver(input:SigningDeliveryInput){if(!this.provider.configured)throw new EmailDeliveryError("Signing email delivery is not configured",false,"EMAIL_PROVIDER_NOT_CONFIGURED");const message=renderSignatureInvitationEmail(input);return this.provider.send({...message,to:input.recipientEmail})}
 }
 function delivery():SigningInvitationDelivery{const mode=process.env.SIGNING_DELIVERY_MODE??(process.env.NODE_ENV==="production"?"email":"test");if(mode==="test")return new TestSigningInvitationDelivery();if(mode==="email")return new EmailSigningInvitationDelivery();throw new ValidationError("Invalid SIGNING_DELIVERY_MODE configuration")}

@@ -587,6 +587,12 @@ enum EmployeePortalInvitationStatus {
   REVOKED
 }
 
+enum EmployeePortalInvitationDeliveryStatus {
+  PENDING
+  ACCEPTED
+  FAILED
+}
+
 enum NotificationAudience {
   EMPLOYEE
   ADMINISTRATOR
@@ -1465,26 +1471,26 @@ model AssessmentOption {
 }
 
 model AssessmentAttempt {
-  id                   String                 @id @default(cuid())
+  id                   String                    @id @default(cuid())
   organizationId       String
   employeeId           String
   trainingAssignmentId String
   assessmentId         String
   courseVersionId      String?
   attemptNumber        Int
-  startedAt            DateTime               @default(now())
+  startedAt            DateTime                  @default(now())
   submittedAt          DateTime?
-  score                Decimal?               @db.Decimal(8, 2)
-  maxScore             Decimal?               @db.Decimal(8, 2)
-  percentage           Decimal?               @db.Decimal(5, 2)
+  score                Decimal?                  @db.Decimal(8, 2)
+  maxScore             Decimal?                  @db.Decimal(8, 2)
+  percentage           Decimal?                  @db.Decimal(5, 2)
   passed               Boolean?
   resultSnapshot       Json?
-  createdAt            DateTime               @default(now())
-  organization         Organization           @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  employee             Employee               @relation(fields: [employeeId], references: [id], onDelete: Restrict)
-  trainingAssignment   TrainingAssignment     @relation(fields: [trainingAssignmentId], references: [id], onDelete: Restrict)
-  assessment           Assessment             @relation(fields: [assessmentId], references: [id], onDelete: Restrict)
-  courseVersion        TrainingCourseVersion? @relation(fields: [courseVersionId], references: [id], onDelete: Restrict)
+  createdAt            DateTime                  @default(now())
+  organization         Organization              @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  employee             Employee                  @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  trainingAssignment   TrainingAssignment        @relation(fields: [trainingAssignmentId], references: [id], onDelete: Restrict)
+  assessment           Assessment                @relation(fields: [assessmentId], references: [id], onDelete: Restrict)
+  courseVersion        TrainingCourseVersion?    @relation(fields: [courseVersionId], references: [id], onDelete: Restrict)
   responses            AssessmentResponse[]
   draftResponses       AssessmentDraftResponse[]
   completions          TrainingCompletion[]
@@ -1732,27 +1738,27 @@ model ExternalTrainingRecord {
   employee             Employee                         @relation(fields: [employeeId], references: [id], onDelete: Restrict)
   reviewedBy           User?                            @relation("ExternalTrainingReviewedBy", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
   equivalencyDecisions RequirementEquivalencyDecision[]
-  firstAidReadiness    EmployeeWorkforceReadiness?        @relation("FirstAidReadinessEvidence")
-  medicationReadiness  EmployeeWorkforceReadiness?        @relation("MedicationReadinessEvidence")
+  firstAidReadiness    EmployeeWorkforceReadiness?      @relation("FirstAidReadinessEvidence")
+  medicationReadiness  EmployeeWorkforceReadiness?      @relation("MedicationReadinessEvidence")
 
   @@index([organizationId, employeeId])
 }
 
 model EmployeeWorkforceReadiness {
-  id                         String                              @id @default(cuid())
+  id                         String                             @id @default(cuid())
   organizationId             String
-  employeeId                 String                              @unique
+  employeeId                 String                             @unique
   firstAidStatus             WorkforceEvidenceReadinessStatus   @default(NOT_RECORDED)
-  firstAidEvidenceRecordId   String?                             @unique
+  firstAidEvidenceRecordId   String?                            @unique
   medicationStatus           WorkforceMedicationReadinessStatus @default(NOT_RECORDED)
-  medicationEvidenceRecordId String?                             @unique
+  medicationEvidenceRecordId String?                            @unique
   updatedByUserId            String
-  createdAt                  DateTime                            @default(now())
-  updatedAt                  DateTime                            @updatedAt
-  organization               Organization                        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  employee                   Employee                            @relation(fields: [employeeId], references: [id], onDelete: Restrict)
-  firstAidEvidence           ExternalTrainingRecord?             @relation("FirstAidReadinessEvidence", fields: [firstAidEvidenceRecordId], references: [id], onDelete: Restrict)
-  medicationEvidence         ExternalTrainingRecord?             @relation("MedicationReadinessEvidence", fields: [medicationEvidenceRecordId], references: [id], onDelete: Restrict)
+  createdAt                  DateTime                           @default(now())
+  updatedAt                  DateTime                           @updatedAt
+  organization               Organization                       @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  employee                   Employee                           @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  firstAidEvidence           ExternalTrainingRecord?            @relation("FirstAidReadinessEvidence", fields: [firstAidEvidenceRecordId], references: [id], onDelete: Restrict)
+  medicationEvidence         ExternalTrainingRecord?            @relation("MedicationReadinessEvidence", fields: [medicationEvidenceRecordId], references: [id], onDelete: Restrict)
 
   @@index([organizationId, firstAidStatus])
   @@index([organizationId, medicationStatus])
@@ -2590,22 +2596,29 @@ model AuditAccessEmployee {
 }
 
 model EmployeePortalInvitation {
-  id               String                         @id @default(cuid())
-  organizationId   String
-  employeeId       String
-  invitedEmail     String
-  tokenHash        String                         @unique
-  status           EmployeePortalInvitationStatus @default(PENDING)
-  invitedByUserId  String
-  acceptedByUserId String?
-  invitedAt        DateTime                       @default(now())
-  acceptedAt       DateTime?
-  revokedAt        DateTime?
-  createdAt        DateTime                       @default(now())
-  organization     Organization                   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  employee         Employee                       @relation(fields: [employeeId], references: [id], onDelete: Restrict)
-  invitedBy        User                           @relation("EmployeePortalInvitationSender", fields: [invitedByUserId], references: [id], onDelete: Restrict)
-  acceptedBy       User?                          @relation("EmployeePortalInvitationAccepter", fields: [acceptedByUserId], references: [id], onDelete: SetNull)
+  id                  String                                 @id @default(cuid())
+  organizationId      String
+  employeeId          String
+  invitedEmail        String
+  tokenHash           String                                 @unique
+  status              EmployeePortalInvitationStatus         @default(PENDING)
+  deliveryStatus      EmployeePortalInvitationDeliveryStatus @default(PENDING)
+  deliveryAttempts    Int                                    @default(0)
+  deliveryAttemptedAt DateTime?
+  deliveryProvider    String?
+  providerMessageId   String?
+  providerAcceptedAt  DateTime?
+  deliveryErrorCode   String?
+  invitedByUserId     String
+  acceptedByUserId    String?
+  invitedAt           DateTime                               @default(now())
+  acceptedAt          DateTime?
+  revokedAt           DateTime?
+  createdAt           DateTime                               @default(now())
+  organization        Organization                           @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  employee            Employee                               @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  invitedBy           User                                   @relation("EmployeePortalInvitationSender", fields: [invitedByUserId], references: [id], onDelete: Restrict)
+  acceptedBy          User?                                  @relation("EmployeePortalInvitationAccepter", fields: [acceptedByUserId], references: [id], onDelete: SetNull)
 
   @@index([organizationId, employeeId, invitedAt])
   @@index([organizationId, invitedEmail, status])

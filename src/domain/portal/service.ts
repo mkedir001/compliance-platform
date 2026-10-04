@@ -4,14 +4,15 @@ import { AuthorizationError, ResourceNotFoundError } from "@/domain/auth/errors"
 import { computeEmployeeOperationalProfile } from "@/domain/compliance/operations/service";
 import { requireEmployeeAccess, requireEmployeeSelfAccess, requireOrganizationAccess, requireOrganizationMembership, requirePermission } from "@/domain/permissions/authorization";
 import { deriveAssignmentDisplayStatus } from "@/domain/training/assignments/service";
+import { configuredEmailProviderForPurpose, EmailDeliveryError, type EmailProvider } from "@/domain/notifications/email";
 import { prisma } from "@/lib/prisma";
 
 const hashToken = (token: string) => createHash("sha256").update(token).digest("hex");
 
-export async function inviteEmployeeToPortal(user: Pick<User, "id">, organizationId: string, employeeId: string) {
+export async function inviteEmployeeToPortal(user: Pick<User, "id">, organizationId: string, employeeId: string, provider: EmailProvider = configuredEmailProviderForPurpose("WORKFORCE_TRANSACTIONAL")) {
   const { membership } = await requireOrganizationAccess(user, organizationId);
   await requirePermission(membership.id, "employee.manage");
-  const employee = await prisma.employee.findFirst({ where: { id: employeeId, organizationId } });
+  const employee = await prisma.employee.findFirst({ where: { id: employeeId, organizationId }, include: { organization: { select: { displayName: true } } } });
   if (!employee?.email) throw new AuthorizationError("Employee email is required before portal access can be enabled");
   if (["LEAVE", "TERMINATED", "ARCHIVED"].includes(employee.employmentStatus)) throw new AuthorizationError("Inactive or separated employees cannot be invited to portal access");
   const invitedEmail = employee.email.trim().toLowerCase();
@@ -28,7 +29,32 @@ export async function inviteEmployeeToPortal(user: Pick<User, "id">, organizatio
     await tx.auditEvent.create({ data: { organizationId, actorUserId: user.id, employeeId, eventType: "employee.portal_invited", entityType: "EmployeePortalInvitation", entityId: created.id, metadataJson: { invitedEmail } } });
     return created;
   });
-  return { invitation: { id: invitation.id, employeeId, invitedEmail, invitedUserId: account.id, status: invitation.status, invitedAt: invitation.invitedAt, acceptedAt: invitation.acceptedAt }, claimToken: token };
+  const attemptedAt = new Date();
+  let delivered;
+  try {
+    if (!provider.configured) throw new EmailDeliveryError("Workforce transactional email is not configured", false, "WORKFORCE_EMAIL_PROVIDER_NOT_CONFIGURED");
+    if (provider.name === "paubox" || provider.name.includes("paubox")) throw new EmailDeliveryError("Paubox is prohibited for workforce transactional email", false, "WORKFORCE_EMAIL_PROVIDER_POLICY_VIOLATION");
+    const baseUrl = (process.env.APP_BASE_URL ?? "http://localhost:3000").replace(/\/$/, ""), claimUrl = `${baseUrl}/learn/claim/${encodeURIComponent(token)}`;
+    const accepted = await provider.send({
+      to: invitedEmail,
+      subject: `You're invited to ${employee.organization.displayName}`,
+      text: `${employee.organization.displayName} invited you to access your Compliance Platform employee account.\n\nAccept your invitation: ${claimUrl}\n\nThis invitation expires seven days after it was created. If you did not expect this invitation, contact your organization administrator.`,
+      actionHref: claimUrl,
+    });
+    delivered = await prisma.employeePortalInvitation.update({ where: { id: invitation.id }, data: { deliveryStatus: "ACCEPTED", deliveryAttempts: { increment: 1 }, deliveryAttemptedAt: attemptedAt, deliveryProvider: provider.name, providerMessageId: accepted.messageId, providerAcceptedAt: accepted.acceptedAt ?? attemptedAt, deliveryErrorCode: null } });
+    await prisma.auditEvent.create({ data: { organizationId, actorUserId: user.id, employeeId, eventType: "employee.portal_invitation_provider_accepted", entityType: "EmployeePortalInvitation", entityId: invitation.id, metadataJson: { provider: provider.name } } });
+  } catch (error) {
+    const failure = error instanceof EmailDeliveryError ? error : new EmailDeliveryError("Workforce invitation delivery failed", true);
+    delivered = await prisma.employeePortalInvitation.update({ where: { id: invitation.id }, data: { deliveryStatus: "FAILED", deliveryAttempts: { increment: 1 }, deliveryAttemptedAt: attemptedAt, deliveryProvider: provider.name, deliveryErrorCode: failure.code } });
+    await prisma.auditEvent.create({ data: { organizationId, actorUserId: user.id, employeeId, eventType: "employee.portal_invitation_delivery_failed", entityType: "EmployeePortalInvitation", entityId: invitation.id, metadataJson: { provider: provider.name, errorCode: failure.code, retryable: failure.retryable } } });
+  }
+  return { invitation: { id: delivered.id, employeeId, invitedEmail, invitedUserId: account.id, status: delivered.status, deliveryStatus: delivered.deliveryStatus, deliveryAttempts: delivered.deliveryAttempts, deliveryAttemptedAt: delivered.deliveryAttemptedAt, deliveryProvider: delivered.deliveryProvider, providerAcceptedAt: delivered.providerAcceptedAt, deliveryErrorCode: delivered.deliveryErrorCode, invitedAt: delivered.invitedAt, acceptedAt: delivered.acceptedAt }, claimToken: token };
+}
+
+export async function claimEmployeePortalInvitationByToken(user: Pick<User, "id" | "email">, token: string) {
+  const invitation = await prisma.employeePortalInvitation.findUnique({ where: { tokenHash: hashToken(token) }, select: { organizationId: true } });
+  if (!invitation) throw new ResourceNotFoundError("Portal invitation not found");
+  return claimEmployeePortalInvitation(user, invitation.organizationId, token);
 }
 
 export async function claimEmployeePortalInvitation(user: Pick<User, "id" | "email">, organizationId: string, token: string) {
@@ -52,7 +78,7 @@ export async function claimEmployeePortalInvitation(user: Pick<User, "id" | "ema
 export async function getEmployeePortalAccess(user: Pick<User, "id">, organizationId: string, employeeId: string) {
   await requireEmployeeAccess(user, organizationId, employeeId, "employee.read");
   const employee = await prisma.employee.findFirstOrThrow({ where: { id: employeeId, organizationId }, select: { id: true, userId: true, email: true } });
-  const invitation = await prisma.employeePortalInvitation.findFirst({ where: { organizationId, employeeId }, orderBy: { invitedAt: "desc" }, select: { id: true, invitedEmail: true, status: true, invitedAt: true, acceptedAt: true, revokedAt: true } });
+  const invitation = await prisma.employeePortalInvitation.findFirst({ where: { organizationId, employeeId }, orderBy: { invitedAt: "desc" }, select: { id: true, invitedEmail: true, status: true, deliveryStatus: true, deliveryAttempts: true, deliveryAttemptedAt: true, deliveryProvider: true, providerAcceptedAt: true, deliveryErrorCode: true, invitedAt: true, acceptedAt: true, revokedAt: true } });
   return { employee, invitation, enabled: Boolean(employee.userId && invitation?.status === "ACCEPTED") };
 }
 
