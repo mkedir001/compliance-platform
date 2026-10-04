@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { PrismaClient } from "@prisma/client";
+import { getEmployerDashboard, getEmployerEmployeeDetail, getWorkforceDirectory } from "@/domain/admin/service";
+import { getClient, listClients } from "@/domain/clients/service";
 import { evaluateProposedAssignment } from "@/domain/service-assignments/service";
 import {
   assignBaselineTraining,
@@ -14,7 +16,7 @@ import {
 const db = new PrismaClient();
 
 describe.sequential("workforce training and readiness operations", () => {
-  let organizationId = "", otherOrganizationId = "", ownerId = "", outsiderId = "", employeeId = "", evidenceEmployeeId = "", medicationEmployeeId = "", medicationPathwayId = "", medicationDutyId = "";
+  let organizationId = "", otherOrganizationId = "", ownerId = "", outsiderId = "", employeeId = "", evidenceEmployeeId = "", medicationEmployeeId = "", legacyClientId = "", medicationPathwayId = "", medicationDutyId = "";
   const at = new Date("2026-10-03T18:00:00.000Z");
   const owner = () => ({ id: ownerId });
   const evidence = (suffix: string) => ({ providerName: "Synthetic training provider", trainingName: suffix, trainingDate: "2026-09-01", expiresAt: "2027-09-01", credentialNumber: `TEST-${suffix}`, evidenceReference: `secure:test-${suffix}`, notes: "Synthetic non-production evidence." });
@@ -38,6 +40,7 @@ describe.sequential("workforce training and readiness operations", () => {
       db.employee.create({ data: { organizationId, firstName: "Medication", lastName: "Worker", employmentStatus: "ACTIVE" } }),
     ]);
     employeeId = employees[0].id; evidenceEmployeeId = employees[1].id; medicationEmployeeId = employees[2].id;
+    legacyClientId = (await db.client.create({ data: { organizationId, legalFirstName: "Legacy", legalLastName: "Client", dateOfBirth: new Date("1990-01-01"), createdByUserId: ownerId } })).id;
 
     const requirement = await db.complianceRequirementVersion.findFirstOrThrow({ where: { status: "ACTIVE", requirement: { code: "245D-WF-014" } } });
     const course = await db.trainingCourse.create({ data: { organizationId, catalogKey: `${tag}:medication`, code: `${tag}-MED`, title: "Synthetic governed medication training", category: "MEDICATION", ownershipType: "ORGANIZATION", versions: { create: { versionNumber: 1, status: "PUBLISHED", effectiveFrom: new Date("2026-08-01"), publishedAt: new Date("2026-08-01"), contentHash: `${tag}:medication:v1`, clinicalGovernanceRequired: true } } }, include: { versions: true } });
@@ -56,6 +59,32 @@ describe.sequential("workforce training and readiness operations", () => {
     expect(source).toContain("No applicable baseline courses found");
     expect(source).toContain("Catalog unavailable");
     expect(source).toContain("Assign selected baseline training");
+  });
+
+  it("loads an existing organization, client, and employee before readiness initialization", async () => {
+    expect(await db.employeeWorkforceReadiness.count({ where: { organizationId } })).toBe(0);
+    expect(await db.trainingAssignment.count({ where: { organizationId } })).toBe(0);
+    expect(await db.serviceAssignment.count({ where: { organizationId, employeeId } })).toBe(0);
+
+    const [clients, client, dashboard, workforce, employee, readiness] = await Promise.all([
+      listClients(owner(), organizationId),
+      getClient(owner(), organizationId, legacyClientId),
+      getEmployerDashboard(owner(), organizationId),
+      getWorkforceDirectory(owner(), organizationId),
+      getEmployerEmployeeDetail(owner(), organizationId, employeeId),
+      getEmployeeTrainingReadiness(owner(), organizationId, employeeId, at),
+    ]);
+
+    expect(clients.map(row => row.id)).toContain(legacyClientId);
+    expect(client.id).toBe(legacyClientId);
+    expect(client.documents).toEqual([]);
+    expect(dashboard.activeWorkforce).toBe(3);
+    expect(workforce.items.map(row => row.id)).toContain(employeeId);
+    expect(employee.profile.employee.trainingAssignments).toHaveLength(0);
+    expect(readiness.firstAid).toMatchObject({ status: "NOT_RECORDED", evidence: null });
+    expect(readiness.medication).toMatchObject({ status: "NOT_RECORDED", evidence: null });
+    expect(readiness.personSpecific.assignments).toHaveLength(0);
+    expect(readiness.baseline.courses.length).toBeGreaterThan(0);
   });
 
   it("loads and idempotently assigns registry-backed baseline training without a client assignment", async () => {

@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import GuidedIntake from "./guided-intake";
 import ClientImportWorkflow from "./client-import-workflow";
+import { clientDirectoryView, type ClientDirectoryLoadStatus } from "./directory-state";
 import type { IntakeStepId } from "@/domain/clients/intake-state";
 
 type RenewalCycle = {
@@ -113,6 +114,7 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
     [readiness, setReadiness] = useState("ALL"),
     [operational, setOperational] = useState(""),
     [permissions,setPermissions]=useState<string[]>([]),
+    [directoryStatus,setDirectoryStatus]=useState<ClientDirectoryLoadStatus>("idle"),
     [tab, setTab] = useState("Overview"),
     [editingCompletedIntake,setEditingCompletedIntake]=useState(false),
     [editStartStep,setEditStartStep]=useState<IntakeStepId>("CLIENT"),
@@ -137,7 +139,8 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
     }
   }
   async function load() {
-    await run(async () => {const[rows,accessResponse]=await Promise.all([request(`?search=${encodeURIComponent(search)}&status=${encodeURIComponent(status)}&renewalStatus=${encodeURIComponent(renewalStatus)}&readiness=${encodeURIComponent(readiness)}&operational=${encodeURIComponent(operational)}`),fetch(`/api/organizations/${organizationId}`,{headers})]),access=await accessResponse.json();if(!accessResponse.ok)throw new Error(access.error??"Organization access failed");setClients(rows as ClientRow[]);setPermissions(access.permissions??[])});
+    setDirectoryStatus("loading");
+    await run(async () => {try{const[rows,accessResponse]=await Promise.all([request(`?search=${encodeURIComponent(search)}&status=${encodeURIComponent(status)}&renewalStatus=${encodeURIComponent(renewalStatus)}&readiness=${encodeURIComponent(readiness)}&operational=${encodeURIComponent(operational)}`),fetch(`/api/organizations/${organizationId}`,{headers})]),access=await accessResponse.json();if(!accessResponse.ok)throw new Error(access.error??"Organization access failed");setClients(rows as ClientRow[]);setPermissions(access.permissions??[]);setDirectoryStatus("success")}catch(error){setDirectoryStatus("error");throw error}});
   }
   async function open(id: string) {
     await run(async () => setSelected((await request(`/${id}`)) as ClientDetail));
@@ -282,6 +285,7 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
     if (selected && initialRequestId && tab === "Documents") document.getElementById(`request-${initialRequestId}`)?.scrollIntoView({ block: "center" });
   }, [selected, initialRequestId, tab]);
   const tabs = ["Overview", "Intake", "Services", "Documents", "Signatures", "Readiness", "Contacts", "History"];
+  const directoryView = clientDirectoryView(directoryStatus, clients.length);
   return (
     <main className="admin-shell">
       <header>
@@ -390,7 +394,7 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
           </form>
         </details>:null}
         {permissions.includes("client.create")&&permissions.includes("client.update")?<ClientImportWorkflow organizationId={organizationId} headers={headers} busy={busy} onBusy={setBusy} onComplete={async clientId=>{await load();await open(clientId)}}/>:null}
-        {clients.length ? (
+        {directoryView === "results" ? (
           <div className="workforce-table client-directory" role="table" aria-label="Client directory">
             {clients.map((client) => (
               <button key={client.id} className={`workforce-row client-directory-row renewal-${client.documentationReadiness.overallState.toLowerCase()}`} onClick={() => open(client.id)}>
@@ -411,8 +415,16 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
               </button>
             ))}
           </div>
-        ) : (
+        ) : directoryView === "empty" ? (
           <div className="empty-state">No clients match this authorized view.</div>
+        ) : directoryView === "error" ? (
+          <div className="empty-state" role="alert">
+            <strong>Client directory unavailable</strong>
+            <p>The authorized client query failed. Existing records may be temporarily inaccessible; this is not a zero-client result.</p>
+            <button type="button" disabled={busy} onClick={load}>Retry client directory</button>
+          </div>
+        ) : (
+          <div className="empty-state" role="status">Loading authorized clients…</div>
         )}
       </section>
       {selected ? (
