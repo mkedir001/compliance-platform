@@ -1,0 +1,8 @@
+.training-operations .workforce-row{grid-template-columns:minmax(150px,1fr) minmax(220px,1.6fr) minmax(150px,1fr) minmax(140px,.9fr) minmax(150px,1fr)}
+.lesson-focus{margin:1rem 0;padding:1.25rem;background:#fff;border:1px solid #cbd5cd;border-radius:10px}
+.media-content{padding:1rem;background:#eef4f0;border-left:4px solid #1e5c48}
+.button-link{display:inline-block;margin:.5rem 0;padding:.65rem .9rem;background:#173e31;color:#fff;border-radius:7px;font-weight:700;text-decoration:none}
+.assessment-panel{margin-top:1.5rem;border-top:2px solid #d6aa56;padding-top:1rem}
+.assessment-panel form{display:grid;gap:.9rem}
+.course-player button:focus-visible,.course-player input:focus-visible,.training-operations button:focus-visible,.training-operations input:focus-visible,.training-operations select:focus-visible{outline:3px solid #d6aa56;outline-offset:2px}
+@media(max-width:850px){.training-operations .workforce-row{grid-template-columns:1fr}.lesson-focus{padding:1rem}}

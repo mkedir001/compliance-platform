@@ -44,6 +44,13 @@ export async function requireEmployeeAccess(user: Pick<User, "id">, organization
   return { membership, employee };
 }
 
+export async function requireOrganizationOwner(user: Pick<User, "id">, organizationId: string) {
+  const { organization, membership } = await requireOrganizationAccess(user, organizationId);
+  const ownerRole = membership.roles.some(role => role.roleDefinition.code === "ORGANIZATION_OWNER" && role.roleDefinition.isPlatformStandard && role.roleDefinition.organizationId === null);
+  if (!ownerRole) throw new AuthorizationError("Organization-owner training assistance is required");
+  return { organization, membership };
+}
+
 export function assertRoleAssignableToOrganization(role: { organizationId: string | null; isPlatformStandard: boolean }, organizationId: string) {
   if (!(role.isPlatformStandard && role.organizationId === null) && role.organizationId !== organizationId) {
     throw new AuthorizationError("Role belongs to a different organization");

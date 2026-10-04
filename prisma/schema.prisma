@@ -1444,6 +1444,7 @@ model AssessmentQuestion {
   assessment               Assessment                  @relation(fields: [assessmentId], references: [id], onDelete: Restrict)
   options                  AssessmentOption[]
   responses                AssessmentResponse[]
+  draftResponses           AssessmentDraftResponse[]
   objectiveMappings        LearningObjectiveQuestion[]
   questionBankVersionId    String?
   questionBankVersion      QuestionBankVersion?        @relation(fields: [questionBankVersionId], references: [id], onDelete: Restrict)
@@ -1485,10 +1486,26 @@ model AssessmentAttempt {
   assessment           Assessment             @relation(fields: [assessmentId], references: [id], onDelete: Restrict)
   courseVersion        TrainingCourseVersion? @relation(fields: [courseVersionId], references: [id], onDelete: Restrict)
   responses            AssessmentResponse[]
+  draftResponses       AssessmentDraftResponse[]
   completions          TrainingCompletion[]
 
   @@unique([trainingAssignmentId, assessmentId, attemptNumber])
   @@index([organizationId, employeeId])
+}
+
+model AssessmentDraftResponse {
+  id                String             @id @default(cuid())
+  attemptId         String
+  questionId        String
+  selectedOptionIds Json
+  savedByUserId     String?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  attempt           AssessmentAttempt  @relation(fields: [attemptId], references: [id], onDelete: Restrict)
+  question          AssessmentQuestion @relation(fields: [questionId], references: [id], onDelete: Restrict)
+
+  @@unique([attemptId, questionId])
+  @@index([attemptId, updatedAt])
 }
 
 model AssessmentResponse {

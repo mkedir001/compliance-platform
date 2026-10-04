@@ -17,7 +17,7 @@ const db = new PrismaClient();
 
 describe.sequential("workforce training and readiness operations", () => {
   let organizationId = "", otherOrganizationId = "", ownerId = "", outsiderId = "", employeeId = "", evidenceEmployeeId = "", medicationEmployeeId = "", unconfiguredEmployeeId = "", legacyClientId = "", medicationPathwayId = "", medicationDutyId = "";
-  const at = new Date("2026-10-03T18:00:00.000Z");
+  const at = new Date("2026-10-04T18:00:00.000Z");
   const owner = () => ({ id: ownerId });
   const evidence = (suffix: string) => ({ providerName: "Synthetic training provider", trainingName: suffix, trainingDate: "2026-09-01", expiresAt: "2027-09-01", credentialNumber: `TEST-${suffix}`, evidenceReference: `secure:test-${suffix}`, notes: "Synthetic non-production evidence." });
 
