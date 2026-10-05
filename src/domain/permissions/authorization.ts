@@ -46,9 +46,14 @@ export async function requireEmployeeAccess(user: Pick<User, "id">, organization
 
 export async function requireOrganizationOwner(user: Pick<User, "id">, organizationId: string) {
   const { organization, membership } = await requireOrganizationAccess(user, organizationId);
-  const ownerRole = membership.roles.some(role => role.roleDefinition.code === "ORGANIZATION_OWNER" && role.roleDefinition.isPlatformStandard && role.roleDefinition.organizationId === null);
+  const ownerRole = membership.roles.some(role => isOrganizationOwnerRole(role.roleDefinition, organizationId));
   if (!ownerRole) throw new AuthorizationError("Organization-owner training assistance is required");
   return { organization, membership };
+}
+
+export function isOrganizationOwnerRole(role: { code: string; organizationId: string | null; isPlatformStandard: boolean }, organizationId: string) {
+  if (role.code !== "ORGANIZATION_OWNER") return false;
+  return (role.isPlatformStandard && role.organizationId === null) || (!role.isPlatformStandard && role.organizationId === organizationId);
 }
 
 export function assertRoleAssignableToOrganization(role: { organizationId: string | null; isPlatformStandard: boolean }, organizationId: string) {

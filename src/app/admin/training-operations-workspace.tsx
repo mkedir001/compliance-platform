@@ -55,10 +55,8 @@ export default function TrainingOperationsWorkspace({ data, selectedEmployeeId, 
     inProgress: courses.filter(item => item.status === "IN_PROGRESS").length,
     notStarted: courses.filter(item => item.status === "NOT_STARTED").length,
   };
-  const assessmentCounts = courses.reduce<Record<string, number>>((result, item) => ({ ...result, [item.assessment.state]: (result[item.assessment.state] ?? 0) + 1 }), {});
   const aggregateProgress = courses.length ? Math.round(courses.reduce((sum, item) => sum + item.progress.percentage, 0) / courses.length) : 0;
   const nextDue = courses.map(item => item.dueAt).filter((value): value is string => Boolean(value)).sort()[0] ?? null;
-  const assessmentSummary = Object.entries(assessmentCounts).map(([state, count]) => `${count} ${pretty(state)}`).join(" · ") || "No assessments";
 
   return <section className="training-workspace" aria-labelledby="training-operations-heading">
     <div className="section-heading training-workspace-heading">
@@ -67,15 +65,13 @@ export default function TrainingOperationsWorkspace({ data, selectedEmployeeId, 
     </div>
     {employees.length ? <>
       <section className="training-context" aria-label="Selected employee training summary">
-        <label>Employee<select value={selectedEmployeeId} onChange={event => onEmployeeChange(event.target.value)} disabled={busy}>{employees.map(employee => <option key={employee.id} value={employee.id}>{displayName(employee)}{employee.employeeNumber ? ` · ${employee.employeeNumber}` : ""}</option>)}</select></label>
+        <div className="training-employee-header"><label>Employee<select value={selectedEmployeeId} onChange={event => onEmployeeChange(event.target.value)} disabled={busy}>{employees.map(employee => <option key={employee.id} value={employee.id}>{displayName(employee)}{employee.employeeNumber ? ` · ${employee.employeeNumber}` : ""}</option>)}</select></label><div><span>Next due</span><strong>{nextDue ? date(nextDue) : "No deadline established"}</strong></div></div>
         <div className="training-summary-grid">
           <div><strong>{aggregateProgress}%</strong><span>overall course progress</span></div>
           <div><strong>{counts.completed}</strong><span>completed</span></div>
           <div><strong>{counts.inProgress}</strong><span>in progress</span></div>
           <div><strong>{counts.notStarted}</strong><span>not started</span></div>
         </div>
-        <p><strong>Assessments:</strong> {assessmentSummary}</p>
-        <p><strong>Next established due date:</strong> {nextDue ? date(nextDue) : "No deadline established"}</p>
       </section>
       <div className="training-split-pane">
         <aside className="training-course-pane" aria-label={`${selectedEmployee ? displayName(selectedEmployee) : "Employee"} assigned courses`}>
@@ -89,13 +85,12 @@ export default function TrainingOperationsWorkspace({ data, selectedEmployeeId, 
         </aside>
         <section className="training-detail-pane" aria-live="polite">
           {selected ? <header className="training-detail-header">
-            <div><p className="eyebrow">{data.canAssist ? "Administrative assistance" : "Read only"}</p><h3>{selected.course.code} · {selected.course.title}</h3><p>Version {selected.courseVersion} · {pretty(selected.displayStatus)} · {selected.progress.percentage}% complete · Assessment {pretty(selected.assessment.state)}</p></div>
+            <div><p className="eyebrow">{data.canAssist ? "Administrative assistance" : "Read only"}</p><h3>{selected.course.code} · {selected.course.title}</h3></div><p>Version {selected.courseVersion} · {pretty(selected.displayStatus)} · {selected.progress.percentage}% complete · Assessment {pretty(selected.assessment.state)}</p>
           </header> : null}
           <p className="training-feedback" role="status">{feedback}</p>
           {busy && !detail ? <div className="empty-state">Loading authoritative course state…</div> : detail ? <TrainingCoursePlayer course={detail} answers={answers} busy={busy} saving={saving} administrative={data.canAssist} readOnly={!data.canAssist} feedback={feedback} onAnswer={onAnswer} onComplete={onComplete} onSubmit={onSubmit}/> : <div className="empty-state">Select a course to view its authoritative assignment.</div>}
         </section>
       </div>
-      <details className="training-overview"><summary>All assignments overview</summary><p>This secondary overview supports cross-workforce review without blocking the employee workspace.</p><div className="workforce-table training-operations" role="table"><div className="workforce-row workforce-head" role="row"><span>Employee</span><span>Course</span><span>Progress</span><span>Assessment</span><span>Due</span></div>{data.items.map(item => <button type="button" className="workforce-row" role="row" key={item.id} onClick={() => onCourseChange(item.id)}><span><strong>{displayName(item.employee)}</strong><small>{item.employee.employeeNumber ?? "No employee number"}</small></span><span><strong>{item.course.title}</strong><small>Version {item.courseVersion}</small></span><span>{item.progress.percentage}%<small>{item.progress.completedContent}/{item.progress.totalContent} components</small></span><span>{pretty(item.assessment.state)}</span><span>{date(item.dueAt) ?? "No deadline"}</span></button>)}</div></details>
     </> : <div className="empty-state"><h3>No training assignments are available</h3><p>Assign training from an employee profile, then return here.</p></div>}
   </section>;
 }

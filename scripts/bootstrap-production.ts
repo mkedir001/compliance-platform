@@ -29,10 +29,11 @@ async function main() {
     for (const code of permissionCodes) await tx.permission.upsert({ where: { code }, update: {}, create: { code, description: code } });
     const organization = await tx.organization.create({ data: { legalName: input.BOOTSTRAP_ORGANIZATION_NAME, displayName: input.BOOTSTRAP_ORGANIZATION_NAME, slug: input.BOOTSTRAP_ORGANIZATION_SLUG } });
     const admin = await tx.user.create({ data: { email: input.BOOTSTRAP_ADMIN_EMAIL.toLowerCase(), status: "ACTIVE" } });
-    const role = await tx.roleDefinition.create({ data: { organizationId: organization.id, code: "ORGANIZATION_OWNER", name: "Organization owner", scope: "ORGANIZATION" } });
+    const role = await tx.roleDefinition.findFirst({ where: { organizationId: null, code: "ORGANIZATION_OWNER", isPlatformStandard: true } });
+    if (!role) throw new Error("Bootstrap refused: platform-standard ORGANIZATION_OWNER role is missing");
     const permissions = await tx.permission.findMany({ where: { code: { in: permissionCodes } } });
     const membership = await tx.organizationMembership.create({ data: { organizationId: organization.id, userId: admin.id, status: "ACTIVE" } });
-    await tx.rolePermission.createMany({ data: permissions.map(permission => ({ roleDefinitionId: role.id, permissionId: permission.id })) });
+    await tx.rolePermission.createMany({ data: permissions.map(permission => ({ roleDefinitionId: role.id, permissionId: permission.id })), skipDuplicates: true });
     await tx.membershipRole.create({ data: { membershipId: membership.id, roleDefinitionId: role.id } });
     await tx.auditEvent.create({ data: { organizationId: organization.id, actorUserId: admin.id, eventType: "production.bootstrap_completed", entityType: "Organization", entityId: organization.id, metadataJson: { adminUserId: admin.id } } });
     return { organizationId: organization.id, adminUserId: admin.id };

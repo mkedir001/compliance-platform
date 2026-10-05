@@ -1,6 +1,6 @@
 import type { TrainingAssignmentStatus, User } from "@prisma/client";
 import { AuthorizationError, ResourceNotFoundError } from "@/domain/auth/errors";
-import { requireOrganizationAccess, requireOrganizationOwner, requirePermission } from "@/domain/permissions/authorization";
+import { isOrganizationOwnerRole, requireOrganizationAccess, requireOrganizationOwner, requirePermission } from "@/domain/permissions/authorization";
 import { getAssignment, deriveAssignmentDisplayStatus } from "@/domain/training/assignments/service";
 import { saveAssessmentDraftResponse, startAttempt, submitAttempt } from "@/domain/training/assessments/service";
 import { completeContent } from "@/domain/training/progress/service";
@@ -9,7 +9,7 @@ import { prisma } from "@/lib/prisma";
 export async function listTrainingOperations(user: Pick<User, "id">, organizationId: string, filters: { employee?: string; employeeId?: string; course?: string; status?: string; attention?: boolean } = {}) {
   const { membership } = await requireOrganizationAccess(user, organizationId);
   await requirePermission(membership.id, "compliance.operations.read");
-  const owner = membership.roles.some(role => role.roleDefinition.code === "ORGANIZATION_OWNER" && role.roleDefinition.isPlatformStandard && role.roleDefinition.organizationId === null);
+  const owner = membership.roles.some(role => isOrganizationOwnerRole(role.roleDefinition, organizationId));
   const rows = await prisma.trainingAssignment.findMany({
     where: { organizationId, employeeId: filters.employeeId, employee: filters.employee ? { OR: [{ firstName: { contains: filters.employee, mode: "insensitive" } }, { lastName: { contains: filters.employee, mode: "insensitive" } }, { employeeNumber: { contains: filters.employee, mode: "insensitive" } }] } : undefined, courseVersion: filters.course ? { course: { title: { contains: filters.course, mode: "insensitive" } } } : undefined, status: filters.status && filters.status !== "ALL" ? filters.status as TrainingAssignmentStatus : undefined },
     include: { employee: { select: { id: true, firstName: true, lastName: true, preferredName: true, employeeNumber: true } }, courseVersion: { include: { course: true, modules: { include: { contentItems: { select: { id: true, required: true, contentType: true } }, assessments: { where: { status: "PUBLISHED" }, select: { id: true } } } } } }, contentProgress: true, acknowledgments: true, attempts: { orderBy: { attemptNumber: "desc" }, take: 1 }, completion: true },

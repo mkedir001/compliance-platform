@@ -22,6 +22,7 @@ const productionInfrastructureSchema = z.object({
   MAILGUN_FROM: z.preprocess(value => value === "" ? undefined : value, z.string().email().optional()),
   MAILGUN_FROM_NAME: z.preprocess(value => value === "" ? undefined : value, z.string().trim().min(1).max(200).optional()),
   MAILGUN_REPLY_TO: z.preprocess(value => value === "" ? undefined : value, z.string().email().optional()),
+  MAILGUN_WEBHOOK_SIGNING_KEY: z.preprocess(value => value === "" ? undefined : value, z.string().min(32).optional()),
   WORKFORCE_EMAIL_PROVIDER: z.preprocess(value => value === "" ? undefined : value, z.enum(["ses", "http", "mailgun"]).optional()),
   WORKFORCE_EMAIL_API_URL: z.preprocess(value => value === "" ? undefined : value, z.string().url().optional()),
   WORKFORCE_EMAIL_API_TOKEN: z.preprocess(value => value === "" ? undefined : value, z.string().min(20).optional()),
@@ -42,6 +43,7 @@ const productionInfrastructureSchema = z.object({
   if (value.WORKFORCE_EMAIL_PROVIDER && !value.WORKFORCE_EMAIL_FROM) context.addIssue({ code: "custom", message: "WORKFORCE_EMAIL_FROM is required for workforce email", path: ["WORKFORCE_EMAIL_FROM"] });
   if (value.WORKFORCE_EMAIL_PROVIDER === "ses" && !value.AWS_REGION) context.addIssue({ code: "custom", message: "AWS_REGION is required for workforce SES delivery", path: ["AWS_REGION"] });
   if (value.WORKFORCE_EMAIL_PROVIDER === "mailgun" && (!value.AWS_REGION || !value.MAILGUN_RELAY_FUNCTION_NAME)) context.addIssue({ code: "custom", message: "AWS_REGION and MAILGUN_RELAY_FUNCTION_NAME are required for workforce Mailgun delivery", path: ["MAILGUN_RELAY_FUNCTION_NAME"] });
+  if ((value.EMAIL_PROVIDER === "mailgun" || value.WORKFORCE_EMAIL_PROVIDER === "mailgun") && !value.MAILGUN_WEBHOOK_SIGNING_KEY) context.addIssue({ code: "custom", message: "MAILGUN_WEBHOOK_SIGNING_KEY is required for Mailgun delivery reconciliation", path: ["MAILGUN_WEBHOOK_SIGNING_KEY"] });
   if (value.WORKFORCE_EMAIL_PROVIDER === "http" && (!value.WORKFORCE_EMAIL_API_URL || !value.WORKFORCE_EMAIL_API_TOKEN)) context.addIssue({ code: "custom", message: "WORKFORCE_EMAIL_API_URL and WORKFORCE_EMAIL_API_TOKEN are required for workforce HTTP email delivery", path: ["WORKFORCE_EMAIL_API_URL"] });
 });
 
