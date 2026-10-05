@@ -19,7 +19,7 @@ The seed command prints synthetic development user IDs. Enter one in the foundat
 
 Production uses one explicit `PRODUCTION_AUTH_MODE`. For AWS, set it to
 `aws-alb-cognito` and configure `AWS_ALB_AUTH_SIGNER_ARN`,
-`AWS_ALB_AUTH_ISSUER`, and `AWS_ALB_AUTH_CLIENT_ID`. The application verifies
+`AWS_ALB_AUTH_ISSUER`, `AWS_ALB_AUTH_CLIENT_ID`, and `AWS_COGNITO_DOMAIN`. The application verifies
 the ALB-signed `x-amzn-oidc-data` assertion using AWS's regional HTTPS public-key
 endpoint, then maps its signed `sub` claim to `User.authProviderUserId`.
 Unsigned `x-amzn-oidc-identity` and development headers are never trusted in
@@ -43,9 +43,10 @@ conflicts in either direction, fingerprints the external subject in the audit
 record, and is idempotent for the identical link. Rollback should restore the
 prior container revision and `PRODUCTION_AUTH_MODE`; identity links must not be
 silently removed or reassigned.
-Future invitees require a controlled Cognito-subject linkage before they can
-authenticate and claim an existing portal invitation; matching email alone
-never creates that identity link.
+Employee invitations use the public, token-minimized landing route and then the
+protected Cognito continuation. A verified Cognito email may activate and link
+only the matching invited account during that single-use claim; ordinary
+application authentication never falls back to email-based account linking.
 
 Run verification with `pnpm test`, `pnpm typecheck`, `pnpm lint`, and `pnpm build`.
 

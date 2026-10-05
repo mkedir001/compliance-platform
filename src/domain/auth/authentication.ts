@@ -17,7 +17,8 @@ function legacyProductionUserId(request: Request, config: Extract<ProductionEnvi
 }
 
 type AlbConfiguration = Extract<ProductionEnvironment, { PRODUCTION_AUTH_MODE: "aws-alb-cognito" }>;
-type AssertionVerifier = { verify(assertion: string): Promise<{ sub?: unknown }> };
+type AlbAssertion = { sub?: unknown; email?: unknown; email_verified?: unknown };
+type AssertionVerifier = { verify(assertion: string): Promise<AlbAssertion> };
 let cachedVerifier: { key: string; verifier: AssertionVerifier } | undefined;
 
 export function createAlbAssertionVerifier(config: AlbConfiguration, fetcher?: Fetcher): AssertionVerifier {
@@ -47,6 +48,34 @@ function enforceProductionOrigin(request: Request, appBaseUrl: string) {
   if (origin && new URL(origin).origin !== new URL(appBaseUrl).origin) throw new AuthenticationError("Request origin rejected");
 }
 
+async function verifiedAlbIdentity(request: Request, config: AlbConfiguration, verifier?: AssertionVerifier) {
+  enforceProductionOrigin(request, config.APP_BASE_URL);
+  const assertion = request.headers.get("x-amzn-oidc-data");
+  if (!assertion) throw new AuthenticationError("Authentication required");
+  try {
+    const payload = await (verifier ?? productionVerifier(config)).verify(assertion);
+    if (typeof payload.sub !== "string" || payload.sub.length < 1 || payload.sub.length > 256) throw new Error("Invalid subject");
+    return { subject: payload.sub, email: typeof payload.email === "string" ? payload.email.trim().toLowerCase() : null, emailVerified: payload.email_verified === true || payload.email_verified === "true" };
+  } catch {
+    throw new AuthenticationError("Authentication assertion invalid");
+  }
+}
+
+export async function requireVerifiedInvitationIdentity(request: Request, dependencies: { albVerifier?: AssertionVerifier } = {}) {
+  if (process.env.NODE_ENV !== "production") {
+    const userId = request.headers.get("x-dev-user-id") ?? process.env.DEV_USER_ID;
+    if (!userId) throw new AuthenticationError("Authentication required");
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user?.email) throw new AuthenticationError("Authenticated identity is unavailable");
+    return { subject: user.authProviderUserId ?? `development:${user.id}`, email: user.email.trim().toLowerCase(), emailVerified: true as const };
+  }
+  const config = productionEnvironment()!;
+  if (config.PRODUCTION_AUTH_MODE !== "aws-alb-cognito") throw new AuthenticationError("Invitation onboarding requires Cognito authentication");
+  const identity = await verifiedAlbIdentity(request, config, dependencies.albVerifier);
+  if (!identity.email || !identity.emailVerified) throw new AuthenticationError("A verified email identity is required");
+  return { subject: identity.subject, email: identity.email, emailVerified: true as const };
+}
+
 /** Production uses exactly one configured upstream authentication mechanism.
  * Development identity headers are never accepted in production. */
 export async function requireAuthenticatedUser(request: Request, dependencies: { albVerifier?: AssertionVerifier } = {}) {
@@ -67,16 +96,7 @@ export async function requireAuthenticatedUser(request: Request, dependencies: {
     return user;
   }
 
-  const assertion = request.headers.get("x-amzn-oidc-data");
-  if (!assertion) throw new AuthenticationError("Authentication required");
-  let subject: string;
-  try {
-    const payload = await (dependencies.albVerifier ?? productionVerifier(config)).verify(assertion);
-    if (typeof payload.sub !== "string" || payload.sub.length < 1 || payload.sub.length > 256) throw new Error("Invalid subject");
-    subject = payload.sub;
-  } catch {
-    throw new AuthenticationError("Authentication assertion invalid");
-  }
+  const { subject } = await verifiedAlbIdentity(request, config, dependencies.albVerifier);
   const user = await prisma.user.findFirst({ where: { authProviderUserId: subject, status: "ACTIVE" } });
   if (!user) throw new AuthenticationError("Active user not found");
   return user;

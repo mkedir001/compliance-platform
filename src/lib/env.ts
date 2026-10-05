@@ -54,6 +54,7 @@ const productionAuthenticationSchema = z.discriminatedUnion("PRODUCTION_AUTH_MOD
     AWS_ALB_AUTH_SIGNER_ARN: z.string().optional(),
     AWS_ALB_AUTH_ISSUER: z.string().optional(),
     AWS_ALB_AUTH_CLIENT_ID: z.string().optional(),
+    AWS_COGNITO_DOMAIN: z.string().optional(),
   }),
   z.object({
     PRODUCTION_AUTH_MODE: z.literal("aws-alb-cognito"),
@@ -61,6 +62,7 @@ const productionAuthenticationSchema = z.discriminatedUnion("PRODUCTION_AUTH_MOD
     AWS_ALB_AUTH_SIGNER_ARN: z.string().regex(/^arn:aws:elasticloadbalancing:[a-z0-9-]+:\d{12}:loadbalancer\/app\/[A-Za-z0-9-]+\/[a-f0-9]+$/),
     AWS_ALB_AUTH_ISSUER: z.string().url().refine(value => value.startsWith("https://"), "AWS_ALB_AUTH_ISSUER must use HTTPS"),
     AWS_ALB_AUTH_CLIENT_ID: z.string().min(1),
+    AWS_COGNITO_DOMAIN: z.string().url().refine(value => value.startsWith("https://") && value.endsWith(".amazoncognito.com"), "AWS_COGNITO_DOMAIN must be an HTTPS Amazon Cognito domain"),
   }),
 ]);
 

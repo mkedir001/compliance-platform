@@ -7,5 +7,5 @@ const securityHeaders = [
   { key: "X-Frame-Options", value: "DENY" },
   ...(process.env.NODE_ENV === "production" ? [{ key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" }] : []),
 ];
-const nextConfig: NextConfig = { poweredByHeader: false, async headers(){return[{source:"/:path*",headers:securityHeaders},{source:"/api/sign/:token/document",headers:[{key:"Content-Security-Policy",value:"default-src 'none'; frame-ancestors 'self'"},{key:"X-Frame-Options",value:"SAMEORIGIN"},{key:"Referrer-Policy",value:"no-referrer"}]}]} };
+const nextConfig: NextConfig = { poweredByHeader: false, async headers(){return[{source:"/:path*",headers:securityHeaders},{source:"/api/sign/:token/document",headers:[{key:"Content-Security-Policy",value:"default-src 'none'; frame-ancestors 'self'"},{key:"X-Frame-Options",value:"SAMEORIGIN"},{key:"Referrer-Policy",value:"no-referrer"}]},{source:"/learn/claim/:path*",headers:[{key:"Referrer-Policy",value:"no-referrer"},{key:"Cache-Control",value:"no-store"}]},{source:"/claim-auth/:path*",headers:[{key:"Referrer-Policy",value:"no-referrer"},{key:"Cache-Control",value:"no-store"}]}]} };
 export default nextConfig;

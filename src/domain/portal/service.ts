@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import { Prisma, type User } from "@prisma/client";
-import { AuthorizationError, ResourceNotFoundError } from "@/domain/auth/errors";
+import { AuthorizationError, ConflictError, ResourceNotFoundError } from "@/domain/auth/errors";
 import { computeEmployeeOperationalProfile } from "@/domain/compliance/operations/service";
 import { requireEmployeeAccess, requireEmployeeSelfAccess, requireOrganizationAccess, requireOrganizationMembership, requirePermission } from "@/domain/permissions/authorization";
 import { deriveAssignmentDisplayStatus } from "@/domain/training/assignments/service";
@@ -8,6 +8,32 @@ import { configuredEmailProviderForPurpose, EmailDeliveryError, type EmailProvid
 import { prisma } from "@/lib/prisma";
 
 const hashToken = (token: string) => createHash("sha256").update(token).digest("hex");
+const invitationLifetimeMs = 7 * 24 * 60 * 60 * 1000;
+const normalizeEmail = (email: string) => email.trim().toLowerCase();
+export type VerifiedInvitationIdentity = { subject: string; email: string; emailVerified: true };
+export type PortalInvitationInspection = { state: "VALID" | "CLAIMED" | "EXPIRED" | "REVOKED" | "SUPERSEDED" | "INVALID" };
+
+async function invitationRecord(token: string) {
+  return prisma.employeePortalInvitation.findUnique({
+    where: { tokenHash: hashToken(token) },
+    include: { employee: true, acceptedBy: { select: { id: true, email: true, authProviderUserId: true } } },
+  });
+}
+
+async function invitationState(invitation: Awaited<ReturnType<typeof invitationRecord>>): Promise<PortalInvitationInspection["state"]> {
+  if (!invitation) return "INVALID";
+  if (invitation.status === "ACCEPTED") return "CLAIMED";
+  if (invitation.status === "REVOKED") {
+    const replacement = await prisma.employeePortalInvitation.findFirst({ where: { organizationId: invitation.organizationId, employeeId: invitation.employeeId, invitedAt: { gt: invitation.invitedAt } }, select: { id: true } });
+    return replacement ? "SUPERSEDED" : "REVOKED";
+  }
+  if (invitation.invitedAt < new Date(Date.now() - invitationLifetimeMs)) return "EXPIRED";
+  return "VALID";
+}
+
+export async function inspectEmployeePortalInvitation(token: string): Promise<PortalInvitationInspection> {
+  return { state: await invitationState(await invitationRecord(token)) };
+}
 
 export async function inviteEmployeeToPortal(user: Pick<User, "id">, organizationId: string, employeeId: string, provider: EmailProvider = configuredEmailProviderForPurpose("WORKFORCE_TRANSACTIONAL")) {
   const { membership } = await requireOrganizationAccess(user, organizationId);
@@ -59,11 +85,53 @@ export async function claimEmployeePortalInvitationByToken(user: Pick<User, "id"
   return claimEmployeePortalInvitation(user, invitation.organizationId, token);
 }
 
+export async function claimEmployeePortalInvitationByIdentity(identity: VerifiedInvitationIdentity, token: string) {
+  const invitation = await invitationRecord(token), state = await invitationState(invitation);
+  if (!invitation || state === "INVALID") throw new ResourceNotFoundError("Invitation is invalid or unavailable");
+  const identityEmail = normalizeEmail(identity.email), invitedEmail = normalizeEmail(invitation.invitedEmail);
+  if (identityEmail !== invitedEmail) throw new ConflictError("This invitation was sent to a different account.", "INVITATION_ACCOUNT_MISMATCH");
+  if (state === "CLAIMED") {
+    if (invitation.acceptedBy?.authProviderUserId === identity.subject && normalizeEmail(invitation.acceptedBy.email ?? "") === identityEmail) {
+      throw new ConflictError("This invitation has already been claimed.", "INVITATION_ALREADY_CLAIMED");
+    }
+    throw new ResourceNotFoundError("Invitation is invalid or unavailable");
+  }
+  if (state === "EXPIRED") throw new ConflictError("This invitation has expired. Ask your organization administrator to reissue it.", "INVITATION_EXPIRED");
+  if (state === "SUPERSEDED") throw new ConflictError("This invitation was replaced. Use the most recent invitation from your organization.", "INVITATION_SUPERSEDED");
+  if (state === "REVOKED") throw new ConflictError("This invitation is no longer active. Contact your organization administrator.", "INVITATION_REVOKED");
+  if (!["PENDING", "ACTIVE"].includes(invitation.employee.employmentStatus)) throw new AuthorizationError("Inactive or separated employees cannot claim portal access");
+
+  return prisma.$transaction(async tx => {
+    const [subjectOwner, invitedAccount] = await Promise.all([
+      tx.user.findUnique({ where: { authProviderUserId: identity.subject } }),
+      tx.user.findUnique({ where: { email: invitedEmail } }),
+    ]);
+    if (!invitedAccount || !["INVITED", "ACTIVE"].includes(invitedAccount.status)) throw new AuthorizationError("Invited account is unavailable");
+    if (subjectOwner && subjectOwner.id !== invitedAccount.id) throw new ConflictError("This invitation was sent to a different account.", "INVITATION_ACCOUNT_MISMATCH");
+    if (invitedAccount.authProviderUserId && invitedAccount.authProviderUserId !== identity.subject) throw new ConflictError("This invitation was sent to a different account.", "INVITATION_ACCOUNT_MISMATCH");
+    const conflictingEmployee = await tx.employee.findFirst({ where: { organizationId: invitation.organizationId, userId: invitedAccount.id, id: { not: invitation.employeeId } } });
+    if (conflictingEmployee || invitation.employee.userId && invitation.employee.userId !== invitedAccount.id) throw new AuthorizationError("Account cannot claim this employee profile");
+    const linkedNow = !invitedAccount.authProviderUserId;
+    const activated = await tx.user.updateMany({ where: { id: invitedAccount.id, OR: [{ authProviderUserId: identity.subject }, { authProviderUserId: null }] }, data: { authProviderUserId: identity.subject, status: "ACTIVE" } });
+    if (activated.count !== 1) throw new ConflictError("This invitation was sent to a different account.", "INVITATION_ACCOUNT_MISMATCH");
+    await tx.employee.update({ where: { id: invitation.employeeId }, data: { userId: invitedAccount.id } });
+    await tx.organizationMembership.upsert({ where: { organizationId_userId: { organizationId: invitation.organizationId, userId: invitedAccount.id } }, create: { organizationId: invitation.organizationId, userId: invitedAccount.id, status: "ACTIVE", joinedAt: new Date() }, update: { status: "ACTIVE", joinedAt: new Date(), endedAt: null } });
+    const accepted = await tx.employeePortalInvitation.updateMany({ where: { id: invitation.id, status: "PENDING" }, data: { status: "ACCEPTED", acceptedByUserId: invitedAccount.id, acceptedAt: new Date() } });
+    if (accepted.count !== 1) throw new ConflictError("This invitation has already been claimed.", "INVITATION_ALREADY_CLAIMED");
+    if (linkedNow) {
+      const subjectFingerprint = createHash("sha256").update(identity.subject).digest("hex");
+      await tx.auditEvent.create({ data: { organizationId: invitation.organizationId, actorUserId: invitedAccount.id, employeeId: invitation.employeeId, eventType: "authentication.identity_linked", entityType: "User", entityId: invitedAccount.id, metadataJson: { provider: "amazon-cognito", subjectFingerprint } } });
+    }
+    await tx.auditEvent.create({ data: { organizationId: invitation.organizationId, actorUserId: invitedAccount.id, employeeId: invitation.employeeId, eventType: "employee.portal_invitation_claimed", entityType: "EmployeePortalInvitation", entityId: invitation.id } });
+    return { invitationId: invitation.id, employeeId: invitation.employeeId, organizationId: invitation.organizationId, status: "ACCEPTED" as const, destination: `/learn?organizationId=${encodeURIComponent(invitation.organizationId)}` };
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+}
+
 export async function claimEmployeePortalInvitation(user: Pick<User, "id" | "email">, organizationId: string, token: string) {
   if (!user.email) throw new AuthorizationError("Authenticated account must have an email address");
   const invitation = await prisma.employeePortalInvitation.findFirst({ where: { organizationId, tokenHash: hashToken(token), status: "PENDING" }, include: { employee: true } });
   if (!invitation) throw new ResourceNotFoundError("Portal invitation not found");
-  if (invitation.invitedAt < new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)) throw new AuthorizationError("Portal invitation expired");
+  if (invitation.invitedAt < new Date(Date.now() - invitationLifetimeMs)) throw new AuthorizationError("Portal invitation expired");
   if (!["PENDING", "ACTIVE"].includes(invitation.employee.employmentStatus)) throw new AuthorizationError("Inactive or separated employees cannot claim portal access");
   if (invitation.invitedEmail.toLowerCase() !== user.email.toLowerCase()) throw new AuthorizationError("Invitation belongs to a different account");
   const conflicting = await prisma.employee.findFirst({ where: { organizationId, userId: user.id, id: { not: invitation.employeeId } } });
