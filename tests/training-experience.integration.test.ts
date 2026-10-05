@@ -56,7 +56,8 @@ describe("production training experience", () => {
 
   it("enforces exact owner-only, tenant, and read-only role boundaries", async () => {
     const before = await Promise.all([prisma.trainingContentProgress.count({ where: { assignmentId } }), prisma.assessmentAttempt.count({ where: { trainingAssignmentId: assignmentId } }), prisma.assessmentDraftResponse.count({ where: { attempt: { trainingAssignmentId: assignmentId } } })]);
-    const readOnly = await getTrainingAssignmentDetail({ id: adminId }, organizationId, assignmentId);
+    const readOnlyOperations = await listTrainingOperations({ id: adminId }, organizationId), readOnly = await getTrainingAssignmentDetail({ id: adminId }, organizationId, assignmentId);
+    expect(readOnlyOperations).toMatchObject({ canAssist: false, accessMode: "READ_ONLY" });
     expect(readOnly.id).toBe(assignmentId);
     expect(await Promise.all([prisma.trainingContentProgress.count({ where: { assignmentId } }), prisma.assessmentAttempt.count({ where: { trainingAssignmentId: assignmentId } }), prisma.assessmentDraftResponse.count({ where: { attempt: { trainingAssignmentId: assignmentId } } })])).toEqual(before);
     await expect(getOwnerTrainingAssignment({ id: adminId }, organizationId, assignmentId)).rejects.toThrow(/owner/i);
@@ -81,11 +82,14 @@ describe("production training experience", () => {
 
   it("provides human-readable operations and safe media fallbacks", async () => {
     const operations = await listTrainingOperations({ id: ownerId }, organizationId);
-    expect(operations.canAssist).toBe(true); expect(operations.items[0]).toMatchObject({ course: { title: "Resumable Safety Training" }, employee: { firstName: "Resume" }, progress: { percentage: 100 }, assessment: { state: "PASSED" } });
+    expect(operations.canAssist).toBe(true); expect(operations.accessMode).toBe("ADMINISTRATIVE_ASSISTANCE"); expect(operations.items[0]).toMatchObject({ course: { title: "Resumable Safety Training" }, employee: { firstName: "Resume" }, progress: { percentage: 100 }, assessment: { state: "PASSED" } });
     const source = await readFile("src/app/components/training-course-player.tsx", "utf8");
     expect(source).toContain("provider-hosted video"); expect(source).toContain("does not claim playback telemetry"); expect(source).toContain("video source is currently unavailable");
-    const operationsSource = await readFile("src/app/admin/operations-portal.tsx", "utf8");
-    expect(operationsSource).toContain("No training assignments match this view"); expect(operationsSource).toContain("View / assist"); expect(operationsSource).toContain("View training"); expect(operationsSource).toContain("readOnly={!training.canAssist}"); expect(operationsSource).toContain("Attention or overdue"); expect(operationsSource).not.toContain("Owner assistance required to modify"); expect(operationsSource).not.toContain("<Records rows={courses}");
+    const operationsSource = await readFile("src/app/admin/operations-portal.tsx", "utf8"), workspaceSource = await readFile("src/app/admin/training-operations-workspace.tsx", "utf8"), styles = await readFile("src/app/training-experience.css", "utf8");
+    expect(operationsSource).toContain("<TrainingOperationsWorkspace"); expect(operationsSource).toContain("assignmentId"); expect(operationsSource).toContain("window.history[replace?"); expect(operationsSource).toContain("popstate"); expect(operationsSource).not.toContain("Owner assistance required to modify"); expect(operationsSource).not.toContain("<Records rows={courses}");
+    expect(workspaceSource).toContain("Select an employee once"); expect(workspaceSource).toContain("Assigned courses"); expect(workspaceSource).toContain("Administrative assistance"); expect(workspaceSource).toContain("Read only"); expect(workspaceSource).toContain("All assignments overview"); expect(workspaceSource).toContain("onCourseChange"); expect(workspaceSource).not.toContain("item.employee.firstName} {item.employee.lastName}");
+    expect(styles).toContain("grid-template-columns:minmax(250px,28%) minmax(0,72%)"); expect(styles).toContain("@media(max-width:1000px)"); expect(styles).toContain(".training-course-option.selected");
+    expect(source).toContain("Saving progress…"); expect(source).toContain("Saving…"); expect(source).toContain("Answer every question in this assessment before submitting."); expect(source).toContain("Only the employee may record this acknowledgment"); expect(source).toContain("selected.includes(option.id)?\" selected\"");
     const shortcutSource = await readFile("src/app/admin/employee-training-readiness.tsx", "utf8");
     expect(shortcutSource).toContain("/admin/compliance-operations?"); expect(shortcutSource).not.toContain("href={`/admin?");
     await expect(readFile("src/app/admin/compliance-operations/page.tsx", "utf8")).resolves.toContain("EmployerOperationsPortal");

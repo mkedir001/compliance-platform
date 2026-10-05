@@ -22,7 +22,7 @@ export async function listTrainingOperations(user: Pick<User, "id">, organizatio
     const latestAttempt = row.attempts[0] ?? null, displayStatus = deriveAssignmentDisplayStatus(row, now), percentage = totalContent ? Math.round(completedContent / totalContent * 100) : row.completion ? 100 : 0;
     return { id: row.id, employee: row.employee, course: { id: row.courseVersion.course.id, code: row.courseVersion.course.code, title: row.courseVersion.course.title }, courseVersion: row.courseVersion.versionNumber, status: row.status, displayStatus, assignedAt: row.assignedAt, dueAt: row.dueAt, completedAt: row.completion?.completedAt ?? null, progress: { completedContent, totalContent, percentage, requiredComplete }, assessment: latestAttempt ? { attemptNumber: latestAttempt.attemptNumber, state: latestAttempt.submittedAt ? latestAttempt.passed ? "PASSED" : "FAILED" : "IN_PROGRESS", submittedAt: latestAttempt.submittedAt } : { attemptNumber: null, state: "NOT_STARTED", submittedAt: null }, attention: displayStatus === "OVERDUE" || row.status === "FAILED" || Boolean(latestAttempt && !latestAttempt.submittedAt) };
   });
-  return { canAssist: owner, items: filters.attention ? items.filter(item => item.attention) : items };
+  return { canAssist: owner, accessMode: owner ? "ADMINISTRATIVE_ASSISTANCE" as const : "READ_ONLY" as const, items: filters.attention ? items.filter(item => item.attention) : items };
 }
 
 async function ownerAssignment(user: Pick<User, "id">, organizationId: string, assignmentId: string) {
