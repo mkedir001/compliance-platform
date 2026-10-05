@@ -40,9 +40,11 @@ export async function inviteEmployeeToPortal(user: Pick<User, "id">, organizatio
       subject: `You're invited to ${employee.organization.displayName}`,
       text: `${employee.organization.displayName} invited you to access your Compliance Platform employee account.\n\nAccept your invitation: ${claimUrl}\n\nThis invitation expires seven days after it was created. If you did not expect this invitation, contact your organization administrator.`,
       actionHref: claimUrl,
+      deliveryContext: { organizationId, logicalType: "EmployeePortalInvitation", logicalId: invitation.id, purpose: "WORKFORCE_TRANSACTIONAL" },
     });
-    delivered = await prisma.employeePortalInvitation.update({ where: { id: invitation.id }, data: { deliveryStatus: "ACCEPTED", deliveryAttempts: { increment: 1 }, deliveryAttemptedAt: attemptedAt, deliveryProvider: provider.name, providerMessageId: accepted.messageId, providerAcceptedAt: accepted.acceptedAt ?? attemptedAt, deliveryErrorCode: null } });
-    await prisma.auditEvent.create({ data: { organizationId, actorUserId: user.id, employeeId, eventType: "employee.portal_invitation_provider_accepted", entityType: "EmployeePortalInvitation", entityId: invitation.id, metadataJson: { provider: provider.name } } });
+    const selectedProvider=accepted.provider??provider.name;
+    delivered = await prisma.employeePortalInvitation.update({ where: { id: invitation.id }, data: { deliveryStatus: "ACCEPTED", deliveryAttempts: { increment: 1 }, deliveryAttemptedAt: attemptedAt, deliveryProvider: selectedProvider, providerMessageId: accepted.messageId, providerAcceptedAt: accepted.acceptedAt ?? attemptedAt, deliveryErrorCode: null } });
+    await prisma.auditEvent.create({ data: { organizationId, actorUserId: user.id, employeeId, eventType: "employee.portal_invitation_provider_accepted", entityType: "EmployeePortalInvitation", entityId: invitation.id, metadataJson: { provider: selectedProvider } } });
   } catch (error) {
     const failure = error instanceof EmailDeliveryError ? error : new EmailDeliveryError("Workforce invitation delivery failed", true);
     delivered = await prisma.employeePortalInvitation.update({ where: { id: invitation.id }, data: { deliveryStatus: "FAILED", deliveryAttempts: { increment: 1 }, deliveryAttemptedAt: attemptedAt, deliveryProvider: provider.name, deliveryErrorCode: failure.code } });

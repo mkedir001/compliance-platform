@@ -1,5 +1,7 @@
 # First production launch checklist
 
+- [ ] The Mailgun BAA is fully signed/countersigned before launch. This vendor agreement is necessary for intended PHI-capable routing but does not by itself establish HIPAA compliance. Until execution, Mailgun pipeline tests are synthetic and non-PHI only.
+
 ## A. Application complete
 
 - [ ] Commit deployed from `main`; `/api/health/live` and `/api/health/ready` configured.

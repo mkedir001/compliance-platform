@@ -673,6 +673,7 @@ export async function processEmailDeliveries(organizationId: string, provider: E
           subject: delivery.notification.title,
           text: `You have a compliance action requiring attention. Sign in to review.${delivery.notification.dueAt ? ` Due ${delivery.notification.dueAt.toISOString().slice(0, 10)}.` : ""}`,
           actionHref: delivery.notification.actionHref,
+          deliveryContext: { organizationId, logicalType: "NotificationDelivery", logicalId: delivery.id, purpose: "WORKFORCE_TRANSACTIONAL" },
         }),
         saved = await prisma.notificationDelivery.update({
           where: { id: delivery.id },
@@ -681,7 +682,7 @@ export async function processEmailDeliveries(organizationId: string, provider: E
             attemptCount: { increment: 1 },
             lastAttemptAt: at,
             sentAt: at,
-            provider: provider.name,
+            provider: sent.provider ?? provider.name,
             providerMessageId: sent.messageId,
             lastErrorCode: null,
             nextAttemptAt: null,

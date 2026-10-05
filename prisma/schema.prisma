@@ -623,6 +623,23 @@ enum NotificationDeliveryStatus {
   SKIPPED
 }
 
+enum EmailCommunicationPurpose {
+  CLIENT_SECURE
+  WORKFORCE_TRANSACTIONAL
+}
+
+enum EmailTransportState {
+  PENDING
+  PROVIDER_ACCEPTED
+  FAILED
+  AMBIGUOUS
+}
+
+enum EmailProviderAttemptOutcome {
+  ACCEPTED
+  FAILED
+}
+
 model Brand {
   id               String         @id @default(cuid())
   name             String
@@ -705,6 +722,7 @@ model Organization {
   notifications             Notification[]
   notificationDeliveries    NotificationDelivery[]
   notificationPreferences   NotificationPreference[]
+  emailCommunications       EmailCommunication[]
   clients                   Client[]
   professionalContacts      ProfessionalContact[]
   clientDocumentTemplates   ClientDocumentTemplate[]
@@ -2674,6 +2692,44 @@ model NotificationDelivery {
 
   @@unique([notificationId, channel])
   @@index([organizationId, status, nextAttemptAt])
+}
+
+model EmailCommunication {
+  id                String                    @id @default(cuid())
+  organizationId    String
+  purpose           EmailCommunicationPurpose
+  logicalType       String
+  logicalId         String
+  state             EmailTransportState       @default(PENDING)
+  selectedProvider  String?
+  providerMessageId String?
+  providerAcceptedAt DateTime?
+  createdAt         DateTime                  @default(now())
+  updatedAt         DateTime                  @updatedAt
+  organization      Organization              @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  attempts          EmailProviderAttempt[]
+
+  @@unique([organizationId, purpose, logicalType, logicalId])
+  @@index([organizationId, purpose, state, createdAt])
+  @@index([selectedProvider, providerMessageId])
+}
+
+model EmailProviderAttempt {
+  id                    String                      @id @default(cuid())
+  communicationId       String
+  sequence              Int
+  provider              String
+  outcome               EmailProviderAttemptOutcome
+  failureClassification String?
+  errorCode             String?
+  providerMessageId     String?
+  attemptedAt           DateTime
+  acceptedAt            DateTime?
+  createdAt             DateTime                    @default(now())
+  communication         EmailCommunication          @relation(fields: [communicationId], references: [id], onDelete: Restrict)
+
+  @@unique([communicationId, sequence])
+  @@index([provider, providerMessageId])
 }
 
 model NotificationPreference {
