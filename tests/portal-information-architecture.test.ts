@@ -12,6 +12,8 @@ describe("portal information architecture", () => {
     ]);
     for (const label of ["Home", "Employees", "Clients", "Evidence review", "Competency assessments", "Signatures", "Policies", "Training catalog", "Reports and audit", "Settings"]) expect(shell).toContain(label);
     for (const label of ["Overview", "Training", "Certifications and evidence", "Policies", "Medication", "Client assignments", "Access and roles", "History"]) expect(operations).toContain(label);
+    expect(operations).toContain('/action-center?page=1&pageSize=8');
+    expect(operations).toContain("homeActions.map");
     for (const label of ["Overview", "Intake", "Services", "Documents", "Signatures", "Readiness", "Contacts", "History"]) expect(clients).toContain(label);
   });
 
