@@ -12,7 +12,7 @@ export async function resolveAuthenticatedLanding(userId: string): Promise<Landi
   return memberships.flatMap(membership => {
     const permissions = new Set(membership.roles.flatMap(role => role.roleDefinition.permissions.map(item => item.permission.code)));
     const destinations:LandingDestination[]=[];
-    const managementPath=permissions.has("compliance.operations.read")?"/admin/compliance-operations":permissions.has("client.read")?"/admin/clients":permissions.has("audit.session.manage")?"/admin/audit-access":permissions.has("employee.read")?"/admin/workforce-onboarding":null;
+    const managementPath=permissions.has("compliance.operations.read")?"/admin/home":permissions.has("client.read")?"/admin/clients":permissions.has("audit.session.manage")?"/admin/audit-access":permissions.has("employee.read")?"/admin/employees":null;
     if(managementPath)destinations.push({organizationId:membership.organizationId,organizationName:membership.organization.displayName,experience:"admin",href:`${managementPath}?organizationId=${encodeURIComponent(membership.organizationId)}`});
     if(employeeOrganizations.has(membership.organizationId))destinations.push({organizationId:membership.organizationId,organizationName:membership.organization.displayName,experience:"employee",href:`/learn?organizationId=${encodeURIComponent(membership.organizationId)}`});
     if(permissions.has("audit.portal.read"))for(const session of sessionsByOrganization.get(membership.organizationId)??[])destinations.push({organizationId:membership.organizationId,organizationName:membership.organization.displayName,experience:"auditor",href:`/audit?sessionId=${encodeURIComponent(session.id)}`});

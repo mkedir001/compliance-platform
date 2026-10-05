@@ -35,8 +35,8 @@ describe.sequential("authenticated production landing", () => {
     ]);
   });
 
-  it("routes an authorized organization administrator to the existing operations experience", async () => {
-    expect(await resolveAuthenticatedLanding(adminId)).toEqual([expect.objectContaining({ organizationId, experience: "admin", href: expect.stringContaining("/admin/compliance-operations") })]);
+  it("routes an authorized organization administrator to the organization Home experience", async () => {
+    expect(await resolveAuthenticatedLanding(adminId)).toEqual([expect.objectContaining({ organizationId, experience: "admin", href: expect.stringContaining("/admin/home") })]);
   });
 
   it("routes an employee only to employee self-service without granting admin access", async () => {

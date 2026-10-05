@@ -1,2 +1,3 @@
 import ActionCenter from "./action-center";
-export default function Page(){return <><nav className="phase-nav" aria-label="Employer administration"><a href="/admin/setup">Organization setup</a><a href="/admin/workforce-onboarding">Workforce onboarding</a><a href="/admin/compliance-operations">Employer operations</a></nav><ActionCenter/></>}
+import {PortalShell} from "@/app/components/portal-ui";
+export default async function Page({searchParams}:{searchParams:Promise<{organizationId?:string}>}){const{organizationId=""}=await searchParams;return <PortalShell organizationId={organizationId} current="Home"><ActionCenter initialOrganizationId={organizationId} productionIdentity={process.env.NODE_ENV==="production"}/></PortalShell>}

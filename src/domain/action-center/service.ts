@@ -179,7 +179,7 @@ export async function getActionCenter(user: Pick<User, "id">, organizationId: st
         nextAction: nextAction(category),
         clinicallyPrivileged: category === "MEDICATION_CLINICAL",
         serviceOverrideAllowed: false,
-        employeeHref: `/admin/compliance-operations?employeeId=${issue.employeeId}`,
+        employeeHref: `/admin/employees/${issue.employeeId}?organizationId=${organizationId}`,
       };
     }),
     ...evidence.map((record) => ({
@@ -198,7 +198,7 @@ export async function getActionCenter(user: Pick<User, "id">, organizationId: st
       nextAction: permissions.has("training.equivalency.review") ? "Review against a specific requirement using the existing equivalency workflow." : "Route to a reviewer with training equivalency permission.",
       clinicallyPrivileged: false,
       serviceOverrideAllowed: false,
-      employeeHref: `/admin/compliance-operations?employeeId=${record.employeeId}`,
+      employeeHref: `/admin/employees/${record.employeeId}?organizationId=${organizationId}`,
     })),
     ...training
       .filter((row) => !issueSources.has(`TrainingAssignment:${row.id}`) && !issueSources.has(`ComplianceInstance:${row.complianceInstanceId}`))
@@ -218,7 +218,7 @@ export async function getActionCenter(user: Pick<User, "id">, organizationId: st
         nextAction: nextAction("TRAINING"),
         clinicallyPrivileged: false,
         serviceOverrideAllowed: false,
-        employeeHref: `/admin/compliance-operations?employeeId=${row.employeeId}`,
+        employeeHref: `/admin/employees/${row.employeeId}?organizationId=${organizationId}`,
       })),
     ...policies
       .filter((row) => !issueSources.has(`PolicyAssignment:${row.id}`))
@@ -238,7 +238,7 @@ export async function getActionCenter(user: Pick<User, "id">, organizationId: st
         nextAction: nextAction("POLICY"),
         clinicallyPrivileged: false,
         serviceOverrideAllowed: false,
-        employeeHref: `/admin/compliance-operations?employeeId=${row.employeeId}`,
+        employeeHref: `/admin/employees/${row.employeeId}?organizationId=${organizationId}`,
       })),
     ...competencies
       .filter((row) => !issueSources.has(`ComplianceInstance:${row.complianceInstanceId}`))
@@ -258,7 +258,7 @@ export async function getActionCenter(user: Pick<User, "id">, organizationId: st
         nextAction: nextAction("COMPETENCY"),
         clinicallyPrivileged: false,
         serviceOverrideAllowed: false,
-        employeeHref: `/admin/compliance-operations?employeeId=${row.employeeId}`,
+        employeeHref: `/admin/employees/${row.employeeId}?organizationId=${organizationId}`,
       })),
   ];
   const rank: Record<DeadlineState, number> = {

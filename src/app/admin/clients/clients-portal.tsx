@@ -5,6 +5,7 @@ import GuidedIntake from "./guided-intake";
 import ClientImportWorkflow from "./client-import-workflow";
 import { clientDirectoryView, type ClientDirectoryLoadStatus } from "./directory-state";
 import type { IntakeStepId } from "@/domain/clients/intake-state";
+import { PortalShell, StatusChip } from "@/app/components/portal-ui";
 
 type RenewalCycle = {
   documentId: string;
@@ -143,7 +144,10 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
     await run(async () => {try{const[rows,accessResponse]=await Promise.all([request(`?search=${encodeURIComponent(search)}&status=${encodeURIComponent(status)}&renewalStatus=${encodeURIComponent(renewalStatus)}&readiness=${encodeURIComponent(readiness)}&operational=${encodeURIComponent(operational)}`),fetch(`/api/organizations/${organizationId}`,{headers})]),access=await accessResponse.json();if(!accessResponse.ok)throw new Error(access.error??"Organization access failed");setClients(rows as ClientRow[]);setPermissions(access.permissions??[]);setDirectoryStatus("success")}catch(error){setDirectoryStatus("error");throw error}});
   }
   async function open(id: string) {
-    await run(async () => setSelected((await request(`/${id}`)) as ClientDetail));
+    await run(async () => {
+      setSelected((await request(`/${id}`)) as ClientDetail);
+      if (typeof window !== "undefined" && !window.location.pathname.endsWith(`/${id}`)) window.history.pushState({}, "", `/admin/clients/${id}?organizationId=${encodeURIComponent(organizationId)}`);
+    });
   }
   async function refresh(text: string) {
     if (!selected) return;
@@ -286,14 +290,20 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
   }, [selected, initialRequestId, tab]);
   const tabs = ["Overview", "Intake", "Services", "Documents", "Signatures", "Readiness", "Contacts", "History"];
   const directoryView = clientDirectoryView(directoryStatus, clients.length);
+  const portalQuery = organizationId ? `?organizationId=${encodeURIComponent(organizationId)}` : "";
+  const portalNavigation = [
+    ...(permissions.includes("compliance.operations.read") ? [{ label: "Home", href: `/admin/home${portalQuery}`, group: "Workspace" }, { label: "Employees", href: `/admin/employees${portalQuery}`, group: "People" }] : []),
+    { label: "Clients", href: `/admin/clients${portalQuery}`, group: "People", current: true },
+    ...(permissions.includes("audit.session.manage") ? [{ label: "Auditor access", href: `/admin/audit-access${portalQuery}`, group: "Records" }] : []),
+    ...(permissions.includes("audit.read") ? [{ label: "Reports and audit", href: `/admin/reporting${portalQuery}`, group: "Records" }] : []),
+  ];
   return (
-    <main className="admin-shell">
+    <PortalShell organizationId={organizationId} current="Clients" navigation={portalNavigation}><main className="admin-shell" aria-busy={busy}>
       <header>
         <p className="eyebrow">Client management</p>
         <h1>Clients, intake, and documents</h1>
         <p className="lede">Organization-scoped client records with resumable intake, immutable document history, and renewal management.</p>
       </header>
-      {permissions.length?<nav className="experience-nav" aria-label="Management application"><a href={`/admin/clients?organizationId=${encodeURIComponent(organizationId)}`}>Clients</a>{permissions.includes("compliance.operations.read")?<a href={`/admin/compliance-operations?organizationId=${encodeURIComponent(organizationId)}`}>Compliance</a>:null}{permissions.includes("employee.read")?<a href={`/admin/workforce-onboarding?organizationId=${encodeURIComponent(organizationId)}`}>Workforce</a>:null}{permissions.includes("audit.session.manage")?<a href={`/admin/audit-access?organizationId=${encodeURIComponent(organizationId)}`}>Auditor access</a>:null}{permissions.includes("audit.read")?<a href={`/admin/reporting?organizationId=${encodeURIComponent(organizationId)}`}>Reporting</a>:null}</nav>:null}
       {!productionIdentity ? (
         <section className="portal-signin">
           <div className="auth">
@@ -309,10 +319,10 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
           </div>
         </section>
       ) : null}
-      <p role="status" aria-live="polite">
-        {message}
+      <p className="portal-message" role="status" aria-live="polite">
+        {busy ? "Updating authoritative client records…" : message}
       </p>
-      <section>
+      {!selected ? <section>
         <div className="section-heading">
           <div>
             <h2>Client directory</h2>
@@ -426,19 +436,17 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
         ) : (
           <div className="empty-state" role="status">Loading authorized clients…</div>
         )}
-      </section>
+      </section> : null}
       {selected ? (
         <section>
-          <div className="section-heading">
-            <div>
+          <div className="record-header">
+            <div className="record-identity"><span className="record-avatar" aria-hidden="true">{selected.legalFirstName[0]}{selected.legalLastName[0]}</span><div>
               <p className="eyebrow">Client record</p>
               <h2>
                 {selected.legalFirstName} {selected.legalLastName}
               </h2>
-              <p>
-                {pretty(selected.status)} · documentation <strong>{pretty(selected.documentationReadiness.overallState)}</strong>
-              </p>
-            </div>
+              <p><StatusChip tone={selected.status==="ACTIVE"?"good":selected.status==="DISCHARGED"||selected.status==="ARCHIVED"?"neutral":"warning"}>{pretty(selected.status)}</StatusChip> <StatusChip tone={selected.documentationReadiness.overallState==="CURRENT"?"good":selected.documentationReadiness.overallState==="OVERDUE"?"danger":"warning"}>Documentation {pretty(selected.documentationReadiness.overallState)}</StatusChip></p>
+            </div></div><div className="record-actions"><button className="secondary" onClick={()=>{setSelected(null);window.history.pushState({},"",`/admin/clients?organizationId=${encodeURIComponent(organizationId)}`)}}>Back to clients</button><button className="secondary" onClick={()=>setTab("Documents")}>Import documents</button><button onClick={()=>setTab("Documents")}>Generate document</button></div>
           </div>
           <nav className="admin-nav" aria-label="Client record">
             {tabs.map((item) => (
@@ -736,6 +744,6 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
           {tab === "History" ? <section><h3>Client history and provenance</h3><p>Historical completed documents, signatures, imports, renewals, and lifecycle records remain immutable.</p>{selected.documents.filter(item=>item.isHistoricalDuplicate).map(item=><article key={`duplicate:${item.id}`}><p className="eyebrow">Superseded draft · preserved history</p><h4>{item.template.name}</h4><p>Created {date(item.generatedAt)}. A newer equivalent document is the only actionable cycle.</p>{permissions.includes("client.document.read")?<a href={`/api/organizations/${organizationId}/clients/${selected.id}/documents?documentId=${item.id}`}>View preserved draft</a>:null}</article>)}{selected.importSessions.map(item=><article key={item.id}><p className="eyebrow">Import · {pretty(item.status)}</p><h4>{item._count.documents} preserved document(s)</h4><p>{item.confirmedAt?`Confirmed ${date(item.confirmedAt)}`:`Updated ${date(item.updatedAt)}`} · {item._count.proposals} reviewed proposal(s)</p></article>)}{selected.history.length?selected.history.map(item=><article key={item.id}><p className="eyebrow">{date(item.occurredAt)} · {pretty(item.entityType)}</p><h4>{pretty(item.eventType.replace(/^client\./,""))}</h4><p>{item.actor?.email?`Recorded by ${item.actor.email}`:"Recorded by the platform workflow"}</p></article>):<div className="empty-state">No material client events have been recorded.</div>}</section> : null}
         </section>
       ) : null}
-    </main>
+    </main></PortalShell>
   );
 }

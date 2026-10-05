@@ -1,2 +1,3 @@
 import EvidenceOperations from "./evidence-operations";
-export default function Page(){return <><nav className="phase-nav" aria-label="Employer administration"><a href="/admin/compliance-operations">Employer operations</a><a href="/admin/action-center">Action center</a><a href="/admin/policy-operations">Policy operations</a><a href="/admin/competencies">Competency assessments</a></nav><EvidenceOperations/></>}
+import {PortalShell} from "@/app/components/portal-ui";
+export default async function Page({searchParams}:{searchParams:Promise<{organizationId?:string}>}){const{organizationId=""}=await searchParams;return <PortalShell organizationId={organizationId} current="Evidence review"><EvidenceOperations/></PortalShell>}

@@ -1,5 +1,5 @@
 "use client";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 type Summary = {
   employeesRequiringAttention: number;
   openActions: number;
@@ -97,9 +97,9 @@ type Result = {
 };
 const pretty = (v: string) => v.toLowerCase().replaceAll("_", " ");
 const when = (v: string | null) => (v ? new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(v)) : "No determinable deadline");
-export default function ActionCenter() {
+export default function ActionCenter({initialOrganizationId="",productionIdentity=false}:{initialOrganizationId?:string;productionIdentity?:boolean}) {
   const [userId, setUserId] = useState(""),
-    [organizationId, setOrganizationId] = useState(""),
+    [organizationId, setOrganizationId] = useState(initialOrganizationId),
     [result, setResult] = useState<Result | null>(null),
     [message, setMessage] = useState(""),
     [busy, setBusy] = useState(false),
@@ -107,10 +107,7 @@ export default function ActionCenter() {
     [category, setCategory] = useState(""),
     [deadline, setDeadline] = useState(""),
     [page, setPage] = useState(1);
-  const headers = {
-    "content-type": "application/json",
-    "x-dev-user-id": userId,
-  };
+  const headers:Record<string,string> = productionIdentity?{"content-type":"application/json"}:{"content-type": "application/json","x-dev-user-id": userId};
   async function load(nextPage = 1) {
     setBusy(true);
     setMessage("");
@@ -170,6 +167,9 @@ export default function ActionCenter() {
     e.preventDefault();
     void load(1);
   }
+  // The authenticated landing route fixes the organization for the mounted production view.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(()=>{if(productionIdentity&&organizationId)void load(1)},[productionIdentity,organizationId]);
   return (
     <main className="admin-shell">
       <header>
@@ -177,7 +177,7 @@ export default function ActionCenter() {
         <h1>Compliance Action Center</h1>
         <p className="lede">Prioritized operational actions derived from recorded compliance, evidence, clinical, assignment, client-document renewal, and audit state. This view is not a legal certification.</p>
       </header>
-      <section className="portal-signin">
+      {!productionIdentity?<section className="portal-signin">
         <h2>Organization access</h2>
         <form className="auth" onSubmit={submit}>
           <label>
@@ -190,7 +190,7 @@ export default function ActionCenter() {
           </label>
           <button disabled={busy}>{busy ? "Loading…" : "Open Action Center"}</button>
         </form>
-      </section>
+      </section>:null}
       <p className="portal-message" role="status" aria-live="polite">
         {message}
       </p>
