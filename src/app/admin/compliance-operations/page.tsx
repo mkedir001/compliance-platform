@@ -1,2 +1,15 @@
 import EmployerOperationsPortal from "../operations-portal";
-export default async function Operations({searchParams}:{searchParams:Promise<{organizationId?:string}>}){const{organizationId=""}=await searchParams,productionIdentity=process.env.NODE_ENV==="production";return <>{!productionIdentity?<nav className="phase-nav" aria-label="Employer administration"><a href="/admin/setup">Organization setup</a><a href="/admin/workforce-onboarding">Workforce onboarding</a><a href="/admin/action-center">Action center</a><a href="/admin/policy-operations">Policy operations</a><a href="/admin/evidence-operations">Evidence operations</a><a href="/admin/reporting">Reporting and audit</a><a href="/notifications">Notifications</a></nav>:null}<EmployerOperationsPortal initialOrganizationId={organizationId} productionIdentity={productionIdentity}/></>}
+import { headers } from "next/headers";
+import { redirect } from "next/navigation";
+import { developmentVisualQaUserId, requireAuthenticatedUser } from "@/domain/auth/authentication";
+import { resolveDevelopmentVisualQaLanding } from "@/domain/auth/development-visual-qa";
+
+export default async function Operations({searchParams}:{searchParams:Promise<{organizationId?:string}>}){
+  const {organizationId=""}=await searchParams;
+  if(process.env.NODE_ENV==="production") return <EmployerOperationsPortal initialOrganizationId={organizationId} productionIdentity/>;
+  const incoming=await headers(),request=new Request("http://localhost",{headers:Object.fromEntries(incoming.entries())});
+  if(!developmentVisualQaUserId(request)) redirect("/dev/visual-qa");
+  const user=await requireAuthenticatedUser(request),destination=await resolveDevelopmentVisualQaLanding(user.id);
+  if(!destination) redirect("/dev/visual-qa?error=unauthorized");
+  return <EmployerOperationsPortal initialOrganizationId={destination.organizationId} developmentVisualQaIdentity/>;
+}

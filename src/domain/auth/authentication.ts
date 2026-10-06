@@ -6,6 +6,20 @@ import { prisma } from "@/lib/prisma";
 import { productionEnvironment, type ProductionEnvironment } from "@/lib/env";
 import { AuthenticationError } from "./errors";
 
+export const DEVELOPMENT_VISUAL_QA_COOKIE = "compliance_visual_qa_user";
+
+export function developmentVisualQaUserId(request: Request) {
+  if (process.env.NODE_ENV === "production") return null;
+  const cookie = request.headers.get("cookie") ?? "";
+  for (const part of cookie.split(";")) {
+    const [name, ...value] = part.trim().split("=");
+    if (name === DEVELOPMENT_VISUAL_QA_COOKIE) {
+      try { return decodeURIComponent(value.join("=")); } catch { return null; }
+    }
+  }
+  return null;
+}
+
 export function productionAuthSignature(userId: string, timestamp: string, secret: string) { return createHmac("sha256", secret).update(`${timestamp}.${userId}`).digest("hex"); }
 function legacyProductionUserId(request: Request, config: Extract<ProductionEnvironment, { PRODUCTION_AUTH_MODE: "trusted-proxy-hmac" }>) {
   const userId = request.headers.get("x-auth-user-id"), timestamp = request.headers.get("x-auth-timestamp"), signature = request.headers.get("x-auth-signature");
@@ -80,7 +94,7 @@ export async function requireVerifiedInvitationIdentity(request: Request, depend
  * Development identity headers are never accepted in production. */
 export async function requireAuthenticatedUser(request: Request, dependencies: { albVerifier?: AssertionVerifier } = {}) {
   if (process.env.NODE_ENV !== "production") {
-    const userId = request.headers.get("x-dev-user-id") ?? process.env.DEV_USER_ID;
+    const userId = request.headers.get("x-dev-user-id") ?? developmentVisualQaUserId(request) ?? process.env.DEV_USER_ID;
     if (!userId) throw new AuthenticationError("Authentication required");
     const user = await prisma.user.findFirst({ where: { id: userId, status: "ACTIVE" } });
     if (!user) throw new AuthenticationError("Active user not found");
