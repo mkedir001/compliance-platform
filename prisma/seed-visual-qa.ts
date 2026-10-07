@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { PrismaClient } from "@prisma/client";
+import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { DEVELOPMENT_VISUAL_QA_ORGANIZATION_NAME, DEVELOPMENT_VISUAL_QA_ORGANIZATION_SLUG, DEVELOPMENT_VISUAL_QA_OWNER_EMAIL } from "../src/domain/auth/development-visual-qa";
 
 if (process.env.NODE_ENV === "production" || process.env.VISUAL_QA_MODE !== "true") throw new Error("Visual-QA seed requires the development-only visual-QA runtime.");
@@ -9,7 +10,8 @@ if (!["localhost", "127.0.0.1", "[::1]"].includes(target.hostname) || target.por
 const db = new PrismaClient();
 const permissions = ["organization.read","organization.manage","employee.read","employee.manage","training.read","training.manage","training.catalog.read","training.catalog.manage","training.assignment.read","training.assignment.manage","training.progress.read","training.assessment.manage","training.equivalency.review","training.curriculum.publish","training.curriculum.coverage.read","competency.read","competency.assess","competency.manage","certificate.read","certificate.issue","certificate.revoke","onboarding.read","onboarding.manage","policy.read","policy.manage","policy.assign","work_readiness.read","work_readiness.evaluate","compliance.operations.read","service_assignment.read","service_assignment.manage","service_assignment.override","compliance_issue.read","compliance_issue.reconcile","compliance_issue.manage","recipient.read","recipient.readSensitive","recipient.readDocuments","recipient.uploadDocuments","recipient.assignStaff","clinical.review","medication.approve","audit.read","audit.export","audit.session.manage","audit.portal.read","client.read","client.create","client.update","client.intake.manage","client.document.read","client.document.generate","client.signature.manage","client.export"];
 const at = (value: string) => new Date(value);
-const digest = (value: string) => createHash("sha256").update(value).digest("hex");
+const digest = (value: string|Uint8Array) => createHash("sha256").update(value).digest("hex");
+async function syntheticPdf(title:string,status:string){const pdf=await PDFDocument.create(),page=pdf.addPage([612,792]),font=await pdf.embedFont(StandardFonts.Helvetica),bold=await pdf.embedFont(StandardFonts.HelveticaBold);page.drawText(title,{x:54,y:720,size:18,font:bold,color:rgb(.08,.24,.19)});page.drawText(`Development-only visual-QA ${status} document`,{x:54,y:690,size:11,font});page.drawText("Contains synthetic data only.",{x:54,y:665,size:10,font});return Buffer.from(await pdf.save())}
 
 async function main() {
   if (await db.organization.count()) throw new Error("Visual-QA seed expects an empty dedicated database. Run pnpm visual-qa:reset.");
@@ -51,11 +53,13 @@ async function main() {
   ]);
   const [rightsTemplate,faceTemplate] = await Promise.all([
     db.clientDocumentTemplate.create({data:{organizationId:organization.id,code:"VQA-RIGHTS",name:"Synthetic Rights Acknowledgment",documentType:"RIGHTS_ACKNOWLEDGMENT",versionNumber:1,renewalPolicy:"ANNUAL",renewalWarningDays:30,contentJson:{renderer:"BASIC",synthetic:true}}}),
-    db.clientDocumentTemplate.create({data:{organizationId:organization.id,code:"VQA-FACE",name:"Synthetic Face Sheet",documentType:"FACE_SHEET",versionNumber:1,renewalPolicy:"NONE",contentJson:{renderer:"BASIC",synthetic:true}}}),
+    db.clientDocumentTemplate.create({data:{organizationId:organization.id,code:"VQA-FACE",name:"Synthetic Face Sheet",documentType:"FACE_SHEET",versionNumber:1,renewalPolicy:"NONE",contentJson:{renderer:"BASIC",synthetic:true,signerRoles:["CLIENT"]}}}),
   ]);
-  await db.clientDocument.create({data:{organizationId:organization.id,clientId:clients[0].id,templateId:rightsTemplate.id,documentType:"RIGHTS_ACKNOWLEDGMENT",status:"COMPLETED",source:"IMPORTED",originalFileName:"synthetic-historical-rights.pdf",sourceDocumentHash:digest("synthetic-historical-rights"),importedAt:at("2025-10-01"),snapshotJson:{synthetic:true,completionBasis:"historical imported QA fixture"},generatedByUserId:owner.id,generatedAt:at("2025-10-01"),finalizedAt:at("2025-10-01"),authoritativeCompletedAt:at("2025-10-01")}});
-  const signatureDocument = await db.clientDocument.create({data:{organizationId:organization.id,clientId:clients[1].id,templateId:faceTemplate.id,documentType:"FACE_SHEET",status:"READY_FOR_SIGNATURE",source:"GENERATED",snapshotJson:{synthetic:true},generatedByUserId:owner.id,generatedAt:at("2026-10-03")}});
-  await db.signatureEnvelope.create({data:{organizationId:organization.id,clientId:clients[1].id,documentId:signatureDocument.id,mode:"SEND_FOR_SIGNATURE",provider:"native",status:"DRAFT",signers:{create:{role:"CLIENT",name:"Demo Client Two",email:"demo.client.two@example.test",required:true,status:"PENDING"}}}});
+  const rightsPdf=await syntheticPdf("Synthetic Rights Acknowledgment","completed"),facePdf=await syntheticPdf("Synthetic Face Sheet","signature-ready");
+  await db.clientDocument.create({data:{organizationId:organization.id,clientId:clients[0].id,templateId:rightsTemplate.id,documentType:"RIGHTS_ACKNOWLEDGMENT",status:"COMPLETED",source:"IMPORTED",originalFileName:"synthetic-historical-rights.pdf",sourceDocumentHash:digest(rightsPdf),importedAt:at("2025-10-01"),snapshotJson:{synthetic:true,completionBasis:"historical imported QA fixture"},renderedPdf:rightsPdf,finalPdf:rightsPdf,generatedByUserId:owner.id,generatedAt:at("2025-10-01"),finalizedAt:at("2025-10-01"),authoritativeCompletedAt:at("2025-10-01")}});
+  const signatureDocument = await db.clientDocument.create({data:{organizationId:organization.id,clientId:clients[1].id,templateId:faceTemplate.id,documentType:"FACE_SHEET",status:"READY_FOR_SIGNATURE",source:"GENERATED",snapshotJson:{synthetic:true},renderedPdf:facePdf,generatedByUserId:owner.id,generatedAt:at("2026-10-03"),finalizedAt:at("2026-10-03")}}),frozenHash=digest(facePdf);
+  const signatureEnvelope=await db.signatureEnvelope.create({data:{organizationId:organization.id,clientId:clients[1].id,documentId:signatureDocument.id,mode:"SIGN_NOW",provider:"native",status:"READY",frozenPdf:facePdf,frozenDocumentHash:frozenHash,consentVersion:"native-esign-consent-v1",signers:{create:{role:"CLIENT",name:"Demo Client Two",required:true,status:"PENDING"}}}}),rendition=await db.signatureRendition.create({data:{envelopeId:signatureEnvelope.id,sequence:0,pdf:facePdf,renditionHash:frozenHash,sourceContentHash:frozenHash}});
+  await db.signatureEnvelope.update({where:{id:signatureEnvelope.id},data:{currentRenditionId:rendition.id}});
 
   console.log(JSON.stringify({dataset:"visual-qa",organization:DEVELOPMENT_VISUAL_QA_ORGANIZATION_NAME,owner:DEVELOPMENT_VISUAL_QA_OWNER_EMAIL,employees:employees.length,clients:clients.length},null,2));
 }

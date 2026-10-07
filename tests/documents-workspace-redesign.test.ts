@@ -1,0 +1,11 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+
+const source=(path:string)=>readFileSync(join(process.cwd(),path),"utf8");
+describe("client documents workspace",()=>{
+  it("provides accessible in-place document selection and authoritative same-origin previews",()=>{const portal=source("src/app/admin/clients/clients-portal.tsx"),route=source("src/app/api/organizations/[organizationId]/clients/[clientId]/documents/route.ts"),config=source("next.config.ts");expect(portal).toContain('className="documents-split"');expect(portal).toContain('role="listbox"');expect(portal).toContain('aria-selected={active}');expect(portal).toContain('setSelectedDocumentId(document.id)');expect(portal).toContain('className="authoritative-document-preview"');expect(portal).toContain('&disposition=inline');expect(route).toContain('z.enum(["inline","attachment"])');expect(config).toContain('/api/organizations/:organizationId/clients/:clientId/documents');expect(config).toContain('frame-ancestors \'self\'')});
+  it("chooses final, progressive current, or source renditions without presenting an unsigned source as signed",()=>{const portal=source("src/app/admin/clients/clients-portal.tsx");expect(portal).toContain('selectedDocument.envelope.status==="COMPLETED"&&!selectedDocument.signatureIntegrityIssue?"final":"current"');expect(portal).toContain('selectedDocument.status==="COMPLETED"?"final":"source"');expect(portal).toContain("No accepted signature is hidden by an unsigned source preview.")});
+  it("keeps requests, generation, imports, renewals, and signing controls contextual",()=>{const portal=source("src/app/admin/clients/clients-portal.tsx");for(const text of ["Request document","Generate document","Import PDF","outstanding document request(s)","Renewal details","Sign now","Send for signature","Reissue","Revoke","Download signature evidence"])expect(portal).toContain(text);expect(portal).toContain("if(result.id)setSelectedDocumentId(result.id)")});
+  it("adapts the 30/70 workspace for tablet and mobile",()=>{const css=source("src/app/globals.css");expect(css).toContain("grid-template-columns:minmax(260px,30%) minmax(0,70%)");expect(css).toContain(".documents-split{display:flex;flex-direction:column");expect(css).toContain(".document-select-card.selected")});
+});
