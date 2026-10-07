@@ -39,13 +39,14 @@ type Props = {
   onAnswer: (assessment: TrainingAssessment, question: TrainingQuestion, selected: string[]) => void;
   onComplete: (item: TrainingContent) => void;
   onSubmit: (assessment: TrainingAssessment) => void;
+  fixedEmployee?: boolean;
 };
 
 const pretty = (value: string) => value.toLowerCase().replaceAll("_", " ");
 const displayName = (employee: TrainingOperation["employee"]) => `${employee.preferredName ?? employee.firstName} ${employee.lastName}`;
 const date = (value: string | null) => value ? new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(value)) : null;
 
-export default function TrainingOperationsWorkspace({ data, selectedEmployeeId, selectedAssignmentId, detail, answers, busy, saving, feedback, onRefresh, onEmployeeChange, onCourseChange, onAnswer, onComplete, onSubmit }: Props) {
+export default function TrainingOperationsWorkspace({ data, selectedEmployeeId, selectedAssignmentId, detail, answers, busy, saving, feedback, onRefresh, onEmployeeChange, onCourseChange, onAnswer, onComplete, onSubmit, fixedEmployee = false }: Props) {
   const employees = [...new Map(data.items.map(item => [item.employee.id, item.employee])).values()].sort((a, b) => displayName(a).localeCompare(displayName(b)));
   const selectedEmployee = employees.find(employee => employee.id === selectedEmployeeId) ?? null;
   const courses = data.items.filter(item => item.employee.id === selectedEmployeeId);
@@ -65,7 +66,7 @@ export default function TrainingOperationsWorkspace({ data, selectedEmployeeId, 
     </div>
     {employees.length ? <>
       <section className="training-context" aria-label="Selected employee training summary">
-        <div className="training-employee-header"><label>Employee<select value={selectedEmployeeId} onChange={event => onEmployeeChange(event.target.value)} disabled={busy}>{employees.map(employee => <option key={employee.id} value={employee.id}>{displayName(employee)}{employee.employeeNumber ? ` · ${employee.employeeNumber}` : ""}</option>)}</select></label><div><span>Next due</span><strong>{nextDue ? date(nextDue) : "No deadline established"}</strong></div></div>
+        <div className="training-employee-header">{fixedEmployee ? <div><span>Employee</span><strong>{selectedEmployee ? displayName(selectedEmployee) : "Selected employee"}</strong></div> : <label>Employee<select value={selectedEmployeeId} onChange={event => onEmployeeChange(event.target.value)} disabled={busy}>{employees.map(employee => <option key={employee.id} value={employee.id}>{displayName(employee)}{employee.employeeNumber ? ` · ${employee.employeeNumber}` : ""}</option>)}</select></label>}<div><span>Next due</span><strong>{nextDue ? date(nextDue) : "No deadline established"}</strong></div></div>
         <div className="training-summary-grid">
           <div><strong>{aggregateProgress}%</strong><span>overall course progress</span></div>
           <div><strong>{counts.completed}</strong><span>completed</span></div>

@@ -290,15 +290,8 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
   }, [selected, initialRequestId, tab]);
   const tabs = ["Overview", "Intake", "Services", "Documents", "Signatures", "Readiness", "Contacts", "History"];
   const directoryView = clientDirectoryView(directoryStatus, clients.length);
-  const portalQuery = organizationId ? `?organizationId=${encodeURIComponent(organizationId)}` : "";
-  const portalNavigation = [
-    ...(permissions.includes("compliance.operations.read") ? [{ label: "Home", href: `/admin/home${portalQuery}`, group: "Workspace" }, { label: "Employees", href: `/admin/employees${portalQuery}`, group: "People" }] : []),
-    { label: "Clients", href: `/admin/clients${portalQuery}`, group: "People", current: true },
-    ...(permissions.includes("audit.session.manage") ? [{ label: "Auditor access", href: `/admin/audit-access${portalQuery}`, group: "Records" }] : []),
-    ...(permissions.includes("audit.read") ? [{ label: "Reports and audit", href: `/admin/reporting${portalQuery}`, group: "Records" }] : []),
-  ];
   return (
-    <PortalShell organizationId={organizationId} current="Clients" navigation={portalNavigation}><main className="admin-shell" aria-busy={busy}>
+    <PortalShell organizationId={organizationId} current="Clients"><main className="admin-shell" aria-busy={busy}>
       <header>
         <p className="eyebrow">Client management</p>
         <h1>Clients, intake, and documents</h1>

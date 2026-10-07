@@ -4,7 +4,7 @@ import * as React from "react";
 import { beforeAll, describe, expect, it } from "vitest";
 import EmployerOperationsPortal from "@/app/admin/operations-portal";
 import EmployeePortal from "@/app/learn/portal";
-import { resolveAuthenticatedLanding } from "@/domain/auth/landing";
+import { resolveAuthenticatedLanding, resolveAuthorizedAdminDestination } from "@/domain/auth/landing";
 
 const db = new PrismaClient();
 (globalThis as typeof globalThis & { React: typeof React }).React = React;
@@ -51,6 +51,12 @@ describe.sequential("authenticated production landing", () => {
 
   it("does not expose organizations without an active tenant membership", async () => {
     expect((await resolveAuthenticatedLanding(adminId)).some(destination => destination.organizationId === secondOrganizationId)).toBe(false);
+  });
+
+  it("derives a single authorized organization and rejects arbitrary organization context", async () => {
+    await expect(resolveAuthorizedAdminDestination(adminId)).resolves.toMatchObject({ organizationId });
+    await expect(resolveAuthorizedAdminDestination(adminId, organizationId)).resolves.toMatchObject({ organizationId });
+    await expect(resolveAuthorizedAdminDestination(adminId, secondOrganizationId)).resolves.toBeNull();
   });
 
   it("removes manual identity controls from production portal rendering while retaining development tooling", () => {

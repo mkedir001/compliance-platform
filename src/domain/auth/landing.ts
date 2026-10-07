@@ -19,3 +19,9 @@ export async function resolveAuthenticatedLanding(userId: string): Promise<Landi
     return destinations;
   });
 }
+
+export async function resolveAuthorizedAdminDestination(userId: string, requestedOrganizationId = "") {
+  const destinations = (await resolveAuthenticatedLanding(userId)).filter(destination => destination.experience === "admin");
+  if (requestedOrganizationId) return destinations.find(destination => destination.organizationId === requestedOrganizationId) ?? null;
+  return destinations.length === 1 ? destinations[0] : null;
+}
