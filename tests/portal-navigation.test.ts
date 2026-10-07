@@ -7,9 +7,9 @@ describe("employer portal navigation state", () => {
 
   it("keeps Training → Compliance → Dashboard on the explicit destination", () => {
     const compliance=portalLocation(training,"org-1","compliance");
-    expect(portalLocationState(compliance.href)).toEqual({tab:"compliance",employeeId:undefined,assignmentId:undefined});
+    expect(portalLocationState(compliance.href)).toEqual({tab:"compliance",employeeId:undefined,assignmentId:undefined,employeeTab:"overview"});
     const dashboard=portalLocation(compliance.href,"org-1","dashboard");
-    expect(portalLocationState(dashboard.href)).toEqual({tab:"dashboard",employeeId:undefined,assignmentId:undefined});
+    expect(portalLocationState(dashboard.href)).toEqual({tab:"dashboard",employeeId:undefined,assignmentId:undefined,employeeTab:"overview"});
     expect(dashboard.searchParams.has("view")).toBe(false);
   });
 
@@ -24,7 +24,17 @@ describe("employer portal navigation state", () => {
 
   it("preserves employee and assignment selection only for Training", () => {
     const destination=portalLocation("http://localhost:3000/admin/compliance-operations?organizationId=org-1","org-1","training",{employeeId:"employee-2",assignmentId:"assignment-2"});
-    expect(portalLocationState(destination.href)).toEqual({tab:"training",employeeId:"employee-2",assignmentId:"assignment-2"});
+    expect(portalLocationState(destination.href)).toEqual({tab:"training",employeeId:"employee-2",assignmentId:"assignment-2",employeeTab:"overview"});
+  });
+
+  it("deep-links employee tabs without leaking record state into top-level navigation", () => {
+    const employee=portalLocation("http://localhost:3000/admin/compliance-operations?organizationId=org-1","org-1","employees",{employeeId:"employee-2",employeeTab:"training"});
+    expect(portalLocationState(employee.href)).toEqual({tab:"employees",employeeId:"employee-2",assignmentId:undefined,employeeTab:"training"});
+    const compliance=portalLocation(employee.href,"org-1","compliance");
+    expect(compliance.searchParams.has("employeeId")).toBe(false);
+    expect(compliance.searchParams.has("employeeTab")).toBe(false);
+    const restored=portalLocation(compliance.href,"org-1","employees",{employeeId:"employee-2",employeeTab:"history"});
+    expect(portalLocationState(restored.href).employeeTab).toBe("history");
   });
 
   it("uses read-oriented copy for Dashboard and reserves reconciliation copy for the mutation", async () => {

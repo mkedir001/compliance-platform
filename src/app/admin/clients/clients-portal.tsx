@@ -438,7 +438,7 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
         )}
       </section> : null}
       {selected ? (
-        <section>
+        <section className="client-record">
           <div className="record-header">
             <div className="record-identity"><span className="record-avatar" aria-hidden="true">{selected.legalFirstName[0]}{selected.legalLastName[0]}</span><div>
               <p className="eyebrow">Client record</p>
@@ -448,7 +448,7 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
               <p><StatusChip tone={selected.status==="ACTIVE"?"good":selected.status==="DISCHARGED"||selected.status==="ARCHIVED"?"neutral":"warning"}>{pretty(selected.status)}</StatusChip> <StatusChip tone={selected.documentationReadiness.overallState==="CURRENT"?"good":selected.documentationReadiness.overallState==="OVERDUE"?"danger":"warning"}>Documentation {pretty(selected.documentationReadiness.overallState)}</StatusChip></p>
             </div></div><div className="record-actions"><button className="secondary" onClick={()=>{setSelected(null);window.history.pushState({},"",`/admin/clients?organizationId=${encodeURIComponent(organizationId)}`)}}>Back to clients</button><button className="secondary" onClick={()=>setTab("Documents")}>Import documents</button><button onClick={()=>setTab("Documents")}>Generate document</button></div>
           </div>
-          <nav className="admin-nav" aria-label="Client record">
+          <nav className="admin-nav record-tabs" aria-label="Client record">
             {tabs.map((item) => (
               <button key={item} className={tab === item ? "active" : ""} onClick={() => setTab(item)}>
                 {item}
