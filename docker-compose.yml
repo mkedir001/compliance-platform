@@ -7,5 +7,20 @@ services:
       POSTGRES_DB: compliance_platform
     ports: ["55432:5432"]
     volumes: ["postgres_data:/var/lib/postgresql/data"]
+  visual-qa-postgres:
+    profiles: ["visual-qa"]
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: compliance_platform_visual_qa
+    ports: ["55433:5432"]
+    volumes: ["postgres_visual_qa_data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d compliance_platform_visual_qa"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
 volumes:
   postgres_data:
+  postgres_visual_qa_data:

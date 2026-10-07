@@ -11,6 +11,8 @@
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:seed": "prisma db seed",
+    "visual-qa:reset": "node scripts/reset-visual-qa.mjs",
+    "visual-qa:dev": "node scripts/start-visual-qa.mjs",
     "bootstrap:production": "tsx scripts/bootstrap-production.ts",
     "initialize:production-training": "tsx scripts/initialize-production-training.ts",
     "link:cognito-user": "tsx scripts/link-cognito-user.ts",

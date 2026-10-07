@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { DEVELOPMENT_VISUAL_QA_COOKIE } from "@/domain/auth/authentication";
-import { DEVELOPMENT_VISUAL_QA_OWNER_EMAIL, resolveDevelopmentVisualQaLanding } from "@/domain/auth/development-visual-qa";
+import { DEVELOPMENT_VISUAL_QA_OWNER_EMAIL, developmentVisualQaMode, resolveDevelopmentVisualQaLanding } from "@/domain/auth/development-visual-qa";
 
 export async function POST(request: Request) {
-  if (process.env.NODE_ENV === "production") return Response.json({error:"Not found"},{status:404});
+  if (!developmentVisualQaMode()) return Response.json({error:"Not found"},{status:404});
   const user=await prisma.user.findFirst({where:{email:DEVELOPMENT_VISUAL_QA_OWNER_EMAIL,status:"ACTIVE"}});
   if(!user) return Response.json({error:"Run the development seed before starting visual QA."},{status:409});
   const destination=await resolveDevelopmentVisualQaLanding(user.id);

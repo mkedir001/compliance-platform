@@ -5,11 +5,12 @@ import { SimpleFetcher, type Fetcher } from "aws-jwt-verify/https";
 import { prisma } from "@/lib/prisma";
 import { productionEnvironment, type ProductionEnvironment } from "@/lib/env";
 import { AuthenticationError } from "./errors";
+import { developmentVisualQaMode } from "./development-visual-qa";
 
 export const DEVELOPMENT_VISUAL_QA_COOKIE = "compliance_visual_qa_user";
 
 export function developmentVisualQaUserId(request: Request) {
-  if (process.env.NODE_ENV === "production") return null;
+  if (!developmentVisualQaMode()) return null;
   const cookie = request.headers.get("cookie") ?? "";
   for (const part of cookie.split(";")) {
     const [name, ...value] = part.trim().split("=");
