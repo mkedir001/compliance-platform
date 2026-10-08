@@ -14,6 +14,21 @@ export const intakeSteps = [
 
 export type IntakeStepId = (typeof intakeSteps)[number]["id"];
 export type IntakeSectionState = "UNVISITED" | "INCOMPLETE" | "COMPLETE";
+export type IntakeValidationLevel = "REQUIRED" | "RECOMMENDED" | "OPTIONAL";
+
+export const intakeValidationLevels: Record<IntakeStepId, IntakeValidationLevel> = {
+  CLIENT: "REQUIRED",
+  SERVICES: "REQUIRED",
+  REPRESENTATIVE: "REQUIRED",
+  CASE_MANAGER: "REQUIRED",
+  EMERGENCY_CONTACTS: "RECOMMENDED",
+  HEALTH: "REQUIRED",
+  MEDICATIONS: "REQUIRED",
+  ABOUT_PERSON: "OPTIONAL",
+  RIGHTS: "REQUIRED",
+  ROI: "REQUIRED",
+  DOCUMENTS: "REQUIRED",
+};
 
 export const livingSituationOptions = [
   { value: "OWN_HOME_APARTMENT", label: "Own home/apartment" },
@@ -66,6 +81,7 @@ type IntakeEvaluationSource = {
 };
 
 export type IntakeBlocker = { step: IntakeStepId; label: string; messages: string[] };
+export type IntakeRecommendation = IntakeBlocker;
 
 function object(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
@@ -151,13 +167,17 @@ export function evaluateIntake(source: IntakeEvaluationSource) {
     const visited = saved.visited.has(step.id) || step.id === "DOCUMENTS" && source.intakeStatus === "COMPLETED";
     return [step.id, !visited ? "UNVISITED" : issues[step.id].length ? "INCOMPLETE" : "COMPLETE"];
   })) as Record<IntakeStepId, IntakeSectionState>;
-  const completionRequired = new Set<IntakeStepId>(["CLIENT", "SERVICES", "REPRESENTATIVE", "CASE_MANAGER", "EMERGENCY_CONTACTS", "HEALTH", "MEDICATIONS", "RIGHTS", "ROI"]);
-  const blockers = intakeSteps.filter(step => completionRequired.has(step.id) && (!saved.visited.has(step.id) || issues[step.id].length)).map(step => ({
+  const blockers = intakeSteps.filter(step => step.id !== "DOCUMENTS" && intakeValidationLevels[step.id] === "REQUIRED" && (!saved.visited.has(step.id) || issues[step.id].length)).map(step => ({
     step: step.id,
     label: step.label,
     messages: !saved.visited.has(step.id) ? ["Visit and save this section.", ...issues[step.id]] : issues[step.id],
   }));
-  return { visitedSections: [...saved.visited], sectionStates, blockers, issues };
+  const recommendations = intakeSteps.filter(step => intakeValidationLevels[step.id] === "RECOMMENDED" && issues[step.id].length).map(step => ({
+    step: step.id,
+    label: step.label,
+    messages: issues[step.id],
+  }));
+  return { visitedSections: [...saved.visited], sectionStates, blockers, recommendations, issues, validationLevels: intakeValidationLevels };
 }
 
 export function serviceTypeLabel(value: unknown) {
