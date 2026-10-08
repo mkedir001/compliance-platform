@@ -3235,6 +3235,9 @@ model ClientDocument {
   finalPdf                 Bytes?
   generatedByUserId        String
   generatedAt              DateTime                @default(now())
+  versionNumber            Int                     @default(1)
+  supersedesDocumentId     String?
+  sourceDataOutdatedAt     DateTime?
   finalizedAt              DateTime?
   authoritativeCompletedAt DateTime?
   renewalOfDocumentId      String?                 @unique
@@ -3245,6 +3248,8 @@ model ClientDocument {
   intake                   ClientIntake?           @relation(fields: [intakeId], references: [id], onDelete: Restrict)
   template                 ClientDocumentTemplate  @relation(fields: [templateId], references: [id], onDelete: Restrict)
   generatedBy              User                    @relation("ClientDocumentGeneratedBy", fields: [generatedByUserId], references: [id], onDelete: Restrict)
+  supersedes               ClientDocument?         @relation("ClientDocumentVersions", fields: [supersedesDocumentId], references: [id], onDelete: Restrict)
+  supersededBy             ClientDocument[]        @relation("ClientDocumentVersions")
   envelope                 SignatureEnvelope?
   roiAuthorization         RoiAuthorization?
   renewalOf                ClientDocument?         @relation("ClientDocumentRenewals", fields: [renewalOfDocumentId], references: [id], onDelete: Restrict)
@@ -3254,6 +3259,8 @@ model ClientDocument {
   confirmedImportDocument  ClientImportDocument?
 
   @@index([organizationId, clientId, documentType, status])
+  @@index([organizationId, clientId, documentType, versionNumber])
+  @@index([supersedesDocumentId])
   @@index([organizationId, clientId, authoritativeCompletedAt])
 }
 
