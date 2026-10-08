@@ -2889,6 +2889,22 @@ enum ClientImportDocumentDisposition {
   CURRENT_SIGNATURE_REQUIRED
 }
 
+enum ImportedSignatureReviewStatus {
+  UNREVIEWED
+  CONFIRMED_EXTERNAL
+  NEEDS_REVIEW
+  MISSING_REQUIRED_SIGNATURE
+  REJECTED
+  NOT_APPLICABLE
+}
+
+enum ImportedValidityReviewStatus {
+  UNREVIEWED
+  CONFIRMED
+  UNKNOWN
+  NOT_APPLICABLE
+}
+
 enum ClientDocumentRenewalPolicy {
   NONE
   ANNUAL
@@ -2959,6 +2975,10 @@ enum SignatureInvitationStatus {
 enum SignatureInvitationDeliveryStatus {
   PENDING
   ACCEPTED
+  DELIVERED
+  DEFERRED
+  BOUNCED
+  COMPLAINED
   FAILED
 }
 
@@ -3024,9 +3044,9 @@ model Client {
   auditAccessScopes       AuditAccessClient[]
   importSessions          ClientImportSession[]
 
+  @@unique([organizationId, creationRequestId])
   @@index([organizationId, status, legalLastName, legalFirstName])
   @@index([organizationId, maPmiNumber])
-  @@unique([organizationId, creationRequestId])
 }
 
 model ClientService {
@@ -3265,52 +3285,55 @@ model ClientDocument {
 }
 
 model ClientImportSession {
-  id               String                 @id @default(cuid())
-  organizationId   String
-  uploadedByUserId String
+  id                String                 @id @default(cuid())
+  organizationId    String
+  uploadedByUserId  String
   creationRequestId String?
-  existingClientId String?
-  target           ClientImportTarget
-  status           ClientImportStatus     @default(REVIEW_REQUIRED)
-  confirmedAt      DateTime?
-  canceledAt       DateTime?
-  createdAt        DateTime               @default(now())
-  updatedAt        DateTime               @updatedAt
-  organization     Organization           @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  uploadedBy       User                   @relation("ClientImportUploader", fields: [uploadedByUserId], references: [id], onDelete: Restrict)
-  existingClient   Client?                @relation(fields: [existingClientId], references: [id], onDelete: Restrict)
-  documents        ClientImportDocument[]
-  proposals        ClientImportProposal[]
+  existingClientId  String?
+  target            ClientImportTarget
+  status            ClientImportStatus     @default(REVIEW_REQUIRED)
+  confirmedAt       DateTime?
+  canceledAt        DateTime?
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+  organization      Organization           @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  uploadedBy        User                   @relation("ClientImportUploader", fields: [uploadedByUserId], references: [id], onDelete: Restrict)
+  existingClient    Client?                @relation(fields: [existingClientId], references: [id], onDelete: Restrict)
+  documents         ClientImportDocument[]
+  proposals         ClientImportProposal[]
 
+  @@unique([organizationId, creationRequestId])
   @@index([organizationId, status, createdAt])
   @@index([organizationId, existingClientId])
-  @@unique([organizationId, creationRequestId])
 }
 
 model ClientImportDocument {
-  id                    String                          @id @default(cuid())
-  organizationId        String
-  sessionId             String
-  originalFileName      String
-  mimeType              String
-  originalBytes         Bytes
-  sha256                String
-  classification        ClientImportClassification      @default(UNKNOWN)
-  status                ClientImportDocumentStatus      @default(REVIEW_REQUIRED)
-  extractionMethod      ClientImportExtractionMethod?
-  pageCount             Int
-  ocrRequired           Boolean                         @default(false)
-  extractedText         String?
-  classificationSignals Json?
-  disposition           ClientImportDocumentDisposition @default(PRESERVE_ONLY)
-  reviewedCompletedAt   DateTime?
-  confirmedDocumentId   String?                         @unique
-  createdAt             DateTime                        @default(now())
-  updatedAt             DateTime                        @updatedAt
-  organization          Organization                    @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  session               ClientImportSession             @relation(fields: [sessionId], references: [id], onDelete: Restrict)
-  confirmedDocument     ClientDocument?                 @relation(fields: [confirmedDocumentId], references: [id], onDelete: Restrict)
-  proposals             ClientImportProposal[]
+  id                     String                          @id @default(cuid())
+  organizationId         String
+  sessionId              String
+  originalFileName       String
+  mimeType               String
+  originalBytes          Bytes
+  sha256                 String
+  classification         ClientImportClassification      @default(UNKNOWN)
+  status                 ClientImportDocumentStatus      @default(REVIEW_REQUIRED)
+  extractionMethod       ClientImportExtractionMethod?
+  pageCount              Int
+  ocrRequired            Boolean                         @default(false)
+  extractedText          String?
+  classificationSignals  Json?
+  disposition            ClientImportDocumentDisposition @default(PRESERVE_ONLY)
+  reviewedCompletedAt    DateTime?
+  signatureReviewStatus  ImportedSignatureReviewStatus   @default(UNREVIEWED)
+  validityReviewStatus   ImportedValidityReviewStatus    @default(UNREVIEWED)
+  reviewedExpirationDate DateTime?                       @db.Date
+  confirmedDocumentId    String?                         @unique
+  createdAt              DateTime                        @default(now())
+  updatedAt              DateTime                        @updatedAt
+  organization           Organization                    @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  session                ClientImportSession             @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+  confirmedDocument      ClientDocument?                 @relation(fields: [confirmedDocumentId], references: [id], onDelete: Restrict)
+  proposals              ClientImportProposal[]
 
   @@unique([sessionId, sha256])
   @@index([organizationId, sessionId, classification])
@@ -3448,6 +3471,8 @@ model SignatureSigner {
   id                     String                    @id @default(cuid())
   envelopeId             String
   role                   String
+  requirementKey         String?
+  requirementIndex       Int                       @default(0)
   name                   String
   identityPending        Boolean                   @default(false)
   email                  String?
@@ -3474,6 +3499,7 @@ model SignatureSigner {
   envelope               SignatureEnvelope         @relation(fields: [envelopeId], references: [id], onDelete: Restrict)
   invitations            SignatureInvitation[]
 
+  @@unique([envelopeId, requirementIndex])
   @@index([envelopeId, status])
 }
 

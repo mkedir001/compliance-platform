@@ -78,6 +78,11 @@ export async function reconcileMailgunWebhook(payload: unknown, signingKey: stri
         const invitation = await tx.employeePortalInvitation.updateMany({ where: { id: attempt.communication.logicalId, organizationId: attempt.communication.organizationId }, data: { deliveryStatus: invitationStatus, deliveryUpdatedAt: providerAt, deliveredAt, deliveryErrorCode: errorCode } });
         if (invitation.count) await tx.auditEvent.create({ data: { organizationId: attempt.communication.organizationId, eventType: `employee.portal_invitation_${invitationStatus.toLowerCase()}`, entityType: "EmployeePortalInvitation", entityId: attempt.communication.logicalId, metadataJson: { provider: "mailgun", deliveryState: state, errorCode } } });
       }
+      if (attempt.communication.logicalType === "SignatureInvitation") {
+        const invitationStatus = state === "DELIVERED" ? "DELIVERED" : state === "DEFERRED" ? "DEFERRED" : state === "COMPLAINED" ? "COMPLAINED" : "BOUNCED";
+        const invitation = await tx.signatureInvitation.updateMany({ where: { id: attempt.communication.logicalId, organizationId: attempt.communication.organizationId }, data: { deliveryStatus: invitationStatus, deliveredAt, deliveryErrorCode: errorCode } });
+        if (invitation.count) await tx.auditEvent.create({ data: { organizationId: attempt.communication.organizationId, eventType: `client.signature_invitation_${invitationStatus.toLowerCase()}`, entityType: "SignatureInvitation", entityId: attempt.communication.logicalId, metadataJson: { provider: "mailgun", deliveryState: state, errorCode } } });
+      }
     });
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") return { status: "DUPLICATE" as const, deliveryState: state };
