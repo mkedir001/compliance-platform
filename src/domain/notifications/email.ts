@@ -82,22 +82,37 @@ export class MailgunRelayEmailProvider implements EmailProvider{
   }
 }
 
-export type EmailAttemptObserver=(event:{context:EmailDeliveryContext;sequence:number;provider:string;outcome:"ACCEPTED"|"FAILED";classification?:EmailFailureClassification;code?:string;messageId?:string;attemptedAt:Date;acceptedAt?:Date;final:boolean})=>Promise<void>;
+export type EmailAttemptDecision="ACCEPTED"|"RETRY_PRIMARY"|"FAILOVER"|"STOPPED";
+export type EmailAttemptObserver=(event:{context:EmailDeliveryContext;sequence:number;provider:string;outcome:"ACCEPTED"|"FAILED";decision:EmailAttemptDecision;classification?:EmailFailureClassification;code?:string;messageId?:string;attemptedAt:Date;acceptedAt?:Date;final:boolean})=>Promise<void>;
 export const persistEmailAttempt:EmailAttemptObserver=async event=>{
   await prisma.$transaction(async tx=>{
     const communication=await tx.emailCommunication.upsert({where:{organizationId_purpose_logicalType_logicalId:{organizationId:event.context.organizationId,purpose:event.context.purpose,logicalType:event.context.logicalType,logicalId:event.context.logicalId}},create:{organizationId:event.context.organizationId,purpose:event.context.purpose,logicalType:event.context.logicalType,logicalId:event.context.logicalId},update:{}});
     const latest=await tx.emailProviderAttempt.aggregate({where:{communicationId:communication.id},_max:{sequence:true}}),sequence=(latest._max.sequence??0)+1;
-    await tx.emailProviderAttempt.create({data:{communicationId:communication.id,sequence,provider:event.provider,outcome:event.outcome,failureClassification:event.classification,errorCode:event.code,providerMessageId:event.messageId,attemptedAt:event.attemptedAt,acceptedAt:event.acceptedAt}});
+    await tx.emailProviderAttempt.create({data:{communicationId:communication.id,sequence,provider:event.provider,outcome:event.outcome,decision:event.decision,failureClassification:event.classification,errorCode:event.code,providerMessageId:event.messageId,attemptedAt:event.attemptedAt,acceptedAt:event.acceptedAt}});
     await tx.emailCommunication.update({where:{id:communication.id},data:event.outcome==="ACCEPTED"?{state:"PROVIDER_ACCEPTED",selectedProvider:event.provider,providerMessageId:event.messageId,providerAcceptedAt:event.acceptedAt}:{state:event.final?(event.classification==="AMBIGUOUS_OUTCOME"?"AMBIGUOUS":"FAILED"):"PENDING",selectedProvider:event.provider}});
   });
 };
 export class PurposeRoutedEmailProvider implements EmailProvider{
   configured:boolean;name:string;
-  constructor(private readonly purpose:EmailCommunicationPurpose,private readonly primary:EmailProvider,private readonly secondary?:EmailProvider,private readonly observe?:EmailAttemptObserver){this.configured=primary.configured;this.name=secondary?`${primary.name}->${secondary.name}`:primary.name}
+  constructor(private readonly purpose:EmailCommunicationPurpose,private readonly primary:EmailProvider,private readonly secondary?:EmailProvider,private readonly observe?:EmailAttemptObserver,private readonly retryPolicy:{maxPrimaryRetries:number;baseDelayMs:number;sleep:(milliseconds:number)=>Promise<void>}={maxPrimaryRetries:1,baseDelayMs:250,sleep:milliseconds=>new Promise(resolve=>setTimeout(resolve,milliseconds))}){this.configured=primary.configured;this.name=secondary?`${primary.name}->${secondary.name}`:primary.name}
   async send(message:ComplianceEmail):Promise<EmailSendResult>{
     if(message.deliveryContext&&message.deliveryContext.purpose!==this.purpose)throw new EmailDeliveryError("Email purpose does not match delivery policy",false,"EMAIL_PURPOSE_MISMATCH","POLICY_OR_VALIDATION_FAILURE");
     const providers=[this.primary,...(this.secondary?.configured?[this.secondary]:[])];
-    for(let index=0;index<providers.length;index++){const provider=providers[index],attemptedAt=new Date();try{const result=await provider.send(message),accepted={...result,provider:result.provider??provider.name};if(message.deliveryContext&&this.observe)await this.observe({context:message.deliveryContext,sequence:index+1,provider:accepted.provider!,outcome:"ACCEPTED",messageId:accepted.messageId,attemptedAt,acceptedAt:accepted.acceptedAt??new Date(),final:true});return accepted}catch(error){const failure=error instanceof EmailDeliveryError?error:new EmailDeliveryError("Email provider outcome is unknown",false,"EMAIL_PROVIDER_UNKNOWN","AMBIGUOUS_OUTCOME"),eligible=failure.classification==="CAPACITY_OR_QUOTA_FAILURE"||failure.classification==="RETRYABLE_TRANSPORT_FAILURE";const final=!eligible||index===providers.length-1;if(message.deliveryContext&&this.observe)await this.observe({context:message.deliveryContext,sequence:index+1,provider:provider.name,outcome:"FAILED",classification:failure.classification,code:failure.code,attemptedAt,final});if(final)throw failure}}
+    let sequence=0;
+    for(let providerIndex=0;providerIndex<providers.length;providerIndex++){
+      const provider=providers[providerIndex],primary=providerIndex===0,maxRetries=primary?this.retryPolicy.maxPrimaryRetries:0;
+      for(let retry=0;retry<=maxRetries;retry++){
+        const attemptedAt=new Date();sequence++;
+        try{const result=await provider.send(message),accepted={...result,provider:result.provider??provider.name};if(message.deliveryContext&&this.observe)await this.observe({context:message.deliveryContext,sequence,provider:accepted.provider!,outcome:"ACCEPTED",decision:"ACCEPTED",messageId:accepted.messageId,attemptedAt,acceptedAt:accepted.acceptedAt??new Date(),final:true});return accepted}
+        catch(error){
+          const failure=error instanceof EmailDeliveryError?error:new EmailDeliveryError("Email provider outcome is unknown",false,"EMAIL_PROVIDER_UNKNOWN","AMBIGUOUS_OUTCOME"),retryablePrimary=primary&&failure.classification==="RETRYABLE_TRANSPORT_FAILURE"&&retry<maxRetries,eligibleForFailover=["DEFINITIVELY_NOT_ACCEPTED","RETRYABLE_TRANSPORT_FAILURE","CAPACITY_OR_QUOTA_FAILURE"].includes(failure.classification),canFailover=providerIndex<providers.length-1&&eligibleForFailover,decision:EmailAttemptDecision=retryablePrimary?"RETRY_PRIMARY":canFailover?"FAILOVER":"STOPPED",final=decision==="STOPPED";
+          if(message.deliveryContext&&this.observe)await this.observe({context:message.deliveryContext,sequence,provider:provider.name,outcome:"FAILED",decision,classification:failure.classification,code:failure.code,attemptedAt,final});
+          if(retryablePrimary){await this.retryPolicy.sleep(this.retryPolicy.baseDelayMs*2**retry);continue}
+          if(canFailover)break;
+          throw failure;
+        }
+      }
+    }
     throw new EmailDeliveryError("No email provider is configured",false,"EMAIL_PROVIDER_NOT_CONFIGURED","AUTH_OR_CONFIGURATION_FAILURE");
   }
 }
@@ -105,7 +120,10 @@ export class PurposeRoutedEmailProvider implements EmailProvider{
 export function providerFromConfig(config:EmailEnvironment):EmailProvider{if(config.provider==="ses")return new SesEmailProvider(config);if(config.provider==="paubox")return new PauboxRelayEmailProvider(config);if(config.provider==="mailgun")return new MailgunRelayEmailProvider(config);return new HttpEmailProvider(config)}
 export function configuredEmailProvider(source:NodeJS.ProcessEnv|Record<string,string|undefined>=process.env):EmailProvider{const config=emailEnvironment(source);return config?providerFromConfig(config):new LocalNoopEmailProvider()}
 export function configuredEmailProviderForPurpose(purpose:EmailCommunicationPurpose,source:NodeJS.ProcessEnv|Record<string,string|undefined>=process.env):EmailProvider{
-  if(purpose==="CLIENT_SECURE"){const primary=configuredEmailProvider(source),fallback=source.AWS_REGION&&source.MAILGUN_RELAY_FUNCTION_NAME&&source.MAILGUN_FROM?new MailgunRelayEmailProvider({provider:"mailgun",region:source.AWS_REGION,relayFunctionName:source.MAILGUN_RELAY_FUNCTION_NAME,from:source.MAILGUN_FROM,fromName:source.MAILGUN_FROM_NAME||undefined,replyTo:source.MAILGUN_REPLY_TO||undefined}):undefined;return new PurposeRoutedEmailProvider(purpose,primary,fallback,persistEmailAttempt)}
+  if(purpose==="CLIENT_SECURE"){
+    const primary=source.AWS_REGION&&source.MAILGUN_RELAY_FUNCTION_NAME&&source.MAILGUN_FROM?new MailgunRelayEmailProvider({provider:"mailgun",region:source.AWS_REGION,relayFunctionName:source.MAILGUN_RELAY_FUNCTION_NAME,from:source.MAILGUN_FROM,fromName:source.MAILGUN_FROM_NAME||undefined,replyTo:source.MAILGUN_REPLY_TO||undefined}):new LocalNoopEmailProvider(),configuredFallback=emailEnvironment(source),fallback=configuredFallback?.provider==="paubox"?new PauboxRelayEmailProvider(configuredFallback):undefined;
+    return new PurposeRoutedEmailProvider(purpose,primary,fallback,persistEmailAttempt)
+  }
   const config=workforceEmailEnvironment(source);
   if(!config)return new LocalNoopEmailProvider();
   return new PurposeRoutedEmailProvider(purpose,providerFromConfig(config),undefined,persistEmailAttempt);

@@ -644,6 +644,13 @@ enum EmailProviderAttemptOutcome {
   FAILED
 }
 
+enum EmailProviderAttemptDecision {
+  ACCEPTED
+  RETRY_PRIMARY
+  FAILOVER
+  STOPPED
+}
+
 enum EmailDeliveryState {
   NOT_CONFIRMED
   DELIVERED
@@ -2735,22 +2742,23 @@ model EmailCommunication {
 }
 
 model EmailProviderAttempt {
-  id                    String                      @id @default(cuid())
+  id                    String                        @id @default(cuid())
   communicationId       String
   sequence              Int
   provider              String
   outcome               EmailProviderAttemptOutcome
+  decision              EmailProviderAttemptDecision?
   failureClassification String?
   errorCode             String?
   providerMessageId     String?
   attemptedAt           DateTime
   acceptedAt            DateTime?
-  deliveryState         EmailDeliveryState          @default(NOT_CONFIRMED)
+  deliveryState         EmailDeliveryState            @default(NOT_CONFIRMED)
   deliveryUpdatedAt     DateTime?
   deliveredAt           DateTime?
   deliveryErrorCode     String?
-  createdAt             DateTime                    @default(now())
-  communication         EmailCommunication          @relation(fields: [communicationId], references: [id], onDelete: Restrict)
+  createdAt             DateTime                      @default(now())
+  communication         EmailCommunication            @relation(fields: [communicationId], references: [id], onDelete: Restrict)
   events                EmailProviderEvent[]
 
   @@unique([communicationId, sequence])

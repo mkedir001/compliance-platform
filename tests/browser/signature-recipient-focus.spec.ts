@@ -12,3 +12,17 @@ test("recipient name accepts continuous typing without remount or focus loss",as
   await email.fill("recipient@example.test");
   await expect(email).toHaveValue("recipient@example.test");
 });
+
+test("staff identity accepts a full name and persists only after explicit confirmation",async({page})=>{
+  await page.goto("/dev/signature-recipient-focus");
+  const name=page.getByTestId("signature-staff-name");
+  await name.click();
+  await name.pressSequentially("Authorized Staff Member",{delay:15});
+  await expect(name).toBeFocused();
+  await expect(name).toHaveValue("Authorized Staff Member");
+  await expect(page.getByTestId("staff-draft-value")).toHaveText("Authorized Staff Member");
+  await expect(page.getByTestId("staff-confirmation-count")).toHaveText("0");
+  await page.getByTestId("confirm-staff-identity").click();
+  await expect(page.getByText("Staff identity confirmed for this signing cycle.")).toBeVisible();
+  await expect(page.getByTestId("staff-confirmation-count")).toHaveText("1");
+});

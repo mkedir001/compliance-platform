@@ -33,6 +33,8 @@ const productionInfrastructureSchema = z.object({
 }).superRefine((value, context) => {
   if (value.SIGNING_DELIVERY_MODE === "test") context.addIssue({ code: "custom", message: "Test signing delivery is disabled in production", path: ["SIGNING_DELIVERY_MODE"] });
   if (value.SIGNING_DELIVERY_MODE === "email" && !value.EMAIL_PROVIDER) context.addIssue({ code: "custom", message: "EMAIL_PROVIDER is required for production signing delivery", path: ["EMAIL_PROVIDER"] });
+  if (value.SIGNING_DELIVERY_MODE === "email" && (!value.AWS_REGION || !value.MAILGUN_RELAY_FUNCTION_NAME || !value.MAILGUN_FROM)) context.addIssue({ code: "custom", message: "AWS_REGION, MAILGUN_RELAY_FUNCTION_NAME, and MAILGUN_FROM are required for Mailgun-first signing delivery", path: ["MAILGUN_RELAY_FUNCTION_NAME"] });
+  if (value.SIGNING_DELIVERY_MODE === "email" && value.MAILGUN_FROM !== "notifications@mail.waldah.com") context.addIssue({ code: "custom", message: "Signature Mailgun sender must be notifications@mail.waldah.com", path: ["MAILGUN_FROM"] });
   if (value.EMAIL_PROVIDER && !value.EMAIL_FROM) context.addIssue({ code: "custom", message: "EMAIL_FROM is required for production email", path: ["EMAIL_FROM"] });
   if (value.EMAIL_PROVIDER === "ses" && !value.AWS_REGION) context.addIssue({ code: "custom", message: "AWS_REGION is required for SES delivery", path: ["AWS_REGION"] });
   if (value.EMAIL_PROVIDER === "paubox" && !value.AWS_REGION) context.addIssue({ code: "custom", message: "AWS_REGION is required for Paubox relay invocation", path: ["AWS_REGION"] });
@@ -43,7 +45,7 @@ const productionInfrastructureSchema = z.object({
   if (value.WORKFORCE_EMAIL_PROVIDER && !value.WORKFORCE_EMAIL_FROM) context.addIssue({ code: "custom", message: "WORKFORCE_EMAIL_FROM is required for workforce email", path: ["WORKFORCE_EMAIL_FROM"] });
   if (value.WORKFORCE_EMAIL_PROVIDER === "ses" && !value.AWS_REGION) context.addIssue({ code: "custom", message: "AWS_REGION is required for workforce SES delivery", path: ["AWS_REGION"] });
   if (value.WORKFORCE_EMAIL_PROVIDER === "mailgun" && (!value.AWS_REGION || !value.MAILGUN_RELAY_FUNCTION_NAME)) context.addIssue({ code: "custom", message: "AWS_REGION and MAILGUN_RELAY_FUNCTION_NAME are required for workforce Mailgun delivery", path: ["MAILGUN_RELAY_FUNCTION_NAME"] });
-  if ((value.EMAIL_PROVIDER === "mailgun" || value.WORKFORCE_EMAIL_PROVIDER === "mailgun") && !value.MAILGUN_WEBHOOK_SIGNING_KEY) context.addIssue({ code: "custom", message: "MAILGUN_WEBHOOK_SIGNING_KEY is required for Mailgun delivery reconciliation", path: ["MAILGUN_WEBHOOK_SIGNING_KEY"] });
+  if ((value.SIGNING_DELIVERY_MODE === "email" || value.EMAIL_PROVIDER === "mailgun" || value.WORKFORCE_EMAIL_PROVIDER === "mailgun") && !value.MAILGUN_WEBHOOK_SIGNING_KEY) context.addIssue({ code: "custom", message: "MAILGUN_WEBHOOK_SIGNING_KEY is required for Mailgun delivery reconciliation", path: ["MAILGUN_WEBHOOK_SIGNING_KEY"] });
   if (value.WORKFORCE_EMAIL_PROVIDER === "http" && (!value.WORKFORCE_EMAIL_API_URL || !value.WORKFORCE_EMAIL_API_TOKEN)) context.addIssue({ code: "custom", message: "WORKFORCE_EMAIL_API_URL and WORKFORCE_EMAIL_API_TOKEN are required for workforce HTTP email delivery", path: ["WORKFORCE_EMAIL_API_URL"] });
 });
 

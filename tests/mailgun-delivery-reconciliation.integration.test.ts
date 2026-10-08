@@ -24,8 +24,8 @@ describe("Mailgun delivery reconciliation", () => {
 
   afterAll(async () => { await prisma.$disconnect(); });
 
-  function payload(id: string, event: string, options: { severity?: string; messageId?: string; token?: string; reason?: string } = {}) {
-    const timestamp = String(Math.floor(Date.now() / 1000)), token = options.token ?? `${id}-token`;
+  function payload(id: string, event: string, options: { severity?: string; messageId?: string; token?: string; reason?: string; timestamp?:number } = {}) {
+    const timestamp = String(options.timestamp??Math.floor(Date.now() / 1000)), token = options.token ?? `${id}-token`;
     return { signature: { timestamp, token, signature: createHmac("sha256", signingKey).update(timestamp + token).digest("hex") }, "event-data": { id, event, severity: options.severity, reason: options.reason, timestamp: Number(timestamp), message: { headers: { "message-id": options.messageId ?? `<${tag}@mail.waldah.com>` }, body: "must never be persisted" }, "delivery-status": { code: 250, "enhanced-code": "2.0.0" }, recipient: "must-not-be-persisted@example.test" } };
   }
 
@@ -47,8 +47,11 @@ describe("Mailgun delivery reconciliation", () => {
   });
 
   it("records permanent failure without overwriting provider acceptance", async () => {
-    await expect(reconcileMailgunWebhook(payload(`${tag}-failed`, "failed", { severity: "permanent", reason: "espblock" }), signingKey)).resolves.toEqual({ status: "RECONCILED", deliveryState: "BOUNCED" });
+    const providerTimestamp=Math.floor(Date.now()/1000)+30;
+    await expect(reconcileMailgunWebhook(payload(`${tag}-failed`, "failed", { severity: "permanent", reason: "espblock",timestamp:providerTimestamp }), signingKey)).resolves.toEqual({ status: "RECONCILED", deliveryState: "BOUNCED" });
     expect(await prisma.emailCommunication.findUniqueOrThrow({ where: { id: communicationId } })).toMatchObject({ state: "PROVIDER_ACCEPTED", deliveryState: "BOUNCED", deliveryErrorCode: "2.0.0" });
     expect(await prisma.employeePortalInvitation.findUniqueOrThrow({ where: { id: invitationId } })).toMatchObject({ deliveryStatus: "BOUNCED" });
+    await expect(reconcileMailgunWebhook(payload(`${tag}-older-delivered`,"delivered",{timestamp:providerTimestamp-60}),signingKey)).resolves.toEqual({status:"RECONCILED",deliveryState:"DELIVERED"});
+    expect(await prisma.emailCommunication.findUniqueOrThrow({where:{id:communicationId}})).toMatchObject({deliveryState:"BOUNCED"});
   });
 });
