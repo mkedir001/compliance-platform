@@ -1,0 +1,16 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+import { clientImportFieldLabel, clientImportProposalNeedsReview, clientImportReviewState } from "@/app/admin/clients/import-review";
+
+const source=(path:string)=>readFileSync(join(process.cwd(),path),"utf8");
+
+describe("production client QA remediation",()=>{
+  it("renders policy-eligible remote actions without suppressing missing-email recipients",()=>{const portal=source("src/app/admin/clients/clients-portal.tsx");expect(portal).toContain("function ManagedSignerActions");expect(portal).toContain('requirement?.allowedMethods.includes("SEND_FOR_SIGNATURE")');expect(portal).not.toContain('allowedMethods.includes("SEND_FOR_SIGNATURE")&&signer.email');expect(portal).toContain("Recipient email not recorded");expect(portal).toContain("Confirm the intended recipient before secure delivery.");expect(portal).toContain('type="email"');expect(portal).toContain('if(busy)return');expect(portal).toContain('invitationActive?"REISSUE":"SEND_INVITATION"');expect(portal).toContain(">Revoke</button>");expect(portal).toContain('signer.status!=="SIGNED"')});
+
+  it("places Back to Clients in the page heading and removes it from the identity-card actions",()=>{const portal=source("src/app/admin/clients/clients-portal.tsx"),heading=portal.indexOf('className="client-page-heading"'),record=portal.indexOf('className="record-header"'),back=portal.indexOf(">Back to Clients</button>");expect(heading).toBeGreaterThan(-1);expect(back).toBeGreaterThan(heading);expect(back).toBeLessThan(record);expect(portal).not.toContain(">Back to clients</button>")});
+
+  it("uses human-readable import metadata and compact explicit review controls",()=>{const workflow=source("src/app/admin/clients/client-import-workflow.tsx"),styles=source("src/app/globals.css");for(const label of ["Proposed canonical information","Accept","Edit","Ignore","Corrected value","Technical source details","Canonical field","Reliability","decision(s) remaining"])expect(workflow).toContain(label);expect(workflow).toContain("clientImportFieldLabel(proposal.fieldPath)");expect(workflow).toContain("clientImportProposalNeedsReview");expect(workflow).toContain('aria-busy={busy}');expect(workflow).toContain('event.key==="Enter"');expect(workflow).not.toContain('<form className="inline-correction"');expect(styles).toContain(".compact-review-actions button");expect(styles).toContain(".import-proposal.state-conflict");expect(styles).toContain(".inline-correction");expect(styles).toContain("@media(max-width:760px)")});
+
+  it("maps canonical import paths and decision states without promoting raw IDs",()=>{expect(clientImportFieldLabel("client.legalFirstName")).toBe("Legal first name");expect(clientImportFieldLabel("emergencyContacts.1.phone")).toBe("Emergency contact 2 — phone");expect(clientImportFieldLabel("medications.0.dose")).toBe("Medication 1 — dose");expect(clientImportFieldLabel("roi.categories.MEDICAL_HEALTH")).toBe("ROI information category — Medical health");expect(clientImportReviewState("CONFLICT")).toBe("Conflict — review required");expect(clientImportReviewState("REJECTED")).toBe("Ignored");expect(clientImportProposalNeedsReview("CORROBORATED")).toBe(true);expect(clientImportProposalNeedsReview("CORRECTED")).toBe(false)});
+});
