@@ -5,7 +5,8 @@ import { AuthorizationError, ResourceNotFoundError, ValidationError } from "@/do
 import { requireOrganizationAccess, requirePermission } from "@/domain/permissions/authorization";
 import type { ClientRenewalStatus } from "@/domain/clients/renewals";
 import { getClientDocumentationReadiness, getOrganizationClientDocumentationReadiness, type DocumentationReadinessFilter } from "@/domain/clients/readiness";
-import { rightsInput, roiInput } from "@/domain/clients/documents";
+import { createRoiAuthorization, generateClientDocument, rightsInput, roiInput } from "@/domain/clients/documents";
+import { resolvePermissionCodes } from "@/domain/permissions/authorization";
 import { buildSignatureRequirements } from "@/domain/clients/signature-requirements";
 import { signatureCompletionIntegrity, signingInvitationLifetimeHours } from "@/domain/clients/signatures";
 import { evaluateIntake } from "@/domain/clients/intake-state";
@@ -125,7 +126,17 @@ export async function completeIntake(user:Pick<User,"id">,organizationId:string,
   if(evaluation.blockers.length)throw new ValidationError("Intake review cannot be completed until the listed sections are resolved.",{sections:evaluation.blockers});
   const completedAt=new Date(),prior=intake.progressJson&&typeof intake.progressJson==="object"&&!Array.isArray(intake.progressJson)?intake.progressJson as Prisma.JsonObject:{},visitedSections=[...new Set([...evaluation.visitedSections,"DOCUMENTS"])],sectionStates={...evaluation.sectionStates,DOCUMENTS:"COMPLETE"},completedSections=Object.entries(sectionStates).filter(([,status])=>status==="COMPLETE").map(([step])=>step);
   await prisma.$transaction([prisma.clientIntake.update({where:{id:intake.id},data:{status:"COMPLETED",currentStep:"REVIEW_COMPLETE",completedAt,completedByUserId:user.id,lastSavedAt:completedAt,progressJson:{...prior,visitedSections,completedSections,sectionStates} as Prisma.InputJsonValue}}),prisma.client.update({where:{id:clientId},data:{status:"ACTIVE"}})]);
-  await audit(organizationId,user.id,"client.intake_completed","ClientIntake",intake.id,{validatedSections:visitedSections});return{intakeId:intake.id,completedAt,alreadyCompleted:false};
+  const{membership}=await requireOrganizationAccess(user,organizationId),permissions=await resolvePermissionCodes(membership.id),prepared:string[]=[],notPrepared:string[]=[],confirmedImports=await prisma.clientImportDocument.findMany({where:{organizationId,status:"ACCEPTED",session:{existingClientId:clientId,status:"CONFIRMED"}},select:{classification:true}}),classifications=new Set(confirmedImports.map(item=>item.classification));
+  if(classifications.size&&permissions.has("client.document.generate")){
+    const answers=prior.documentAnswers&&typeof prior.documentAnswers==="object"&&!Array.isArray(prior.documentAnswers)?prior.documentAnswers as Prisma.JsonObject:{};
+    const tasks:Array<[string,()=>Promise<unknown>]>=[];
+    if(classifications.has("FACE_SHEET"))tasks.push(["Face Sheet",()=>generateClientDocument(user,organizationId,clientId,"FACE_SHEET")]);
+    if(classifications.has("INTAKE_CHECKLIST"))tasks.push(["Intake Checklist",()=>generateClientDocument(user,organizationId,clientId,"INTAKE_CHECKLIST")]);
+    if(classifications.has("RIGHTS_ACKNOWLEDGMENT")){if(answers.rights)tasks.push(["Rights Acknowledgment",()=>generateClientDocument(user,organizationId,clientId,"RIGHTS_ACKNOWLEDGMENT",answers.rights)]);else notPrepared.push("Rights Acknowledgment: required intake answers are unavailable")}
+    if(classifications.has("ROI")){if(answers.roi)tasks.push(["Release of Information",()=>createRoiAuthorization(user,organizationId,clientId,answers.roi as z.input<typeof roiInput>)]);else notPrepared.push("Release of Information: required recipient, scope, purpose, and dates are unavailable")}
+    for(const[label,work]of tasks){try{await work();prepared.push(label)}catch(error){notPrepared.push(`${label}: ${error instanceof Error?error.message:"generation failed"}`)}}
+  }else if(classifications.size)notPrepared.push("Automatic document preparation requires client.document.generate permission");
+  await audit(organizationId,user.id,"client.intake_completed","ClientIntake",intake.id,{validatedSections:visitedSections,preparedDocuments:prepared,documentPreparationIssues:notPrepared});return{intakeId:intake.id,completedAt,alreadyCompleted:false,documentPreparation:{prepared,notPrepared}};
 }
 
 export async function createProfessionalContact(user:Pick<User,"id">,organizationId:string,input:{name:string;agency?:string;contactType:string;email?:string;phone?:string;supervisorName?:string;supervisorPhone?:string}){await authorize(user,organizationId,"client.intake.manage");const parsed=z.object({name:z.string().min(1).max(200),agency:z.string().max(200).optional(),contactType:z.string().min(1).max(100),email:z.string().email().optional(),phone:z.string().max(50).optional(),supervisorName:z.string().max(200).optional(),supervisorPhone:z.string().max(50).optional()}).parse(input);return prisma.professionalContact.create({data:{...parsed,organizationId}})}
