@@ -62,7 +62,6 @@ export const confirmImportInput = z.object({
   if (value.target === "UPDATE_EXISTING" && !value.clientId) context.addIssue({ code: "custom", path: ["clientId"], message: "Select the existing client to update" });
 });
 export const importDocumentSettingsInput=z.object({documentId:z.string().cuid(),classification:z.nativeEnum(ClientImportClassification),disposition:z.nativeEnum(ClientImportDocumentDisposition),completedAt:reviewedDate.optional().nullable()}).superRefine((value,context)=>{
-  if(value.disposition==="HISTORICAL_COMPLETE"&&!value.completedAt)context.addIssue({code:"custom",path:["completedAt"],message:"Enter the completion date for a historical complete document"});
   if(value.completedAt&&value.completedAt>new Date())context.addIssue({code:"custom",path:["completedAt"],message:"Completion date cannot be in the future"});
 });
 
