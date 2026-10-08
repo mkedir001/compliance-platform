@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import GuidedIntake from "./guided-intake";
 import ClientImportWorkflow from "./client-import-workflow";
+import AddClientDrawer from "./add-client-drawer";
 import { clientDirectoryView, type ClientDirectoryLoadStatus } from "./directory-state";
 import type { IntakeStepId } from "@/domain/clients/intake-state";
 import { PortalShell, StatusChip } from "@/app/components/portal-ui";
@@ -44,6 +45,7 @@ type ClientRow = {
   renewalSummary: RenewalSummary;
   documentationReadiness: DocumentationReadiness;
 };
+type ImportSummary={id:string;status:string;target:string;existingClientId:string|null;createdAt:string;updatedAt:string;_count:{documents:number;proposals:number}};
 type ClientDocument = {
   id: string;
   documentType: string;
@@ -64,7 +66,7 @@ type ClientDocument = {
 type ClientRepresentative = { id: string; representativeType: string; name: string; relationship: string | null; email: string | null };
 type ClientDocumentRequest = { id: string; documentType: string; recipientType: string; recipientName: string; deliveryChannel: string; status: string; requestedAt: string | null; dueAt: string | null; latestFollowUpAt: string | null; followUpCount: number; obligationDocumentId: string | null; fulfilledDocumentId: string | null };
 type ClientDetail = ClientRow & {
-  dateOfBirth: string;
+  dateOfBirth: string | null;
   phone: string | null;
   email: string | null;
   maPmiNumber: string | null;
@@ -120,7 +122,7 @@ function ManagedSignerActions({document,signerIndex,busy,onAction,onStart}:{docu
   </div>;
 }
 
-export default function ClientsPortal({ initialOrganizationId = "", initialClientId = "", initialDocumentId = "", initialRequestId = "", initialView = "", productionIdentity = false }: { initialOrganizationId?: string; initialClientId?: string; initialDocumentId?: string; initialRequestId?: string; initialView?:string; productionIdentity?: boolean }) {
+export default function ClientsPortal({ initialOrganizationId = "", initialClientId = "", initialDocumentId = "", initialRequestId = "", initialImportSessionId = "", initialView = "", productionIdentity = false }: { initialOrganizationId?: string; initialClientId?: string; initialDocumentId?: string; initialRequestId?: string; initialImportSessionId?:string; initialView?:string; productionIdentity?: boolean }) {
   const [userId, setUserId] = useState(""),
     [organizationId, setOrganizationId] = useState(initialOrganizationId),
     [clients, setClients] = useState<ClientRow[]>([]),
@@ -131,6 +133,8 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
     [readiness, setReadiness] = useState("ALL"),
     [operational, setOperational] = useState(""),
     [permissions,setPermissions]=useState<string[]>([]),
+    [pendingImports,setPendingImports]=useState<ImportSummary[]>([]),
+    [addClientOpen,setAddClientOpen]=useState(false),
     [directoryStatus,setDirectoryStatus]=useState<ClientDirectoryLoadStatus>("idle"),
     [tab, setTab] = useState("Overview"),
     [editingCompletedIntake,setEditingCompletedIntake]=useState(false),
@@ -164,7 +168,7 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
   }
   async function load() {
     setDirectoryStatus("loading");
-    await run(async () => {try{const[rows,accessResponse]=await Promise.all([request(`?search=${encodeURIComponent(search)}&status=${encodeURIComponent(status)}&renewalStatus=${encodeURIComponent(renewalStatus)}&readiness=${encodeURIComponent(readiness)}&operational=${encodeURIComponent(operational)}`),fetch(`/api/organizations/${organizationId}`,{headers})]),access=await accessResponse.json();if(!accessResponse.ok)throw new Error(access.error??"Organization access failed");setClients(rows as ClientRow[]);setPermissions(access.permissions??[]);setDirectoryStatus("success")}catch(error){setDirectoryStatus("error");throw error}});
+    await run(async () => {try{const[rows,accessResponse,importsResponse]=await Promise.all([request(`?search=${encodeURIComponent(search)}&status=${encodeURIComponent(status)}&renewalStatus=${encodeURIComponent(renewalStatus)}&readiness=${encodeURIComponent(readiness)}&operational=${encodeURIComponent(operational)}`),fetch(`/api/organizations/${organizationId}`,{headers}),fetch(`/api/organizations/${organizationId}/clients/imports`,{headers})]),access=await accessResponse.json(),imports=await importsResponse.json();if(!accessResponse.ok)throw new Error(access.error??"Organization access failed");setClients(rows as ClientRow[]);setPermissions(access.permissions??[]);if(importsResponse.ok)setPendingImports((imports as ImportSummary[]).filter(item=>item.status==="REVIEW_REQUIRED"));setDirectoryStatus("success")}catch(error){setDirectoryStatus("error");throw error}});
   }
   async function open(id: string) {
     await run(async () => {
@@ -177,29 +181,6 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
     setSelected((await request(`/${selected.id}`)) as ClientDetail);
     setClients((await request(`?search=${encodeURIComponent(search)}&status=${encodeURIComponent(status)}&renewalStatus=${encodeURIComponent(renewalStatus)}&readiness=${encodeURIComponent(readiness)}&operational=${encodeURIComponent(operational)}`)) as ClientRow[]);
     setMessage(text);
-  }
-  async function create(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = event.currentTarget,
-      data = new FormData(form);
-    await run(async () => {
-      const created = (await request("", {
-        method: "POST",
-        body: JSON.stringify({
-          legalFirstName: data.get("legalFirstName"),
-          legalLastName: data.get("legalLastName"),
-          preferredName: data.get("preferredName") || undefined,
-          dateOfBirth: data.get("dateOfBirth"),
-          phone: data.get("phone") || undefined,
-          email: data.get("email") || undefined,
-          maPmiNumber: data.get("maPmiNumber") || undefined,
-        }),
-      })) as { client: ClientDetail };
-      form.reset();
-      await load();
-      await open(created.client.id);
-      setMessage("Client created and resumable intake started.");
-    });
   }
   async function documentAction(body: unknown, text: string) {
     if (!selected) return;
@@ -292,11 +273,7 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
   function editCompletedIntake(step:IntakeStepId){setEditStartStep(step);setEditingCompletedIntake(true);setTab("Intake")}
   useEffect(() => {
     if (productionIdentity && organizationId) {
-      void load();
-      if (initialClientId) {
-        setTab(initialDocumentId || initialRequestId || initialView==="Documents" ? "Documents" : initialView==="Signatures" ? "Signatures" : initialView==="Readiness" ? "Readiness" : "Overview");
-        void open(initialClientId);
-      }
+      void (async()=>{await load();if(initialClientId){setTab(initialDocumentId || initialRequestId || initialView==="Documents" ? "Documents" : initialView==="Signatures" ? "Signatures" : initialView==="Readiness" ? "Readiness" : initialView==="Intake" ? "Intake" : "Overview");await open(initialClientId)}})();
     }
   }, [productionIdentity, organizationId, initialClientId, initialDocumentId, initialRequestId, initialView]);
   useEffect(() => {
@@ -323,8 +300,8 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
   return (
     <PortalShell organizationId={organizationId} current="Clients"><main className="admin-shell" aria-busy={busy}>
       <header className="client-page-heading">
-        <div><p className="eyebrow">Client management</p><h1>Clients, intake, and documents</h1><p className="lede">Organization-scoped client records with resumable intake, immutable document history, and renewal management.</p></div>
-        {selected?<button className="secondary" onClick={()=>{setSelected(null);window.history.pushState({},"",`/admin/clients?organizationId=${encodeURIComponent(organizationId)}`)}}>Back to Clients</button>:null}
+        <div><p className="eyebrow">Client management</p><h1>{selected?`${selected.legalFirstName} ${selected.legalLastName}`:initialImportSessionId?"Review imported documents":"Clients"}</h1><p className="lede">{selected?"Client intake, documents, signatures, and renewals.":initialImportSessionId?"Review extracted information before any client record changes.":"Intake, documents, signatures, and renewals for each person you serve."}</p></div>
+        {selected||initialImportSessionId?<button className="secondary" onClick={()=>window.location.assign(`/admin/clients?organizationId=${encodeURIComponent(organizationId)}`)}>Back to Clients</button>:permissions.includes("client.create")?<button onClick={()=>setAddClientOpen(true)}>Add client</button>:null}
       </header>
       {!productionIdentity ? (
         <section className="portal-signin">
@@ -344,7 +321,8 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
       <p className="portal-message" role="status" aria-live="polite">
         {busy ? "Updating authoritative client records…" : message}
       </p>
-      {!selected ? <section>
+      {!selected&&initialImportSessionId?<ClientImportWorkflow organizationId={organizationId} headers={headers} busy={busy} onBusy={setBusy} initialSessionId={initialImportSessionId} standalone onComplete={async clientId=>window.location.assign(`/admin/clients/${clientId}?organizationId=${encodeURIComponent(organizationId)}&view=Intake`)}/>:null}
+      {!selected&&!initialImportSessionId ? <section>
         <div className="section-heading">
           <div>
             <h2>Client directory</h2>
@@ -391,43 +369,10 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
             <button onClick={load}>Apply</button>
           </div>
         </div>
-        {permissions.includes("client.create")?<details>
-          <summary>Add client</summary>
-          <form className="inline-form" onSubmit={create}>
-            <label>
-              Legal first name
-              <input name="legalFirstName" required />
-            </label>
-            <label>
-              Legal last name
-              <input name="legalLastName" required />
-            </label>
-            <label>
-              Preferred name
-              <input name="preferredName" />
-            </label>
-            <label>
-              Date of birth
-              <input name="dateOfBirth" type="date" required />
-            </label>
-            <label>
-              Phone
-              <input name="phone" />
-            </label>
-            <label>
-              Email
-              <input name="email" type="email" />
-            </label>
-            <label>
-              MA/PMI
-              <input name="maPmiNumber" />
-            </label>
-            <button disabled={busy}>Create and begin intake</button>
-          </form>
-        </details>:null}
-        {permissions.includes("client.create")&&permissions.includes("client.update")?<ClientImportWorkflow organizationId={organizationId} headers={headers} busy={busy} onBusy={setBusy} onComplete={async clientId=>{await load();await open(clientId)}}/>:null}
+        {pendingImports.length?<aside className="pending-imports" aria-label="Pending client document imports"><div><p className="eyebrow">Document review pending</p><h3>{pendingImports.length} unfinished import{pendingImports.length===1?"":"s"}</h3><p>Original files are preserved. Resume review before creating or linking a client.</p></div><select aria-label="Choose pending import" defaultValue={pendingImports[0].id} id="pending-import-selection">{pendingImports.map(item=><option key={item.id} value={item.id}>{item._count.documents} document{item._count.documents===1?"":"s"} · updated {new Date(item.updatedAt).toLocaleDateString()}</option>)}</select><button type="button" onClick={()=>{const id=(document.getElementById("pending-import-selection") as HTMLSelectElement).value;window.location.assign(`/admin/clients?organizationId=${encodeURIComponent(organizationId)}&importSessionId=${encodeURIComponent(id)}`)}}>Resume review</button></aside>:null}
         {directoryView === "results" ? (
           <div className="workforce-table client-directory" role="table" aria-label="Client directory">
+            <div className="client-directory-head" role="row"><span>Client</span><span>Status</span><span>Services</span><span>Documentation</span><span>Signatures</span></div>
             {clients.map((client) => (
               <button key={client.id} className={`workforce-row client-directory-row renewal-${client.documentationReadiness.overallState.toLowerCase()}`} onClick={() => open(client.id)}>
                 <span>
@@ -435,15 +380,13 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
                     {client.legalLastName}, {client.preferredName ?? client.legalFirstName}
                   </strong>
                 </span>
-                <span>{pretty(client.status)}</span>
-                <span><strong>{client.intakes[0]?.status?pretty(client.intakes[0].status):"No intake"}</strong><small>{client.intakes[0]?client.intakes[0].status==="COMPLETED"?"Intake complete":`Next: ${pretty(client.intakes[0].currentStep)}`:"No guided intake record"}</small></span>
+                <span><StatusChip tone={client.status==="ACTIVE"?"good":client.status==="DISCHARGED"||client.status==="ARCHIVED"?"neutral":"warning"}>{pretty(client.status)}</StatusChip></span>
                 <span><strong>{client.services.length?client.services.map(item=>pretty(item.serviceType)).join(", "):"No current services"}</strong><small>{client.services.map(item=>pretty(item.status)).join(", ")}</small></span>
-                <span className="renewal-badge">
-                  Documentation: {pretty(client.documentationReadiness.overallState)}
+                <span>
+                  <strong>{pretty(client.documentationReadiness.overallState)}</strong>
                   <small>{client.documentationReadiness.counts.overdue} overdue · {client.documentationReadiness.counts.missing} missing · {client.documentationReadiness.counts.outstandingRequests} collection underway</small>
-                  <small>{client.documentationReadiness.nearestActionableDeadline ? `Nearest ${date(client.documentationReadiness.nearestActionableDeadline)}` : "No determinable deadline"}</small>
                 </span>
-                <span>{client._count.documents} awaiting signature<small>{client._count.documentRequests} outstanding request(s) · {client._count.importSessions} confirmed import(s)</small></span>
+                <span><strong>{client._count.documents?`${client._count.documents} awaiting signature`:"No signatures pending"}</strong><small>{client._count.documentRequests} outstanding request(s)</small></span>
               </button>
             ))}
           </div>
@@ -796,6 +739,7 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
           {tab === "History" ? <section><h3>Client history and provenance</h3><p>Historical completed documents, signatures, imports, renewals, and lifecycle records remain immutable.</p>{selected.documents.filter(item=>item.isHistoricalDuplicate).map(item=><article key={`duplicate:${item.id}`}><p className="eyebrow">Superseded draft · preserved history</p><h4>{item.template.name}</h4><p>Created {date(item.generatedAt)}. A newer equivalent document is the only actionable cycle.</p>{permissions.includes("client.document.read")?<a href={`/api/organizations/${organizationId}/clients/${selected.id}/documents?documentId=${item.id}`}>View preserved draft</a>:null}</article>)}{selected.importSessions.map(item=><article key={item.id}><p className="eyebrow">Import · {pretty(item.status)}</p><h4>{item._count.documents} preserved document(s)</h4><p>{item.confirmedAt?`Confirmed ${date(item.confirmedAt)}`:`Updated ${date(item.updatedAt)}`} · {item._count.proposals} reviewed proposal(s)</p></article>)}{selected.history.length?selected.history.map(item=><article key={item.id}><p className="eyebrow">{date(item.occurredAt)} · {pretty(item.entityType)}</p><h4>{pretty(item.eventType.replace(/^client\./,""))}</h4><p>{item.actor?.email?`Recorded by ${item.actor.email}`:"Recorded by the platform workflow"}</p></article>):<div className="empty-state">No material client events have been recorded.</div>}</section> : null}
         </section>
       ) : null}
+      <AddClientDrawer open={addClientOpen} organizationId={organizationId} headers={headers} onClose={()=>setAddClientOpen(false)} onClientCreated={clientId=>window.location.assign(`/admin/clients/${clientId}?organizationId=${encodeURIComponent(organizationId)}&view=Intake`)} onImportCreated={sessionId=>window.location.assign(`/admin/clients?organizationId=${encodeURIComponent(organizationId)}&importSessionId=${encodeURIComponent(sessionId)}`)}/>
     </main></PortalShell>
   );
 }

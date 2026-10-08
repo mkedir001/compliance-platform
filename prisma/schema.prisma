@@ -2983,7 +2983,8 @@ model Client {
   legalFirstName          String
   legalLastName           String
   preferredName           String?
-  dateOfBirth             DateTime                    @db.Date
+  dateOfBirth             DateTime?                   @db.Date
+  creationRequestId       String?
   gender                  String?
   phone                   String?
   email                   String?
@@ -3025,6 +3026,7 @@ model Client {
 
   @@index([organizationId, status, legalLastName, legalFirstName])
   @@index([organizationId, maPmiNumber])
+  @@unique([organizationId, creationRequestId])
 }
 
 model ClientService {
@@ -3259,6 +3261,7 @@ model ClientImportSession {
   id               String                 @id @default(cuid())
   organizationId   String
   uploadedByUserId String
+  creationRequestId String?
   existingClientId String?
   target           ClientImportTarget
   status           ClientImportStatus     @default(REVIEW_REQUIRED)
@@ -3274,6 +3277,7 @@ model ClientImportSession {
 
   @@index([organizationId, status, createdAt])
   @@index([organizationId, existingClientId])
+  @@unique([organizationId, creationRequestId])
 }
 
 model ClientImportDocument {

@@ -10,9 +10,10 @@ import { buildSignatureRequirements } from "@/domain/clients/signature-requireme
 import { signatureCompletionIntegrity, signingInvitationLifetimeHours } from "@/domain/clients/signatures";
 import { evaluateIntake } from "@/domain/clients/intake-state";
 
+const optionalDate=z.preprocess(value=>value===""||value===null?undefined:value,z.coerce.date().optional());
 export const clientInput = z.object({
   legalFirstName: z.string().trim().min(1).max(100), legalLastName: z.string().trim().min(1).max(100),
-  preferredName: z.string().trim().max(100).optional().nullable(), dateOfBirth: z.coerce.date(), gender: z.string().max(100).optional().nullable(),
+  preferredName: z.string().trim().max(100).optional().nullable(), dateOfBirth: optionalDate, gender: z.string().max(100).optional().nullable(),
   phone: z.string().max(50).optional().nullable(), email: z.string().email().optional().nullable(), addressLine1: z.string().max(200).optional().nullable(),
   addressLine2: z.string().max(200).optional().nullable(), city: z.string().max(100).optional().nullable(), state: z.string().max(50).optional().nullable(),
   postalCode: z.string().max(20).optional().nullable(), maPmiNumber: z.string().max(100).optional().nullable(), waiverProgram: z.string().max(150).optional().nullable(),
@@ -20,6 +21,7 @@ export const clientInput = z.object({
   preferredCommunication: z.string().max(100).optional().nullable(), livingSituation: z.string().max(500).optional().nullable(), strengthsInterests: z.string().max(5000).optional().nullable(),
   culturalPractices: z.string().max(5000).optional().nullable(), supportNeeds: z.string().max(5000).optional().nullable(),
 });
+export const createClientInput=clientInput.extend({requestId:z.string().uuid().optional()});
 export const intakeInput = z.object({
   postCompletionUpdate: z.boolean().optional(),
   currentStep: z.enum(["CLIENT","SERVICES","REPRESENTATIVE","CASE_MANAGER","EMERGENCY_CONTACTS","HEALTH","MEDICATIONS","HEALTH_MEDICATION","ABOUT_PERSON","RIGHTS","ROI","DOCUMENTS","SIGNATURES","REVIEW_COMPLETE"]),
@@ -60,7 +62,16 @@ export const clientIntakeChecklistDefinitions=[
   ["MANAGER_REVIEW","Designated coordinator / manager review"],
 ] as const;
 
-export async function createClient(user:Pick<User,"id">,organizationId:string,input:z.input<typeof clientInput>){await authorize(user,organizationId,"client.create");const data=clientInput.parse(input);const client=await prisma.client.create({data:{...data,organizationId,createdByUserId:user.id,status:"INTAKE_IN_PROGRESS"}});const intake=await prisma.clientIntake.create({data:{organizationId,clientId:client.id,status:"IN_PROGRESS",checklistItems:{create:clientIntakeChecklistDefinitions.map(([code,label],index)=>({code,label,sequence:index+1}))}}});await audit(organizationId,user.id,"client.created","Client",client.id,{intakeId:intake.id});return{client,intake};}
+export async function createClient(user:Pick<User,"id">,organizationId:string,input:z.input<typeof createClientInput>){
+  await authorize(user,organizationId,"client.create");
+  const{requestId,...data}=createClientInput.parse(input);
+  if(requestId){const prior=await prisma.client.findFirst({where:{organizationId,creationRequestId:requestId,createdByUserId:user.id},include:{intakes:{orderBy:{createdAt:"asc"},take:1}}});if(prior?.intakes[0])return{client:prior,intake:prior.intakes[0]}}
+  const duplicateConditions:Prisma.ClientWhereInput[]=[];
+  if(data.maPmiNumber)duplicateConditions.push({maPmiNumber:{equals:data.maPmiNumber,mode:"insensitive"}});
+  if(data.dateOfBirth)duplicateConditions.push({legalFirstName:{equals:data.legalFirstName,mode:"insensitive"},legalLastName:{equals:data.legalLastName,mode:"insensitive"},dateOfBirth:data.dateOfBirth});
+  if(duplicateConditions.length&&await prisma.client.findFirst({where:{organizationId,OR:duplicateConditions},select:{id:true}}))throw new ValidationError("A possible matching client already exists. Review the existing record before creating another client.");
+  return prisma.$transaction(async tx=>{const client=await tx.client.create({data:{...data,creationRequestId:requestId,organizationId,createdByUserId:user.id,status:"INTAKE_IN_PROGRESS"}}),intake=await tx.clientIntake.create({data:{organizationId,clientId:client.id,status:"IN_PROGRESS",checklistItems:{create:clientIntakeChecklistDefinitions.map(([code,label],index)=>({code,label,sequence:index+1}))}}});await tx.auditEvent.create({data:{organizationId,actorUserId:user.id,eventType:"client.created",entityType:"Client",entityId:client.id,metadataJson:{intakeId:intake.id,requestId:requestId??null}}});return{client,intake}});
+}
 export async function listClients(user:Pick<User,"id">,organizationId:string,filters:{search?:string;status?:string;renewalStatus?:ClientRenewalStatus;readiness?:DocumentationReadinessFilter;operational?:ClientOperationalFilter}={}){
   await authorize(user,organizationId,"client.read");
   const search=filters.search?.trim();

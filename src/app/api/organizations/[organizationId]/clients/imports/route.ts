@@ -4,7 +4,7 @@ import { errorResponse } from "@/domain/auth/errors";
 import { cancelClientImport, classifyClientImportDocument, confirmClientImport, createClientImport, getClientImport, listClientImports, reviewClientImportProposal } from "@/domain/clients/imports";
 
 const actionSchema=z.discriminatedUnion("action",[
-  z.object({action:z.literal("CREATE"),target:z.enum(["CREATE_NEW","UPDATE_EXISTING"]),existingClientId:z.string().cuid().optional(),files:z.array(z.object({fileName:z.string(),mimeType:z.literal("application/pdf"),pdfBase64:z.string()}))}),
+  z.object({action:z.literal("CREATE"),requestId:z.string().uuid().optional(),target:z.enum(["CREATE_NEW","UPDATE_EXISTING"]),existingClientId:z.string().cuid().optional(),files:z.array(z.object({fileName:z.string(),mimeType:z.literal("application/pdf"),pdfBase64:z.string()}))}),
   z.object({action:z.literal("REVIEW"),sessionId:z.string().cuid(),proposalId:z.string().cuid(),state:z.enum(["ACCEPTED","CORRECTED","REJECTED"]),correctedValue:z.union([z.string(),z.number(),z.boolean(),z.array(z.string())]).optional()}),
   z.object({action:z.literal("CLASSIFY"),sessionId:z.string().cuid(),documentId:z.string().cuid(),classification:z.enum(["INTAKE_CHECKLIST","FACE_SHEET","RIGHTS_ACKNOWLEDGMENT","ROI","UNKNOWN"])}),
   z.object({action:z.literal("CONFIRM"),sessionId:z.string().cuid(),confirmed:z.literal(true),target:z.enum(["CREATE_NEW","UPDATE_EXISTING"]),clientId:z.string().cuid().optional(),documents:z.array(z.object({documentId:z.string().cuid(),disposition:z.enum(["PRESERVE_ONLY","HISTORICAL_COMPLETE","CURRENT_SIGNATURE_REQUIRED"]),completedAt:z.coerce.date().optional()}))}),

@@ -17,8 +17,9 @@ import { requireOrganizationAccess, requirePermission } from "@/domain/permissio
 import { prisma } from "@/lib/prisma";
 import { clientIntakeChecklistDefinitions, clientInput } from "./service";
 
-const MAX_FILES = 20;
-const MAX_FILE_BYTES = 10_000_000;
+export const CLIENT_IMPORT_MAX_FILES = 20;
+export const CLIENT_IMPORT_MAX_FILE_BYTES = 10_000_000;
+export const CLIENT_IMPORT_MAX_TOTAL_BYTES = 50_000_000;
 const reviewedDate=z.preprocess(value=>typeof value==="string"&&/^\d{4}-\d{2}-\d{2}$/.test(value)?`${value}T12:00:00Z`:value,z.coerce.date());
 const fileInput = z.object({
   fileName: z.string().trim().min(1).max(255).refine(value => basename(value) === value && !/[\\/\0]/.test(value), "File name must not contain a path"),
@@ -26,9 +27,10 @@ const fileInput = z.object({
   pdfBase64: z.string().min(1).max(14_000_000),
 });
 export const createImportInput = z.object({
+  requestId: z.string().uuid().optional(),
   target: z.nativeEnum(ClientImportTarget),
   existingClientId: z.string().cuid().optional(),
-  files: z.array(fileInput).min(1).max(MAX_FILES),
+  files: z.array(fileInput).min(1).max(CLIENT_IMPORT_MAX_FILES),
 }).superRefine((value, context) => {
   if (value.target === "UPDATE_EXISTING" && !value.existingClientId) context.addIssue({ code: "custom", path: ["existingClientId"], message: "An existing client is required" });
 });
@@ -51,7 +53,7 @@ export const confirmImportInput = z.object({
   confirmed: z.literal(true),
   target: z.nativeEnum(ClientImportTarget),
   clientId: z.string().cuid().optional(),
-  documents: z.array(documentDecision).max(MAX_FILES),
+  documents: z.array(documentDecision).max(CLIENT_IMPORT_MAX_FILES),
 }).superRefine((value, context) => {
   if (value.target === "UPDATE_EXISTING" && !value.clientId) context.addIssue({ code: "custom", path: ["clientId"], message: "Select the existing client to update" });
 });
@@ -102,11 +104,12 @@ async function analyzePdf(bytes:Buffer){
 
 export async function createClientImport(user:Pick<User,"id">,organizationId:string,input:z.input<typeof createImportInput>){
   await authorize(user,organizationId,"client.create");const data=createImportInput.parse(input);
+  if(data.requestId){const prior=await prisma.clientImportSession.findFirst({where:{organizationId,creationRequestId:data.requestId,uploadedByUserId:user.id},select:{id:true}});if(prior)return getClientImport(user,organizationId,prior.id)}
   if(data.existingClientId&&!await prisma.client.findFirst({where:{id:data.existingClientId,organizationId},select:{id:true}}))throw new ResourceNotFoundError("Client not found");
   const analyzed=[] as Array<{fileName:string;mimeType:string;bytes:Buffer;sha256:string;result:Awaited<ReturnType<typeof analyzePdf>>}>;
-  for(const file of data.files){const bytes=Buffer.from(file.pdfBase64,"base64");if(!bytes.length||bytes.length>MAX_FILE_BYTES||bytes.subarray(0,5).toString("ascii")!=="%PDF-")throw new ValidationError("Each upload must be a valid PDF no larger than 10 MB");analyzed.push({fileName:file.fileName,mimeType:file.mimeType,bytes,sha256:createHash("sha256").update(bytes).digest("hex"),result:await analyzePdf(bytes)})}
+  let totalBytes=0;for(const file of data.files){const bytes=Buffer.from(file.pdfBase64,"base64");totalBytes+=bytes.length;if(!bytes.length||bytes.length>CLIENT_IMPORT_MAX_FILE_BYTES||bytes.subarray(0,5).toString("ascii")!=="%PDF-")throw new ValidationError("Each upload must be a valid PDF no larger than 10 MB");if(totalBytes>CLIENT_IMPORT_MAX_TOTAL_BYTES)throw new ValidationError("Selected PDFs must total no more than 50 MB");analyzed.push({fileName:file.fileName,mimeType:file.mimeType,bytes,sha256:createHash("sha256").update(bytes).digest("hex"),result:await analyzePdf(bytes)})}
   if(new Set(analyzed.map(item=>item.sha256)).size!==analyzed.length)throw new ValidationError("The same document cannot be uploaded twice in one import");
-  const session=await prisma.$transaction(async tx=>{const created=await tx.clientImportSession.create({data:{organizationId,uploadedByUserId:user.id,target:data.target,existingClientId:data.existingClientId}});for(const item of analyzed){const document=await tx.clientImportDocument.create({data:{organizationId,sessionId:created.id,originalFileName:item.fileName,mimeType:item.mimeType,originalBytes:new Uint8Array(item.bytes),sha256:item.sha256,classification:item.result.classification,status:item.result.ocrRequired?"OCR_REQUIRED":item.result.extracted.length?"EXTRACTED":"REVIEW_REQUIRED",extractionMethod:item.result.method,pageCount:item.result.pageCount,ocrRequired:item.result.ocrRequired,extractedText:item.result.text||null,classificationSignals:item.result.signals}});if(item.result.extracted.length)await tx.clientImportProposal.createMany({data:item.result.extracted.map(field=>({organizationId,sessionId:created.id,documentId:document.id,fieldPath:field.fieldPath,proposedValue:field.value,sourceLocation:field.sourceLocation,extractionMethod:"PDF_FORM_FIELD",confidence:1}))})}return created});
+  const session=await prisma.$transaction(async tx=>{const created=await tx.clientImportSession.create({data:{organizationId,uploadedByUserId:user.id,creationRequestId:data.requestId,target:data.target,existingClientId:data.existingClientId}});for(const item of analyzed){const document=await tx.clientImportDocument.create({data:{organizationId,sessionId:created.id,originalFileName:item.fileName,mimeType:item.mimeType,originalBytes:new Uint8Array(item.bytes),sha256:item.sha256,classification:item.result.classification,status:item.result.ocrRequired?"OCR_REQUIRED":item.result.extracted.length?"EXTRACTED":"REVIEW_REQUIRED",extractionMethod:item.result.method,pageCount:item.result.pageCount,ocrRequired:item.result.ocrRequired,extractedText:item.result.text||null,classificationSignals:item.result.signals}});if(item.result.extracted.length)await tx.clientImportProposal.createMany({data:item.result.extracted.map(field=>({organizationId,sessionId:created.id,documentId:document.id,fieldPath:field.fieldPath,proposedValue:field.value,sourceLocation:field.sourceLocation,extractionMethod:"PDF_FORM_FIELD",confidence:1}))})}return created});
   await reconcileProposals(session.id);await audit(organizationId,user.id,"client.import_created",session.id,{documentCount:analyzed.length,classifications:analyzed.map(item=>item.result.classification),ocrRequired:analyzed.filter(item=>item.result.ocrRequired).length});const persisted=await prisma.clientImportDocument.findMany({where:{sessionId:session.id},select:{id:true,classification:true,status:true,ocrRequired:true}});for(const document of persisted)await audit(organizationId,user.id,"client.import_document_analyzed",session.id,{documentId:document.id,classification:document.classification,status:document.status,ocrRequired:document.ocrRequired});return getClientImport(user,organizationId,session.id);
 }
 async function reconcileProposals(sessionId:string){const proposals=await prisma.clientImportProposal.findMany({where:{sessionId}}),groups=new Map<string,typeof proposals>();for(const proposal of proposals)groups.set(proposal.fieldPath,[...(groups.get(proposal.fieldPath)??[]),proposal]);for(const group of groups.values()){if(group.length<2)continue;const values=new Set(group.map(item=>normalize(item.proposedValue)));await prisma.clientImportProposal.updateMany({where:{id:{in:group.map(item=>item.id)},state:"PROPOSED"},data:{state:values.size===1?"CORROBORATED":"CONFLICT"}})}}
