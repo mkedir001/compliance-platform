@@ -9,7 +9,7 @@ type Layout = Record<string, Record<string, { page: number; type: string; rect: 
 type JsonObject = Record<string, unknown>;
 type Manifest = {templates:Array<{file:string;pages:number;sha256:string}>};
 
-const assetFiles: Record<ClientDocumentType, string> = {
+const assetFiles: Partial<Record<ClientDocumentType, string>> = {
   INTAKE_CHECKLIST: "00_Intake_Checklist_Staff_Use.pdf",
   FACE_SHEET: "01_Client_Information_Face_Sheet.pdf",
   RIGHTS_ACKNOWLEDGMENT: "02_Service_Recipient_Rights_Acknowledgment.pdf",
@@ -25,6 +25,7 @@ export async function renderRadiantCareTemplate(
   status: "DRAFT" | "FINALIZED",
 ) {
   const file = assetFiles[type];
+  if (!file) throw new Error("Approved intake template asset is unavailable");
   const layouts = JSON.parse(readFileSync(join(assetRoot, "field-layout.json"), "utf8")) as Layout;
   const layout = layouts[file];
   if (!layout || basename(file) !== file) throw new Error("Approved intake template asset is unavailable");

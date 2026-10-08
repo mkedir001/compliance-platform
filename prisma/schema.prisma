@@ -2831,6 +2831,19 @@ enum ClientDocumentType {
   FACE_SHEET
   RIGHTS_ACKNOWLEDGMENT
   ROI
+  ADMISSION_FORM
+  RIGHTS_OF_PERSONS_SERVED
+  CSSP
+  CSSP_ADDENDUM
+  CSSP_SIGNATURE_PAGE
+  COUNTY_SUPPORT_PLAN
+  IAPP
+  SMA
+  SMA_SIGNATURE_PAGE
+  SERVICE_AGREEMENT_LETTER
+  SERVICE_AUTHORIZATION
+  OTHER
+  UNKNOWN
 }
 
 enum ClientDocumentStatus {
@@ -2861,11 +2874,40 @@ enum ClientImportDocumentStatus {
   REJECTED
 }
 
+enum ClientImportExtractionStatus {
+  PENDING
+  PROCESSING
+  TEXT_EXTRACTED
+  FORM_FIELDS_EXTRACTED
+  OCR_REQUIRED
+  OCR_COMPLETED
+  NO_USEFUL_FIELDS
+  EXTRACTION_FAILED
+}
+
+enum ClientImportClassificationReviewStatus {
+  UNREVIEWED
+  AUTOMATIC
+  MANUAL
+}
+
 enum ClientImportClassification {
   INTAKE_CHECKLIST
   FACE_SHEET
   RIGHTS_ACKNOWLEDGMENT
   ROI
+  ADMISSION_FORM
+  RIGHTS_OF_PERSONS_SERVED
+  CSSP
+  CSSP_ADDENDUM
+  CSSP_SIGNATURE_PAGE
+  COUNTY_SUPPORT_PLAN
+  IAPP
+  SMA
+  SMA_SIGNATURE_PAGE
+  SERVICE_AGREEMENT_LETTER
+  SERVICE_AUTHORIZATION
+  OTHER
   UNKNOWN
 }
 
@@ -3247,44 +3289,47 @@ model ClientDocumentTemplate {
 }
 
 model ClientDocument {
-  id                       String                  @id @default(cuid())
-  organizationId           String
-  clientId                 String
-  intakeId                 String?
-  templateId               String
-  documentType             ClientDocumentType
-  status                   ClientDocumentStatus    @default(DRAFT)
-  source                   ClientDocumentSource    @default(GENERATED)
-  originalFileName         String?
-  sourceDocumentHash       String?
-  importedAt               DateTime?
-  snapshotJson             Json
-  renderedPdf              Bytes?
-  finalPdf                 Bytes?
-  generatedByUserId        String
-  generatedAt              DateTime                @default(now())
-  versionNumber            Int                     @default(1)
-  supersedesDocumentId     String?
-  sourceDataOutdatedAt     DateTime?
-  finalizedAt              DateTime?
-  authoritativeCompletedAt DateTime?
-  renewalOfDocumentId      String?                 @unique
-  voidedAt                 DateTime?
-  createdAt                DateTime                @default(now())
-  updatedAt                DateTime                @updatedAt
-  client                   Client                  @relation(fields: [clientId], references: [id], onDelete: Restrict)
-  intake                   ClientIntake?           @relation(fields: [intakeId], references: [id], onDelete: Restrict)
-  template                 ClientDocumentTemplate  @relation(fields: [templateId], references: [id], onDelete: Restrict)
-  generatedBy              User                    @relation("ClientDocumentGeneratedBy", fields: [generatedByUserId], references: [id], onDelete: Restrict)
-  supersedes               ClientDocument?         @relation("ClientDocumentVersions", fields: [supersedesDocumentId], references: [id], onDelete: Restrict)
-  supersededBy             ClientDocument[]        @relation("ClientDocumentVersions")
-  envelope                 SignatureEnvelope?
-  roiAuthorization         RoiAuthorization?
-  renewalOf                ClientDocument?         @relation("ClientDocumentRenewals", fields: [renewalOfDocumentId], references: [id], onDelete: Restrict)
-  renewals                 ClientDocument[]        @relation("ClientDocumentRenewals")
-  requestObligations       ClientDocumentRequest[] @relation("DocumentRequestObligation")
-  fulfilledRequests        ClientDocumentRequest[] @relation("DocumentRequestFulfillment")
-  confirmedImportDocument  ClientImportDocument?
+  id                        String                  @id @default(cuid())
+  organizationId            String
+  clientId                  String
+  intakeId                  String?
+  templateId                String
+  documentType              ClientDocumentType
+  status                    ClientDocumentStatus    @default(DRAFT)
+  source                    ClientDocumentSource    @default(GENERATED)
+  originalFileName          String?
+  originalMimeType          String?
+  originalFileSize          Int?
+  classificationDescription String?
+  sourceDocumentHash        String?
+  importedAt                DateTime?
+  snapshotJson              Json
+  renderedPdf               Bytes?
+  finalPdf                  Bytes?
+  generatedByUserId         String
+  generatedAt               DateTime                @default(now())
+  versionNumber             Int                     @default(1)
+  supersedesDocumentId      String?
+  sourceDataOutdatedAt      DateTime?
+  finalizedAt               DateTime?
+  authoritativeCompletedAt  DateTime?
+  renewalOfDocumentId       String?                 @unique
+  voidedAt                  DateTime?
+  createdAt                 DateTime                @default(now())
+  updatedAt                 DateTime                @updatedAt
+  client                    Client                  @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  intake                    ClientIntake?           @relation(fields: [intakeId], references: [id], onDelete: Restrict)
+  template                  ClientDocumentTemplate  @relation(fields: [templateId], references: [id], onDelete: Restrict)
+  generatedBy               User                    @relation("ClientDocumentGeneratedBy", fields: [generatedByUserId], references: [id], onDelete: Restrict)
+  supersedes                ClientDocument?         @relation("ClientDocumentVersions", fields: [supersedesDocumentId], references: [id], onDelete: Restrict)
+  supersededBy              ClientDocument[]        @relation("ClientDocumentVersions")
+  envelope                  SignatureEnvelope?
+  roiAuthorization          RoiAuthorization?
+  renewalOf                 ClientDocument?         @relation("ClientDocumentRenewals", fields: [renewalOfDocumentId], references: [id], onDelete: Restrict)
+  renewals                  ClientDocument[]        @relation("ClientDocumentRenewals")
+  requestObligations        ClientDocumentRequest[] @relation("DocumentRequestObligation")
+  fulfilledRequests         ClientDocumentRequest[] @relation("DocumentRequestFulfillment")
+  confirmedImportDocument   ClientImportDocument?
 
   @@index([organizationId, clientId, documentType, status])
   @@index([organizationId, clientId, documentType, versionNumber])
@@ -3293,22 +3338,23 @@ model ClientDocument {
 }
 
 model ClientImportSession {
-  id                String                 @id @default(cuid())
-  organizationId    String
-  uploadedByUserId  String
-  creationRequestId String?
-  existingClientId  String?
-  target            ClientImportTarget
-  status            ClientImportStatus     @default(REVIEW_REQUIRED)
-  confirmedAt       DateTime?
-  canceledAt        DateTime?
-  createdAt         DateTime               @default(now())
-  updatedAt         DateTime               @updatedAt
-  organization      Organization           @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  uploadedBy        User                   @relation("ClientImportUploader", fields: [uploadedByUserId], references: [id], onDelete: Restrict)
-  existingClient    Client?                @relation(fields: [existingClientId], references: [id], onDelete: Restrict)
-  documents         ClientImportDocument[]
-  proposals         ClientImportProposal[]
+  id                 String                 @id @default(cuid())
+  organizationId     String
+  uploadedByUserId   String
+  creationRequestId  String?
+  existingClientId   String?
+  target             ClientImportTarget
+  status             ClientImportStatus     @default(REVIEW_REQUIRED)
+  confirmedAt        DateTime?
+  canceledAt         DateTime?
+  processingFailures Json?
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
+  organization       Organization           @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  uploadedBy         User                   @relation("ClientImportUploader", fields: [uploadedByUserId], references: [id], onDelete: Restrict)
+  existingClient     Client?                @relation(fields: [existingClientId], references: [id], onDelete: Restrict)
+  documents          ClientImportDocument[]
+  proposals          ClientImportProposal[]
 
   @@unique([organizationId, creationRequestId])
   @@index([organizationId, status, createdAt])
@@ -3316,32 +3362,37 @@ model ClientImportSession {
 }
 
 model ClientImportDocument {
-  id                     String                          @id @default(cuid())
-  organizationId         String
-  sessionId              String
-  originalFileName       String
-  mimeType               String
-  originalBytes          Bytes
-  sha256                 String
-  classification         ClientImportClassification      @default(UNKNOWN)
-  status                 ClientImportDocumentStatus      @default(REVIEW_REQUIRED)
-  extractionMethod       ClientImportExtractionMethod?
-  pageCount              Int
-  ocrRequired            Boolean                         @default(false)
-  extractedText          String?
-  classificationSignals  Json?
-  disposition            ClientImportDocumentDisposition @default(PRESERVE_ONLY)
-  reviewedCompletedAt    DateTime?
-  signatureReviewStatus  ImportedSignatureReviewStatus   @default(UNREVIEWED)
-  validityReviewStatus   ImportedValidityReviewStatus    @default(UNREVIEWED)
-  reviewedExpirationDate DateTime?                       @db.Date
-  confirmedDocumentId    String?                         @unique
-  createdAt              DateTime                        @default(now())
-  updatedAt              DateTime                        @updatedAt
-  organization           Organization                    @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  session                ClientImportSession             @relation(fields: [sessionId], references: [id], onDelete: Restrict)
-  confirmedDocument      ClientDocument?                 @relation(fields: [confirmedDocumentId], references: [id], onDelete: Restrict)
-  proposals              ClientImportProposal[]
+  id                         String                                 @id @default(cuid())
+  organizationId             String
+  sessionId                  String
+  originalFileName           String
+  mimeType                   String
+  originalBytes              Bytes
+  sha256                     String
+  classification             ClientImportClassification             @default(UNKNOWN)
+  classificationDescription  String?
+  classificationReviewStatus ClientImportClassificationReviewStatus @default(UNREVIEWED)
+  status                     ClientImportDocumentStatus             @default(REVIEW_REQUIRED)
+  extractionStatus           ClientImportExtractionStatus           @default(PENDING)
+  extractionMethod           ClientImportExtractionMethod?
+  pageCount                  Int
+  fileSize                   Int?
+  ocrRequired                Boolean                                @default(false)
+  extractedText              String?
+  extractedData              Json?
+  classificationSignals      Json?
+  disposition                ClientImportDocumentDisposition        @default(PRESERVE_ONLY)
+  reviewedCompletedAt        DateTime?
+  signatureReviewStatus      ImportedSignatureReviewStatus          @default(UNREVIEWED)
+  validityReviewStatus       ImportedValidityReviewStatus           @default(UNREVIEWED)
+  reviewedExpirationDate     DateTime?                              @db.Date
+  confirmedDocumentId        String?                                @unique
+  createdAt                  DateTime                               @default(now())
+  updatedAt                  DateTime                               @updatedAt
+  organization               Organization                           @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  session                    ClientImportSession                    @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+  confirmedDocument          ClientDocument?                        @relation(fields: [confirmedDocumentId], references: [id], onDelete: Restrict)
+  proposals                  ClientImportProposal[]
 
   @@unique([sessionId, sha256])
   @@index([organizationId, sessionId, classification])
@@ -3351,7 +3402,7 @@ model ClientImportProposal {
   id               String                       @id @default(cuid())
   organizationId   String
   sessionId        String
-  documentId       String
+  documentId       String?
   fieldPath        String
   proposedValue    Json
   correctedValue   Json?
@@ -3365,7 +3416,7 @@ model ClientImportProposal {
   updatedAt        DateTime                     @updatedAt
   organization     Organization                 @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   session          ClientImportSession          @relation(fields: [sessionId], references: [id], onDelete: Restrict)
-  document         ClientImportDocument         @relation(fields: [documentId], references: [id], onDelete: Restrict)
+  document         ClientImportDocument?        @relation(fields: [documentId], references: [id], onDelete: Restrict)
   reviewedBy       User?                        @relation("ClientImportProposalReviewer", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
 
   @@index([organizationId, sessionId, fieldPath])

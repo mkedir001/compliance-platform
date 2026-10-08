@@ -23,7 +23,7 @@ describe("unified client directory and add-client workflow",()=>{
   });
 
   it("validates and preserves multi-PDF selections before a durable full-page handoff",()=>{
-    for(const value of ["MAX_FILES=20","MAX_FILE_BYTES=10_000_000","MAX_TOTAL_BYTES=50_000_000","Only PDF files can be uploaded.","Uploading documents…","Preparing review…","Opening review…","No client is created by this upload."])expect(drawer).toContain(value);
+    for(const value of ["MAX_FILES=20","MAX_FILE_BYTES=25_000_000","MAX_TOTAL_BYTES=50_000_000","Only PDF files can be uploaded.","Uploading documents…","Preparing review…","Opening review…","No client is created by this upload."])expect(drawer).toContain(value);
     expect(drawer).toContain("crypto.randomUUID()");
     expect(portal).toContain("importSessionId");
     expect(review).toContain('standalone?<section className="import-review-page"');
