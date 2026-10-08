@@ -3296,6 +3296,7 @@ model ClientImportDocument {
   extractedText         String?
   classificationSignals Json?
   disposition           ClientImportDocumentDisposition @default(PRESERVE_ONLY)
+  reviewedCompletedAt   DateTime?
   confirmedDocumentId   String?                         @unique
   createdAt             DateTime                        @default(now())
   updatedAt             DateTime                        @updatedAt
