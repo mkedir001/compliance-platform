@@ -5,7 +5,7 @@ import { emailEnvironment, workforceEmailEnvironment, type EmailEnvironment } fr
 import { prisma } from "@/lib/prisma";
 
 export type EmailDeliveryContext={organizationId:string;logicalType:string;logicalId:string;purpose:EmailCommunicationPurpose};
-export type ComplianceEmail={to:string;subject:string;text:string;html?:string;actionHref?:string|null;deliveryContext?:EmailDeliveryContext};
+export type ComplianceEmail={to:string;fromName?:string;subject:string;text:string;html?:string;actionHref?:string|null;deliveryContext?:EmailDeliveryContext};
 export type EmailSendResult={messageId:string;acceptedAt?:Date;provider?:string};
 export interface EmailProvider{name:string;configured:boolean;send(message:ComplianceEmail):Promise<EmailSendResult>}
 export type EmailCommunicationPurpose="CLIENT_SECURE"|"WORKFORCE_TRANSACTIONAL";
@@ -14,7 +14,7 @@ export class EmailDeliveryError extends Error{constructor(message:string,public 
 const addressSchema=z.string().trim().toLowerCase().email();
 const headerSchema=z.string().trim().min(1).max(200).refine(value=>!/[\r\n]/.test(value));
 function mailbox(address:string,name?:string){const parsed=addressSchema.parse(address);if(!name)return parsed;const safe=headerSchema.parse(name).replaceAll("\\","\\\\").replaceAll('"','\\"');return `"${safe}" <${parsed}>`}
-function relayPayload(config:{from:string;fromName?:string;replyTo?:string},message:ComplianceEmail){try{return{version:1,from:addressSchema.parse(config.from),fromName:config.fromName?headerSchema.parse(config.fromName):undefined,replyTo:config.replyTo?addressSchema.parse(config.replyTo):undefined,to:addressSchema.parse(message.to),subject:headerSchema.parse(message.subject),text:z.string().min(1).max(100_000).parse(message.text),html:message.html?z.string().min(1).max(200_000).parse(message.html):undefined}}catch{throw new EmailDeliveryError("Email request is invalid",false,"EMAIL_REQUEST_INVALID","POLICY_OR_VALIDATION_FAILURE")}}
+function relayPayload(config:{from:string;fromName?:string;replyTo?:string},message:ComplianceEmail){try{return{version:1,from:addressSchema.parse(config.from),fromName:message.fromName?headerSchema.parse(message.fromName):config.fromName?headerSchema.parse(config.fromName):undefined,replyTo:config.replyTo?addressSchema.parse(config.replyTo):undefined,to:addressSchema.parse(message.to),subject:headerSchema.parse(message.subject),text:z.string().min(1).max(100_000).parse(message.text),html:message.html?z.string().min(1).max(200_000).parse(message.html):undefined}}catch{throw new EmailDeliveryError("Email request is invalid",false,"EMAIL_REQUEST_INVALID","POLICY_OR_VALIDATION_FAILURE")}}
 
 export class LocalNoopEmailProvider implements EmailProvider{name="local-noop";configured=false;async send():Promise<EmailSendResult>{throw new EmailDeliveryError("Live email provider is not configured",false,"EMAIL_PROVIDER_NOT_CONFIGURED")}}
 
@@ -38,7 +38,7 @@ export class SesEmailProvider implements EmailProvider{
   constructor(private readonly config:SesConfig,client?:SesClientLike){this.client=client??new SESv2Client(sesClientOptions(config))}
   async send(message:ComplianceEmail):Promise<EmailSendResult>{
     const input:SendEmailCommandInput={
-      FromEmailAddress:mailbox(this.config.from,this.config.fromName),
+      FromEmailAddress:mailbox(this.config.from,message.fromName??this.config.fromName),
       Destination:{ToAddresses:[addressSchema.parse(message.to)]},
       ReplyToAddresses:this.config.replyTo?[addressSchema.parse(this.config.replyTo)]:undefined,
       Content:{Simple:{Subject:{Data:headerSchema.parse(message.subject),Charset:"UTF-8"},Body:{Text:{Data:message.text,Charset:"UTF-8"},...(message.html?{Html:{Data:message.html,Charset:"UTF-8"}}:{})}}},

@@ -42,7 +42,8 @@ describe("portal information architecture", () => {
     expect(controls).toContain("await onChanged()");
     const operations = await source("src/app/admin/operations-portal.tsx");
     expect(operations).toContain("async function invite(id:string){if(busy)return;");
-    expect(operations).toContain('busy?"Working…"');
+    expect(operations).toContain('[busyMessage,setBusyMessage]=useState("Working…")');
+    expect(operations).toContain('{busy?busyMessage:message}');
     expect(operations).toContain('aria-busy={busy}');
   });
 });

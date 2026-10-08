@@ -10,6 +10,7 @@ import { SignatureRecipientFields, SignatureStaffIdentityField } from "./signatu
 import { clientDirectoryView, type ClientDirectoryLoadStatus } from "./directory-state";
 import type { IntakeStepId } from "@/domain/clients/intake-state";
 import { PortalShell, StatusChip } from "@/app/components/portal-ui";
+import { projectSignatureProgress } from "@/domain/clients/signature-progress";
 
 type RenewalCycle = {
   documentId: string;
@@ -46,6 +47,7 @@ type ClientRow = {
   intakes: { status: string; currentStep: string; progressJson:unknown }[];
   services: {id:string;serviceType:string;startDate:string|null;authorizedHours:number|null;authorizationStart:string|null;authorizationEnd:string|null;scheduleJson:Record<string,unknown>|null;status:"PROPOSED"|"ACTIVE"|"PAUSED"|"ENDED"|"CANCELLED"}[];
   _count: { documents: number; documentRequests:number; importSessions:number };
+  awaitingSignatureCount: number;
   renewalSummary: RenewalSummary;
   documentationReadiness: DocumentationReadiness;
 };
@@ -69,7 +71,7 @@ type ClientDocument = {
   signatureIntegrityIssue:boolean;
   template:{name:string;versionNumber:number};
   signatureRequirements:{key:string;label:string;allowedRoles:string[];allowedMethods:("SIGN_NOW"|"SEND_FOR_SIGNATURE")[];candidates:{role:string;name:string;email:string|null;source:string}[]}[];
-  envelope: { id:string;status:string;mode:string;sentAt:string|null;completedAt:string|null;voidReason:string|null;signers:{id:string;requirementKey:string|null;requirementIndex:number;role:string;name:string;email:string|null;identityPending:boolean;status:string;sentAt:string|null;viewedAt:string|null;signedAt:string|null;signatureMethod:string|null;verificationMethod:string|null;invitations:{id:string;status:string;deliveryStatus:"PENDING"|"ACCEPTED"|"DELIVERED"|"DEFERRED"|"BOUNCED"|"COMPLAINED"|"FAILED";deliveryAttempts:number;deliveryAttemptedAt:string|null;deliveryErrorCode:string|null;createdAt:string;providerAcceptedAt:string|null;deliveredAt:string|null;expiresAt:string;usedAt:string|null;revokedAt:string|null}[]}[] } | null;
+  envelope: { id:string;status:string;mode:string;sentAt:string|null;completedAt:string|null;voidReason:string|null;signers:{id:string;required?:boolean;evidenceValid?:boolean;requirementKey:string|null;requirementIndex:number;role:string;name:string;email:string|null;identityPending:boolean;status:string;sentAt:string|null;viewedAt:string|null;signedAt:string|null;signatureMethod:string|null;verificationMethod:string|null;invitations:{id:string;status:string;deliveryStatus:"PENDING"|"ACCEPTED"|"DELIVERED"|"DEFERRED"|"BOUNCED"|"COMPLAINED"|"FAILED";deliveryAttempts:number;deliveryAttemptedAt:string|null;deliveryErrorCode:string|null;createdAt:string;providerAcceptedAt:string|null;deliveredAt:string|null;expiresAt:string;usedAt:string|null;revokedAt:string|null}[]}[] } | null;
 };
 type ClientRepresentative = { id: string; representativeType: string; name: string; relationship: string | null; email: string | null };
 type ClientDocumentRequest = { id: string; documentType: string; recipientType: string; recipientName: string; deliveryChannel: string; status: string; requestedAt: string | null; dueAt: string | null; latestFollowUpAt: string | null; followUpCount: number; obligationDocumentId: string | null; fulfilledDocumentId: string | null };
@@ -111,7 +113,7 @@ const pretty = (value: string) => value.toLowerCase().replaceAll("_", " ");
 const date = (value: string) => new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(value.length === 10 ? `${value}T12:00:00Z` : value));
 type PreparedSigner={role:string;name:string;email?:string};
 function invitationState(signer:NonNullable<ClientDocument["envelope"]>["signers"][number]){if(signer.status==="SIGNED")return"SIGNED";const latest=signer.invitations[0];if(!latest)return"NOT INVITED";if(latest.status==="ACTIVE"&&new Date(latest.expiresAt)<=new Date())return"EXPIRED";if(latest.status==="ACTIVE"&&["FAILED","BOUNCED","COMPLAINED"].includes(latest.deliveryStatus))return"EMAIL DELIVERY FAILED";if(latest.status==="ACTIVE"&&latest.deliveryStatus==="DEFERRED")return"DELIVERY DEFERRED";if(latest.status==="ACTIVE"&&latest.deliveryStatus==="DELIVERED")return"DELIVERED — AWAITING SIGNATURE";if(latest.status==="ACTIVE"&&latest.deliveryStatus==="ACCEPTED")return"PROVIDER ACCEPTED — AWAITING SIGNATURE";if(latest.status==="ACTIVE")return"DELIVERY PENDING";return latest.status}
-function signatureProgress(document:ClientDocument){const signers=document.envelope?.signers??[],completed=signers.filter(signer=>signer.status==="SIGNED").length;return{signers,completed,pending:signers.length-completed,total:signers.length}}
+function signatureProgress(document:Pick<ClientDocument,"envelope">){return projectSignatureProgress(document.envelope?.signers??[])}
 function documentLifecycle(document:ClientDocument,cycle?:RenewalCycle|null){if(cycle?.status==="OVERDUE")return"EXPIRED";if(cycle?.status==="DUE_SOON")return"EXPIRING";if(document.source==="IMPORTED"&&document.snapshotJson?.disposition==="PRESERVE_ONLY")return"NO_SIGNATURE_REQUIRED";if(!document.signatureRequirements.length)return"NO_SIGNATURE_REQUIRED";if(document.status==="COMPLETED"&&!document.signatureIntegrityIssue)return"SIGNED_CURRENT";const progress=signatureProgress(document);if(progress.completed>0)return"PARTIALLY_SIGNED";if(document.envelope)return"AWAITING_SIGNATURES";return"SIGNATURE_REQUIRED"}
 function templateStatus(documents:ClientDocument[],documentType:string){const current=documents.find(document=>document.documentType===documentType&&document.status!=="VOIDED");if(!current)return"No current draft";if(current.envelope){const pending=signatureProgress(current).pending;return pending?`Current version: awaiting ${pending} signature${pending===1?"":"s"}`:"Current version: signed"}if(current.status==="DRAFT")return"Current version: draft";if(current.status==="READY_FOR_SIGNATURE")return`Current version: awaiting ${current.signatureRequirements.length} signature${current.signatureRequirements.length===1?"":"s"}`;return`Current version: ${pretty(current.status)}`}
 function SignatureWorkflowPanel({document,busy,onStart}:{document:ClientDocument;busy:boolean;onStart:(requirementIndex:number,method:"SIGN_NOW"|"SEND_FOR_SIGNATURE",signers:PreparedSigner[],confirmed:boolean)=>Promise<void>}){
@@ -170,6 +172,7 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
     [message, setMessage] = useState(""),
     [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
+  const filterReadyRef = useRef(false);
   const headers: Record<string, string> = productionIdentity ? { "content-type": "application/json" } : { "content-type": "application/json", "x-dev-user-id": userId };
   async function request(path: string, init?: RequestInit) {
     const response = await fetch(`/api/organizations/${organizationId}/clients${path}`, { ...init, headers: { ...headers, ...init?.headers } }),
@@ -209,6 +212,7 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
     setClients((await request(`?search=${encodeURIComponent(search)}&status=${encodeURIComponent(status)}&renewalStatus=${encodeURIComponent(renewalStatus)}&readiness=${encodeURIComponent(readiness)}&operational=${encodeURIComponent(operational)}`)) as ClientRow[]);
     setMessage(text);
   }
+  async function discardImport(id:string){if(!window.confirm("Discard this unfinished import? It will be closed and cannot be resumed."))return;await run(async()=>{const response=await fetch(`/api/organizations/${organizationId}/clients/imports`,{method:"POST",headers,body:JSON.stringify({action:"CANCEL",sessionId:id})}),result=await response.json();if(!response.ok)throw new Error(result.error??"Import could not be discarded");setPendingImports(current=>current.filter(item=>item.id!==id));setMessage("Import discarded. No canonical client data was changed.")})}
   async function documentAction(body: unknown, text: string) {
     if (!selected) return false;
     return run(async () => {
@@ -307,12 +311,16 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
       void (async()=>{await load();if(initialClientId){setTab(initialDocumentId || initialRequestId || initialView==="Documents" ? "Documents" : initialView==="Signatures" ? "Signatures" : initialView==="Readiness" ? "Readiness" : initialView==="Intake" ? "Intake" : "Overview");await open(initialClientId)}})();
     }
   }, [productionIdentity, organizationId, initialClientId, initialDocumentId, initialRequestId, initialView]);
+  useEffect(()=>{if(!filterReadyRef.current){filterReadyRef.current=true;return}if(!selected&&organizationId){const timeout=window.setTimeout(()=>void load(),200);return()=>window.clearTimeout(timeout)}},[search,status,renewalStatus,readiness,operational]);
   useEffect(() => {
     if (!selected) return;
-    const revalidate = () => { if (document.visibilityState === "visible") void open(selected.id); };
+    const revalidate = () => { if (document.visibilityState === "visible") void refresh(""); };
     window.addEventListener("pageshow", revalidate);
+    window.addEventListener("focus", revalidate);
     document.addEventListener("visibilitychange", revalidate);
-    return () => { window.removeEventListener("pageshow", revalidate); document.removeEventListener("visibilitychange", revalidate); };
+    const incomplete=selected.documents.some(item=>item.envelope&&!['COMPLETED','VOIDED'].includes(item.envelope.status));
+    const polling=incomplete?window.setInterval(revalidate,15_000):undefined;
+    return () => { window.removeEventListener("pageshow", revalidate); window.removeEventListener("focus", revalidate); document.removeEventListener("visibilitychange", revalidate); if(polling)window.clearInterval(polling); };
   }, [selected?.id, organizationId]);
   useEffect(() => {
     if (selected && initialDocumentId && tab === "Documents") setSelectedDocumentId(initialDocumentId);
@@ -334,7 +342,7 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
     <PortalShell organizationId={organizationId} current="Clients"><main className="admin-shell" aria-busy={busy}>
       <header className="client-page-heading">
         <div><p className="eyebrow">Client management</p><h1>{selected?`${selected.legalFirstName} ${selected.legalLastName}`:initialImportSessionId?"Review imported documents":"Clients"}</h1><p className="lede">{selected?"Client intake, documents, signatures, and renewals.":initialImportSessionId?"Review extracted information before any client record changes.":"Intake, documents, signatures, and renewals for each person you serve."}</p></div>
-        {selected||initialImportSessionId?<button className="secondary" onClick={()=>window.location.assign(`/admin/clients?organizationId=${encodeURIComponent(organizationId)}`)}>Back to Clients</button>:permissions.includes("client.create")?<button onClick={()=>setAddClientOpen(true)}>Add client</button>:null}
+        {selected||initialImportSessionId?<button className="secondary" onClick={()=>window.location.assign(`/admin/clients?organizationId=${encodeURIComponent(organizationId)}`)}>Back to Clients</button>:permissions.includes("client.create")?<button className="directory-primary-action" onClick={()=>setAddClientOpen(true)}><span aria-hidden="true">＋</span> Add client</button>:null}
       </header>
       {!productionIdentity ? (
         <section className="portal-signin">
@@ -355,63 +363,41 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
         {busy ? "Updating authoritative client records…" : message}
       </p>
       {!selected&&initialImportSessionId?<ClientImportWorkflow organizationId={organizationId} headers={headers} busy={busy} onBusy={setBusy} initialSessionId={initialImportSessionId} standalone onComplete={async clientId=>window.location.assign(`/admin/clients/${clientId}?organizationId=${encodeURIComponent(organizationId)}&view=Intake`)}/>:null}
-      {!selected&&!initialImportSessionId ? <section>
-        <div className="section-heading">
-          <div>
-            <h2>Client directory</h2>
-            <p>List views intentionally omit health details.</p>
-          </div>
-          <div className="filters">
-            <label>
-              Search
-              <input value={search} onChange={(e) => setSearch(e.target.value)} />
-            </label>
-            <label>
-              Client status
-              <select value={status} onChange={(e) => setStatus(e.target.value)}>
+      {!selected&&!initialImportSessionId ? <section className="directory-landing">
+        {pendingImports.length?<aside className="directory-alert" aria-label="Pending client document imports"><span className="directory-alert-icon" aria-hidden="true">▣</span><div><strong>You have an import waiting for review</strong><small>{pendingImports[0]._count.documents} document{pendingImports[0]._count.documents===1?"":"s"} · {pendingImports[0]._count.proposals} extracted fields to confirm · last updated {new Date(pendingImports[0].updatedAt).toLocaleString(undefined,{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})}</small></div><div className="directory-alert-actions"><button className="secondary" type="button" onClick={()=>window.location.assign(`/admin/clients?organizationId=${encodeURIComponent(organizationId)}&importSessionId=${encodeURIComponent(pendingImports[0].id)}`)}>Resume review</button><button className="textButton" type="button" onClick={()=>void discardImport(pendingImports[0].id)}>Discard</button></div></aside>:null}
+        <div className="directory-toolbar">
+            <label className="directory-search"><span aria-hidden="true">⌕</span><input aria-label="Search clients" placeholder="Search by name or MA/PMI" value={search} onChange={(e) => setSearch(e.target.value)} onKeyDown={event=>{if(event.key==="Enter")void load()}} /></label>
+            <label><span>Status</span><select value={status} onChange={(e) => setStatus(e.target.value)}>
                 <option value="">All</option>
                 {["PROSPECTIVE", "INTAKE_IN_PROGRESS", "ACTIVE", "DISCHARGED", "ARCHIVED"].map((x) => (
                   <option key={x}>{x}</option>
                 ))}
-              </select>
-            </label>
-            <label>
-              Renewals
-              <select value={renewalStatus} onChange={(e) => setRenewalStatus(e.target.value)}>
+              </select></label>
+            <label><span>Documentation</span><select value={readiness} onChange={(e)=>setReadiness(e.target.value)}>
+                <option value="ALL">All</option><option value="CURRENT">Ready / current</option><option value="ATTENTION_NEEDED">Attention needed</option><option value="MISSING">Missing</option><option value="DUE_SOON">Due soon</option><option value="OVERDUE">Overdue</option><option value="OUTSTANDING_REQUESTS">Requests</option>
+              </select></label>
+            <label><span>Renewals</span><select value={renewalStatus} onChange={(e) => setRenewalStatus(e.target.value)}>
                 <option value="">All</option>
                 <option value="CURRENT">Current</option>
                 <option value="DUE_SOON">Due Soon</option>
                 <option value="OVERDUE">Overdue</option>
-              </select>
-            </label>
-            <label>
-              Documentation readiness
-              <select value={readiness} onChange={(e)=>setReadiness(e.target.value)}>
-                <option value="ALL">All</option><option value="CURRENT">Ready / current</option><option value="ATTENTION_NEEDED">Attention needed</option><option value="MISSING">Missing documents</option><option value="DUE_SOON">Due soon</option><option value="OVERDUE">Overdue</option><option value="OUTSTANDING_REQUESTS">Outstanding requests</option>
-              </select>
-            </label>
-            <label>
-              Operational attention
-              <select value={operational} onChange={(e)=>setOperational(e.target.value)}>
+              </select></label>
+            <label><span>Needs</span><select value={operational} onChange={(e)=>setOperational(e.target.value)}>
                 <option value="">All</option>
                 <option value="OUTSTANDING_SIGNATURE">Outstanding signature</option>
                 <option value="OUTSTANDING_REQUEST">Outstanding document request</option>
                 <option value="IMPORTED_HISTORY">Imported history</option>
-              </select>
-            </label>
-            <button onClick={load}>Apply</button>
-          </div>
+              </select></label>
         </div>
-        {pendingImports.length?<aside className="pending-imports" aria-label="Pending client document imports"><div><p className="eyebrow">Document review pending</p><h3>{pendingImports.length} unfinished import{pendingImports.length===1?"":"s"}</h3><p>Original files are preserved. Resume review before creating or linking a client.</p></div><select aria-label="Choose pending import" defaultValue={pendingImports[0].id} id="pending-import-selection">{pendingImports.map(item=><option key={item.id} value={item.id}>{item._count.documents} document{item._count.documents===1?"":"s"} · updated {new Date(item.updatedAt).toLocaleDateString()}</option>)}</select><button type="button" onClick={()=>{const id=(document.getElementById("pending-import-selection") as HTMLSelectElement).value;window.location.assign(`/admin/clients?organizationId=${encodeURIComponent(organizationId)}&importSessionId=${encodeURIComponent(id)}`)}}>Resume review</button></aside>:null}
         {directoryView === "results" ? (
           <div className="workforce-table client-directory" role="table" aria-label="Client directory">
             <div className="client-directory-head" role="row"><span>Client</span><span>Status</span><span>Services</span><span>Documentation</span><span>Signatures</span></div>
             {clients.map((client) => (
               <button key={client.id} className={`workforce-row client-directory-row renewal-${client.documentationReadiness.overallState.toLowerCase()}`} onClick={() => open(client.id)}>
                 <span>
-                  <strong>
+                  <span className="directory-avatar" aria-hidden="true">{client.legalFirstName[0]}{client.legalLastName[0]}</span><span><strong>
                     {client.legalLastName}, {client.preferredName ?? client.legalFirstName}
-                  </strong>
+                  </strong><small>{client.intakes[0]?.status==="COMPLETED"?"Intake complete":"Intake incomplete"}</small></span>
                 </span>
                 <span><StatusChip tone={client.status==="ACTIVE"?"good":client.status==="DISCHARGED"||client.status==="ARCHIVED"?"neutral":"warning"}>{pretty(client.status)}</StatusChip></span>
                 <span><strong>{client.services.length?client.services.map(item=>pretty(item.serviceType)).join(", "):"No current services"}</strong><small>{client.services.map(item=>pretty(item.status)).join(", ")}</small></span>
@@ -419,9 +405,10 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
                   <strong>{pretty(client.documentationReadiness.overallState)}</strong>
                   <small>{client.documentationReadiness.counts.overdue} overdue · {client.documentationReadiness.counts.missing} missing · {client.documentationReadiness.counts.outstandingRequests} collection underway</small>
                 </span>
-                <span><strong>{client._count.documents?`${client._count.documents} awaiting signature`:"No signatures pending"}</strong><small>{client._count.documentRequests} outstanding request(s)</small></span>
+                <span>{client.awaitingSignatureCount?`${client.awaitingSignatureCount} awaiting`:"None awaiting"}</span><span className="directory-chevron" aria-hidden="true">›</span>
               </button>
             ))}
+            <footer>Showing {clients.length} of {clients.length} clients. List views leave out health details.</footer>
           </div>
         ) : directoryView === "empty" ? (
           <div className="empty-state">No clients match this authorized view.</div>

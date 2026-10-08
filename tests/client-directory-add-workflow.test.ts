@@ -8,10 +8,10 @@ describe("unified client directory and add-client workflow",()=>{
   const portal=source("src/app/admin/clients/clients-portal.tsx"),drawer=source("src/app/admin/clients/add-client-drawer.tsx"),review=source("src/app/admin/clients/client-import-workflow.tsx"),styles=source("src/app/globals.css");
 
   it("uses one directory entry point and authoritative non-health columns",()=>{
-    expect(portal.match(/>Add client<\/button>/g)).toHaveLength(1);
+    expect(portal.match(/Add client<\/button>/g)).toHaveLength(1);
     for(const label of ["Client","Status","Services","Documentation","Signatures"])expect(portal).toContain(`<span>${label}</span>`);
     expect(portal).not.toContain("Add Client → Import Existing Documents");
-    expect(portal).toContain("List views intentionally omit health details.");
+    expect(portal).toContain("List views leave out health details.");
   });
 
   it("implements an accessible responsive drawer with state-preserving methods",()=>{
@@ -30,7 +30,8 @@ describe("unified client directory and add-client workflow",()=>{
   });
 
   it("keeps unfinished imports resumable and requires confirmation before discard",()=>{
-    expect(portal).toContain("Document review pending");
+    expect(portal).toContain("You have an import waiting for review");
+    expect(portal).toContain("Resume review");
     expect(portal).toContain("pendingImports.length");
     expect(review).toContain("window.confirm");
     expect(review).toContain("Discard import");
