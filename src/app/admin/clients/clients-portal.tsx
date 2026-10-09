@@ -196,6 +196,7 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
       setBusy(false);
     }
   }
+  async function refreshPendingImports(){const response=await fetch(`/api/organizations/${organizationId}/clients/imports`,{headers}),result=await response.json();if(!response.ok)throw new Error(result.error??"Import sessions could not be refreshed");setPendingImports((result as ImportSummary[]).filter(item=>item.status==="REVIEW_REQUIRED"))}
   async function load() {
     setDirectoryStatus("loading");
     await run(async () => {try{const[rows,accessResponse,importsResponse]=await Promise.all([request(`?search=${encodeURIComponent(search)}&status=${encodeURIComponent(status)}&renewalStatus=${encodeURIComponent(renewalStatus)}&readiness=${encodeURIComponent(readiness)}&operational=${encodeURIComponent(operational)}`),fetch(`/api/organizations/${organizationId}`,{headers}),fetch(`/api/organizations/${organizationId}/clients/imports`,{headers})]),access=await accessResponse.json(),imports=await importsResponse.json();if(!accessResponse.ok)throw new Error(access.error??"Organization access failed");setClients(rows as ClientRow[]);setPermissions(access.permissions??[]);if(importsResponse.ok)setPendingImports((imports as ImportSummary[]).filter(item=>item.status==="REVIEW_REQUIRED"));setDirectoryStatus("success")}catch(error){setDirectoryStatus("error");throw error}});
@@ -212,7 +213,7 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
     setClients((await request(`?search=${encodeURIComponent(search)}&status=${encodeURIComponent(status)}&renewalStatus=${encodeURIComponent(renewalStatus)}&readiness=${encodeURIComponent(readiness)}&operational=${encodeURIComponent(operational)}`)) as ClientRow[]);
     setMessage(text);
   }
-  async function discardImport(id:string){if(!window.confirm("Discard this unfinished import? It will be closed and cannot be resumed."))return;await run(async()=>{const response=await fetch(`/api/organizations/${organizationId}/clients/imports`,{method:"POST",headers,body:JSON.stringify({action:"CANCEL",sessionId:id})}),result=await response.json();if(!response.ok)throw new Error(result.error??"Import could not be discarded");setPendingImports(current=>current.filter(item=>item.id!==id));setMessage("Import discarded. No canonical client data was changed.")})}
+  async function discardImport(id:string){if(!window.confirm("Discard this unfinished import? It will be closed and cannot be resumed."))return;await run(async()=>{const response=await fetch(`/api/organizations/${organizationId}/clients/imports`,{method:"POST",headers,body:JSON.stringify({action:"CANCEL",sessionId:id})}),result=await response.json();if(!response.ok)throw new Error(result.error??"Import could not be discarded");setPendingImports(current=>current.filter(item=>item.id!==id));await refreshPendingImports();setMessage("Import discarded. No canonical client data was changed.")})}
   async function documentAction(body: unknown, text: string) {
     if (!selected) return false;
     return run(async () => {
