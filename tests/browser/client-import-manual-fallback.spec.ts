@@ -45,6 +45,21 @@ test("existing-client document review uses authoritative identity and exposes sa
   await expect(preview).toContainText("unverified and does not update the client record");
 });
 
+test("fresh import displays exact proposed values and current extraction diagnostics",async({page})=>{
+  await enterVisualQa(page);
+  await page.getByRole("link",{name:"Clients",exact:true}).click();
+  await page.getByRole("button",{name:/Add client/}).click();
+  await page.getByRole("radio",{name:/Upload documents/}).click();
+  const pdf=await PDFDocument.create(),font=await pdf.embedFont(StandardFonts.Helvetica),pdfPage=pdf.addPage([612,792]),form=pdf.getForm(),fields={legal_first_name:"Jane",legal_last_name:"Example",date_of_birth:"01/15/1990",address:"123 Example Street",phone:"555-0100",case_manager_name:"Alex Sample"};let y=700;for(const[name,value]of Object.entries(fields)){const field=form.createTextField(name);field.setText(value);field.addToPage(pdfPage,{x:40,y,width:220,height:20});y-=35}form.updateFieldAppearances(font);
+  await page.locator('input[type="file"]').setInputFiles({name:"synthetic-exact-values.pdf",mimeType:"application/pdf",buffer:Buffer.from(await pdf.save())});
+  await page.getByRole("button",{name:"Upload and review"}).click();
+  await expect(page.getByRole("heading",{name:"Review imported documents"})).toBeVisible();
+  await expect(page.getByText(/Pipeline v2 · attempt [a-f0-9]{8} · readable content yes · 6 proposals · Complete/)).toBeVisible();
+  for(const value of ["Jane","Example","01/15/1990","123 Example Street","Alex Sample"])await expect(page.getByText(value,{exact:true}).first()).toBeVisible();
+  await page.getByRole("button",{name:"Next",exact:true}).click();
+  await expect(page.getByText("555-0100",{exact:true}).first()).toBeVisible();
+});
+
 test("HTML gateway failure produces an actionable ambiguous-outcome message and preserves selection",async({page})=>{
   await enterVisualQa(page);
   await page.getByRole("link",{name:"Clients",exact:true}).click();

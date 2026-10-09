@@ -3101,20 +3101,21 @@ model Client {
 }
 
 model ClientService {
-  id                 String              @id @default(cuid())
-  organizationId     String
-  clientId           String
-  serviceType        String
-  startDate          DateTime?           @db.Date
-  authorizedUnits    Decimal?            @db.Decimal(12, 2)
-  authorizedHours    Decimal?            @db.Decimal(12, 2)
-  authorizationStart DateTime?           @db.Date
-  authorizationEnd   DateTime?           @db.Date
-  scheduleJson       Json?
-  status             ClientServiceStatus @default(PROPOSED)
-  createdAt          DateTime            @default(now())
-  updatedAt          DateTime            @updatedAt
-  client             Client              @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  id                      String              @id @default(cuid())
+  organizationId          String
+  clientId                String
+  serviceType             String
+  authorizationIdentifier String?
+  startDate               DateTime?           @db.Date
+  authorizedUnits         Decimal?            @db.Decimal(12, 2)
+  authorizedHours         Decimal?            @db.Decimal(12, 2)
+  authorizationStart      DateTime?           @db.Date
+  authorizationEnd        DateTime?           @db.Date
+  scheduleJson            Json?
+  status                  ClientServiceStatus @default(PROPOSED)
+  createdAt               DateTime            @default(now())
+  updatedAt               DateTime            @updatedAt
+  client                  Client              @relation(fields: [clientId], references: [id], onDelete: Restrict)
 
   @@index([organizationId, clientId, status])
 }

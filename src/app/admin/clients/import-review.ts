@@ -25,6 +25,7 @@ const exactLabels: Record<string, string> = {
   "caseManager.agency": "Case manager agency / county",
   "caseManager.phone": "Case manager phone",
   "caseManager.email": "Case manager email",
+  "services.0.authorizationIdentifier": "Service authorization identifier",
   "rights.writtenCopyReceivedDate": "Written copy received date",
   "rights.rightsExplainedDate": "Rights explained date",
   "rights.annualReviewDate": "Annual rights review date",
