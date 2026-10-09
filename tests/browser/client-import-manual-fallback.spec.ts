@@ -12,7 +12,7 @@ test("unknown zero-field PDF remains retainable through manual client creation",
   await page.locator('input[type="file"]').setInputFiles({name:"synthetic-zero-field.pdf",mimeType:"application/pdf",buffer:Buffer.from(await pdf.save())});
   await page.getByRole("button",{name:"Upload and review"}).click();
   await expect(page.getByRole("heading",{name:"Review imported documents"})).toBeVisible();
-  await expect(page.getByText(/Secure OCR is not configured/)).toBeVisible();
+  await expect(page.getByText(/OCR required · Local OCR could not complete; manual review remains available/).first()).toBeVisible();
   await page.getByLabel(/Legal first name/).fill("Browser");
   await page.getByLabel(/Legal last name/).fill("Fallback");
   await page.getByRole("button",{name:"Save client details"}).click();

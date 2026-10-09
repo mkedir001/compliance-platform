@@ -18,6 +18,7 @@
     "initialize:production-training": "tsx scripts/initialize-production-training.ts",
     "link:cognito-user": "tsx scripts/link-cognito-user.ts",
     "verify:linkage-runtime": "tsx scripts/verify-linkage-runtime.ts",
+    "verify:document-ocr-runtime": "tsx scripts/verify-document-ocr-runtime.ts",
     "smoke:production": "tsx scripts/smoke-production.ts",
     "start": "next start"
   },

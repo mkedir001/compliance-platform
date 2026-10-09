@@ -4,7 +4,7 @@ FROM node:22.12.0-bookworm-slim@sha256:35531c52ce27b6575d69755c73e65d4468dba93a2
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
 RUN apt-get update \
-    && apt-get install --yes --no-install-recommends ca-certificates openssl \
+    && apt-get install --yes --no-install-recommends ca-certificates openssl poppler-utils tesseract-ocr tesseract-ocr-eng \
     && rm -rf /var/lib/apt/lists/* \
     && npm install --global pnpm@10.15.1
 WORKDIR /app
@@ -19,6 +19,7 @@ ENV NEXT_TELEMETRY_DISABLED="1"
 COPY --from=development-dependencies /app/node_modules ./node_modules
 COPY . .
 RUN pnpm build
+RUN pnpm verify:document-ocr-runtime
 
 FROM base AS production-dependencies
 COPY package.json pnpm-lock.yaml ./

@@ -2914,6 +2914,7 @@ enum ClientImportClassification {
 enum ClientImportExtractionMethod {
   PDF_FORM_FIELD
   NATIVE_TEXT
+  LOCAL_OCR
   KNOWN_TEMPLATE
   MANUAL
   DOCUMENT_AI
