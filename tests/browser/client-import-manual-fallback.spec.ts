@@ -44,3 +44,18 @@ test("existing-client document review uses authoritative identity and exposes sa
   expect(await page.evaluate(()=>"previewExecuted" in window)).toBe(false);
   await expect(preview).toContainText("unverified and does not update the client record");
 });
+
+test("HTML gateway failure produces an actionable ambiguous-outcome message and preserves selection",async({page})=>{
+  await enterVisualQa(page);
+  await page.getByRole("link",{name:"Clients",exact:true}).click();
+  await page.locator(".client-directory-row").first().click();
+  await page.getByRole("button",{name:"Import documents",exact:true}).click();
+  const pdf=await PDFDocument.create();pdf.addPage([612,792]);
+  const region=page.getByRole("region",{name:"Import documents for this client"}),input=region.locator('input[type="file"]');
+  await input.setInputFiles({name:"synthetic-ambiguous.pdf",mimeType:"application/pdf",buffer:Buffer.from(await pdf.save())});
+  await page.route("**/api/organizations/*/clients/imports**",async route=>{const request=route.request(),url=new URL(request.url());if(request.method()==="POST")return route.fulfill({status:504,contentType:"text/html",body:"<html><h1>Gateway Time-out</h1></html>"});if(url.searchParams.has("requestId"))return route.fulfill({status:404,contentType:"application/json",body:JSON.stringify({error:"Upload operation not found"})});return route.continue()});
+  await region.getByRole("button",{name:"Upload and analyze"}).click();
+  await expect(region.getByText(/server outcome could not be confirmed/i)).toBeVisible();
+  await expect(region.getByText(/Unexpected token|<html>/)).toHaveCount(0);
+  expect(await input.evaluate((node:HTMLInputElement)=>node.files?.length)).toBe(1);
+});
