@@ -54,7 +54,7 @@ test("fresh import displays exact proposed values and current extraction diagnos
   await page.locator('input[type="file"]').setInputFiles({name:"synthetic-exact-values.pdf",mimeType:"application/pdf",buffer:Buffer.from(await pdf.save())});
   await page.getByRole("button",{name:"Upload and review"}).click();
   await expect(page.getByRole("heading",{name:"Review imported documents"})).toBeVisible();
-  await expect(page.getByText(/Pipeline v2 · attempt [a-f0-9]{8} · readable content yes · 6 proposals · Complete/)).toBeVisible();
+  await expect(page.getByText(/Pipeline v3 · attempt [a-f0-9]{8} · readable content yes · 6 proposals · Complete/)).toBeVisible();
   for(const value of ["Jane","Example","01/15/1990","123 Example Street","Alex Sample"])await expect(page.getByText(value,{exact:true}).first()).toBeVisible();
   await page.getByRole("button",{name:"Next",exact:true}).click();
   await expect(page.getByText("555-0100",{exact:true}).first()).toBeVisible();

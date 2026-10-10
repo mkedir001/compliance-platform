@@ -36,6 +36,14 @@ export const clientDocumentDefinition=(id:ClientImportClassification)=>clientDoc
 export const clientDocumentTypeForImport=(id:ClientImportClassification)=>id as ClientDocumentType;
 export function classifyDocumentText(text:string){
   const normalized=text.toLowerCase().replace(/\s+/g," ");
+  // A document's own title appears first, so prefer the alias that occurs earliest near the top.
+  const head=normalized.replace(/[^a-z0-9 ]+/g," ").replace(/ +/g," ").slice(0,600);
+  let earliest:{id:typeof clientDocumentRegistry[number]["id"];alias:string;at:number}|null=null;
+  for(const definition of clientDocumentRegistry){
+    if(definition.id==="UNKNOWN"||definition.id==="OTHER")continue;
+    for(const value of definition.aliases){const at=head.indexOf(value);if(at>=0&&(!earliest||at<earliest.at||(at===earliest.at&&value.length>earliest.alias.length)))earliest={id:definition.id,alias:value,at};}
+  }
+  if(earliest)return{classification:earliest.id,signal:`recognized phrase: ${earliest.alias}`};
   for(const definition of clientDocumentRegistry){
     if(definition.id==="UNKNOWN"||definition.id==="OTHER")continue;
     const alias=definition.aliases.find(value=>normalized.includes(value));
