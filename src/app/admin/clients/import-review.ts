@@ -41,6 +41,11 @@ const exactLabels: Record<string, string> = {
   "roi.limitations": "Limits on information sharing",
   "roi.expirationDate": "ROI expiration date",
   "roi.effectiveDate": "ROI effective date",
+  "document.developmentDate": "Assessment / plan development date",
+  "document.periodStart": "Annual period start",
+  "document.periodEnd": "Annual period end (suggested expiration)",
+  "document.planReviewDate": "Plan review and update date",
+  "document.completedBy": "Completed by (name and title)",
 };
 
 const segmentLabels: Record<string, string> = {
@@ -69,6 +74,7 @@ export function clientImportFieldLabel(fieldPath: string) {
   if (parts[0] === "roi" && parts[1] === "categories") return `ROI information category — ${title(parts.slice(2).join(" "))}`;
   if (parts[0] === "roi" && parts[1] === "purposes") return `ROI purpose — ${title(parts.slice(2).join(" "))}`;
   if (parts[0] === "externalSignatures") return `${title(parts[1] ?? "Signer")} apparent external signature — ${title(parts[2] ?? "evidence").toLowerCase()}`;
+  if (parts[0] === "care") return `Care routine — ${leaf.toLowerCase()}`;
   if (parts[0] === "health") return leaf;
   return `${title(parts[0])} — ${leaf.toLowerCase()}`;
 }
