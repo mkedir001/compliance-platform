@@ -493,6 +493,7 @@ export function extractSemanticFields(pages: readonly (readonly TextLine[])[], m
       const tokens = tokenize(text);
       if (!tokens.length) return;
       const hits = findLabels(text, tokens);
+      let weakName = false;
 
       hits.forEach(hit => {
         const def = hit.def;
@@ -518,7 +519,11 @@ export function extractSemanticFields(pages: readonly (readonly TextLine[])[], m
           if (/^(name|client|individual|recipient|participant|consumer)$/i.test(hit.label.trim())) {
             const context=lines.slice(Math.max(0,lineIndex-2),lineIndex+4).map(item=>item.text).join(" ").toLowerCase();
             const anchored=/\b(?:date of birth|dob|birth date|ma\s*\/?\s*pmi|medical assistance|person served|home address|street address)\b/.test(context);
-            if(pageIndex>0||lineIndex>10||hit.tokenIndex>25||recentRole||!anchored)return;
+            // A bare "Name:" printed right under the title of a person-specific form (for example a Self-Management
+            // Assessment) is the client even with no demographic label nearby; it is kept at low confidence for review.
+            const nearTitle=/^name$/i.test(hit.label.trim())&&lineIndex<=5&&hit.tokenIndex<=12;
+            if(pageIndex>0||lineIndex>10||hit.tokenIndex>25||recentRole||(!anchored&&!nearTitle))return;
+            weakName=!anchored;
           }
         }
         pushCandidate(def.path, def, hit, 1);
@@ -545,7 +550,7 @@ export function extractSemanticFields(pages: readonly (readonly TextLine[])[], m
         // Delimiter-free matches are only trusted for strongly typed values.
         if (!hit.delimited && !["date", "phone", "email"].includes(def.kind)) return;
 
-        const bareName = def.kind === "name" && def.path === "identity.fullName" && /^name$/i.test(hit.label.trim()) ? 0.6 : /^(client|individual|recipient|participant|consumer)$/i.test(hit.label) ? 0.8 : 1;
+        const bareName = def.kind === "name" && def.path === "identity.fullName" && /^name$/i.test(hit.label.trim()) ? (weakName ? 0.5 : 0.6) : /^(client|individual|recipient|participant|consumer)$/i.test(hit.label) ? 0.8 : 1;
         const fuzzy = hit.fuzzy ? 0.85 : 1;
         const delimited = hit.delimited ? 1 : 0.7;
         const ocrQuality=method==="LOCAL_OCR"&&sourceConfidence!==undefined?Math.max(0.55,sourceConfidence):1;

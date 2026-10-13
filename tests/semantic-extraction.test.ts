@@ -194,4 +194,31 @@ Personal outcome: Wants more community activities`),"NATIVE_TEXT"));
     const falseNegatives=expected.filter(item=>!actual.includes(item));
     expect({falsePositives,falseNegatives}).toEqual({falsePositives:[],falseNegatives:[]});
   });
+
+  it("maps a bare Name printed under the title of a person-specific form, at low confidence", () => {
+    const fields = extractSemanticFields(page(`Radiant Care
+SELF-MANAGEMENT ASSESSMENT
+Name: Jordan Example
+Date of Self-Management Assessment development: 7/2/2021
+Name and title of person completing the review: Pat Staff, Designated Coordinator`), "NATIVE_TEXT");
+    const name = fields.find(field => field.fieldPath === "identity.fullName");
+    expect(name?.value).toBe("Jordan Example");
+    expect(name!.confidence).toBeLessThan(0.65);
+    expect(fields.find(field => field.fieldPath === "client.legalFirstName")?.value).toBe("Jordan");
+    expect(fields.some(field => field.value.includes("Pat"))).toBe(false);
+  });
+
+  it("still ignores a bare Name deeper in the page or after a staff or contact section", () => {
+    const deep = extractSemanticFields(page(`Radiant Care
+Intro line one
+Intro line two
+Intro line three
+Intro line four
+Intro line five
+Intro line six
+Name: Pat Other`), "NATIVE_TEXT");
+    expect(deep.find(field => field.fieldPath === "identity.fullName")).toBeUndefined();
+    const afterRole = extractSemanticFields(page("Case manager: Alex Manager\nName: Pat Other"), "NATIVE_TEXT");
+    expect(afterRole.find(field => field.fieldPath === "identity.fullName")).toBeUndefined();
+  });
 });
