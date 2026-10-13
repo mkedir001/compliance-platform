@@ -13,6 +13,7 @@ export function CareProfilePanel({ documents }: { documents: readonly CareProfil
       <p className="eyebrow">{source(item.current)}</p>
       <h4>{item.label}: {careAnswerLabel(item.current.answer)}{item.current.detail ? ` — ${item.current.detail}` : ""}</h4>
       {item.current.note ? <small>The form says: {item.current.note}</small> : null}
+      {item.ambiguous ? <small role="note">Documents with the same date disagree on this answer. Check the originals and confirm the right one.</small> : null}
       {item.earlier.length ? <details><summary>{item.earlier.length} earlier answer{item.earlier.length === 1 ? "" : "s"}</summary>
         <ul>{item.earlier.map(entry => <li key={`${entry.documentId}:${entry.reviewedAt ?? ""}`}>{careAnswerLabel(entry.answer)}{entry.detail ? ` — ${entry.detail}` : ""} · {source(entry)}</li>)}</ul>
       </details> : null}

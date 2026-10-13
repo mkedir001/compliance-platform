@@ -43,3 +43,41 @@ describe("care profile", () => {
     expect(items.map(item => item.label)).toEqual(["Community survival skills", "Risk of falling"]);
   });
 });
+
+describe("care profile ordering and conflicts", () => {
+  const withPeriod = (id: string, periodStart: string, answer: string, uploaded: string, completed: string | null = null) => ({
+    id, originalFileName: `${id}.pdf`, status: "DRAFT", authoritativeCompletedAt: completed, importedAt: uploaded,
+    snapshotJson: { reviewedFacts: [fact("waterSafetySkills", answer), { fieldPath: "document.periodStart", value: periodStart }] },
+  });
+
+  it("orders by the document's own dates, not by upload time", () => {
+    const [item] = buildCareProfile([
+      withPeriod("sma-2022", "7/1/2022", "YES", "2026-01-01T00:00:00Z"),
+      withPeriod("sma-2021", "7/1/2021", "NO", "2026-09-01T00:00:00Z"), // uploaded later but older
+    ]);
+    expect(item.current.documentId).toBe("sma-2022");
+    expect(item.earlier[0].documentId).toBe("sma-2021");
+    expect(item.ambiguous).toBe(false);
+  });
+
+  it("prefers the reviewer-confirmed completion date over dates found in the document", () => {
+    const [item] = buildCareProfile([
+      withPeriod("a", "7/1/2022", "YES", "2026-01-01T00:00:00Z", "2021-01-01T00:00:00Z"),
+      withPeriod("b", "7/1/2021", "NO", "2026-01-01T00:00:00Z", "2023-01-01T00:00:00Z"),
+    ]);
+    expect(item.current.documentId).toBe("b");
+  });
+
+  it("flags disagreement between documents that cannot be ordered", () => {
+    const [item] = buildCareProfile([
+      withPeriod("a", "7/1/2022", "YES", "2026-01-01T00:00:00Z"),
+      withPeriod("b", "7/1/2022", "NO", "2026-02-01T00:00:00Z"),
+    ]);
+    expect(item.ambiguous).toBe(true);
+  });
+
+  it("does not flag same-date documents that agree", () => {
+    const [item] = buildCareProfile([withPeriod("a", "7/1/2022", "YES", "2026-01-01T00:00:00Z"), withPeriod("b", "7/1/2022", "YES", "2026-02-01T00:00:00Z")]);
+    expect(item.ambiguous).toBe(false);
+  });
+});
