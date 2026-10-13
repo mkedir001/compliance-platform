@@ -91,6 +91,9 @@ test("document actions use readable controls and accessible dropdowns", async ({
   for (const action of [generate, request]) {
     expect((await action.boundingBox())?.height).toBeGreaterThanOrEqual(42);
     expect(await action.evaluate(element => Number.parseFloat(getComputedStyle(element).fontSize))).toBeGreaterThanOrEqual(14);
+    const alignment=await action.evaluate(element=>{const label=element.querySelector("span")!.getBoundingClientRect(),chevron=element.querySelector(".action-popover-chevron")!.getBoundingClientRect();return{centerDelta:Math.abs((label.top+label.bottom)/2-(chevron.top+chevron.bottom)/2),gap:chevron.left-label.right}});
+    expect(alignment.centerDelta).toBeLessThanOrEqual(1);
+    expect(alignment.gap).toBeGreaterThanOrEqual(8);
   }
   await generate.click();
   await expect(page.getByRole("dialog", { name: "Generate document" })).toBeVisible();
@@ -104,5 +107,6 @@ test("document actions use readable controls and accessible dropdowns", async ({
     expect(await page.locator("body").evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
     await expect(generate).toBeVisible();
     await expect(request).toBeVisible();
+    for(const action of [generate,request])expect(await action.evaluate(element=>{const label=element.querySelector("span")!.getBoundingClientRect(),chevron=element.querySelector(".action-popover-chevron")!.getBoundingClientRect();return Math.abs((label.top+label.bottom)/2-(chevron.top+chevron.bottom)/2)})).toBeLessThanOrEqual(1);
   }
 });

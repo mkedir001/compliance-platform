@@ -496,6 +496,7 @@ export function extractSemanticFields(pages: readonly (readonly TextLine[])[], m
 
       hits.forEach(hit => {
         const def = hit.def;
+        let weakName = false;
         const explicit = explicitRoleFromLabel(hit.tokenIndex, tokens, hit);
         const inherited = recentRole && lineIndex - recentRole.lineIndex <= 3 ? recentRole.role : null;
         const suffix = def.path.split(".").pop()!;
@@ -518,13 +519,17 @@ export function extractSemanticFields(pages: readonly (readonly TextLine[])[], m
           if (/^(name|client|individual|recipient|participant|consumer)$/i.test(hit.label.trim())) {
             const context=lines.slice(Math.max(0,lineIndex-2),lineIndex+4).map(item=>item.text).join(" ").toLowerCase();
             const anchored=/\b(?:date of birth|dob|birth date|ma\s*\/?\s*pmi|medical assistance|person served|home address|street address)\b/.test(context);
-            if(pageIndex>0||lineIndex>10||hit.tokenIndex>25||recentRole||!anchored)return;
+            const titleLines=lines.slice(0,lineIndex).map(item=>item.text.toLowerCase()).filter(item=>/\b(?:assessment|addendum|intake|service plan|support plan|client profile|questionnaire)\b/.test(item));
+            const formTitle=titleLines.at(-1)??"";
+            const underClientFormTitle=/^name$/i.test(hit.label.trim())&&lineIndex<=5&&hit.tokenIndex<=12&&Boolean(formTitle)&&!/\b(?:employee|staff|provider|case manager|representative|guardian)\b/.test(formTitle);
+            if(pageIndex>0||lineIndex>10||hit.tokenIndex>25||recentRole||(!anchored&&!underClientFormTitle))return;
+            weakName=!anchored;
           }
         }
-        pushCandidate(def.path, def, hit, 1);
+        pushCandidate(def.path, def, hit, 1, weakName ? 5 / 6 : 1);
       });
 
-      function pushCandidate(path: string, def: FieldDef, hit: LabelHit, roleFactor: number) {
+      function pushCandidate(path: string, def: FieldDef, hit: LabelHit, roleFactor: number, contextFactor = 1) {
         const hitIndex = hits.indexOf(hit);
         const endOfValue = hits[hitIndex + 1]?.start ?? text.length;
         let value = takeValue(def.kind, text.slice(hit.end, endOfValue));
@@ -549,7 +554,7 @@ export function extractSemanticFields(pages: readonly (readonly TextLine[])[], m
         const fuzzy = hit.fuzzy ? 0.85 : 1;
         const delimited = hit.delimited ? 1 : 0.7;
         const ocrQuality=method==="LOCAL_OCR"&&sourceConfidence!==undefined?Math.max(0.55,sourceConfidence):1;
-        const confidence = Math.round(Math.max(0.05, Math.min(1, fuzzy * positionFactor * roleFactor * methodFactor * delimited * bareName * ocrQuality)) * 100) / 100;
+        const confidence = Math.round(Math.max(0.05, Math.min(1, fuzzy * positionFactor * roleFactor * contextFactor * methodFactor * delimited * bareName * ocrQuality)) * 100) / 100;
         const base = { value, page: pageIndex + 1, line: lineIndex + 1, label: hit.label, box: sourceBox };
         const location = `Page ${pageIndex + 1} line ${lineIndex + 1} ${method === "LOCAL_OCR" ? "OCR text" : "labeled text"} (label “${hit.label}”)`;
 

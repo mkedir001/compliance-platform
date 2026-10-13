@@ -12,5 +12,5 @@ export function ActionPopover({label,children,initialOpen=false}:{label:string;c
     requestAnimationFrame(()=>root.current?.querySelector<HTMLElement>("select,input,button:not([aria-haspopup])")?.focus());
     return()=>{document.removeEventListener("pointerdown",outside);document.removeEventListener("keydown",escape)};
   },[open,close]);
-  return <div className="action-popover" ref={root}><button type="button" className="action-popover-trigger" ref={trigger} aria-haspopup="dialog" aria-expanded={open} onClick={()=>setOpen(value=>!value)}><span>{label}</span><span className="action-popover-chevron" aria-hidden="true">⌄</span></button>{open?<div className="action-popover-panel" role="dialog" aria-label={label}>{children(close)}</div>:null}</div>
+  return <div className="action-popover" ref={root}><button type="button" className="action-popover-trigger" ref={trigger} aria-haspopup="dialog" aria-expanded={open} onClick={()=>setOpen(value=>!value)}><span>{label}</span><svg className="action-popover-chevron" aria-hidden="true" viewBox="0 0 12 8" focusable="false"><path d="M1 1.25 6 6.25l5-5"/></svg></button>{open?<div className="action-popover-panel" role="dialog" aria-label={label}>{children(close)}</div>:null}</div>
 }

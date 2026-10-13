@@ -194,4 +194,38 @@ Personal outcome: Wants more community activities`),"NATIVE_TEXT"));
     const falseNegatives=expected.filter(item=>!actual.includes(item));
     expect({falsePositives,falseNegatives}).toEqual({falsePositives:[],falseNegatives:[]});
   });
+
+  it.each(["NATIVE_TEXT", "LOCAL_OCR"] as const)("maps a bare Name under a client-form title for %s review", method => {
+    const fields=extractSemanticFields(page(`Radiant Care
+SELF-MANAGEMENT ASSESSMENT
+Name: Jordan Example
+Date of Self-Management Assessment development: 7/2/2021
+Name and title of person completing the review: Pat Staff, Designated Coordinator`),method);
+    const name=fields.find(field=>field.fieldPath==="identity.fullName");
+    expect(name?.value).toBe("Jordan Example");
+    expect(name?.confidence).toBeLessThan(0.6);
+    expect(fields.find(field=>field.fieldPath==="client.legalFirstName")?.value).toBe("Jordan");
+    expect(fields.some(field=>field.value.includes("Pat"))).toBe(false);
+  });
+
+  it("does not treat generic, staff, case-manager, or representative Name labels as the client",()=>{
+    const generic=extractSemanticFields(page("Radiant Care\nGeneral information\nName: Pat Other"),"NATIVE_TEXT");
+    const staff=extractSemanticFields(page("EMPLOYEE ASSESSMENT\nName: Pat Staff"),"NATIVE_TEXT");
+    const caseManager=extractSemanticFields(page("Case manager: Alex Manager\nName: Pat Other"),"NATIVE_TEXT");
+    const representative=extractSemanticFields(page("Legal representative\nName: Sam Guardian"),"NATIVE_TEXT");
+    for(const fields of [generic,staff,caseManager,representative])expect(fields.find(field=>field.fieldPath==="identity.fullName")).toBeUndefined();
+  });
+
+  it("ignores a bare Name below the title region or on later pages",()=>{
+    const deep=extractSemanticFields(page(`SELF-MANAGEMENT ASSESSMENT
+Intro one
+Intro two
+Intro three
+Intro four
+Intro five
+Name: Pat Other`),"NATIVE_TEXT");
+    const later=extractSemanticFields([page("SELF-MANAGEMENT ASSESSMENT")[0],page("Name: Pat Other")[0]],"NATIVE_TEXT");
+    expect(deep.find(field=>field.fieldPath==="identity.fullName")).toBeUndefined();
+    expect(later.find(field=>field.fieldPath==="identity.fullName")).toBeUndefined();
+  });
 });
