@@ -41,6 +41,12 @@ const exactLabels: Record<string, string> = {
   "roi.limitations": "Limits on information sharing",
   "roi.expirationDate": "ROI expiration date",
   "roi.effectiveDate": "ROI effective date",
+  "document.creationDate": "Document creation / development date",
+  "document.effectiveDate": "Document effective / annual period start date",
+  "document.periodEnd": "Annual period end (not automatically an expiration)",
+  "document.reviewDate": "Document review / plan update date",
+  "document.expirationDate": "Explicit document expiration date",
+  "document.completedBy": "Completed by (name and title)",
 };
 
 const segmentLabels: Record<string, string> = {
@@ -69,6 +75,7 @@ export function clientImportFieldLabel(fieldPath: string) {
   if (parts[0] === "roi" && parts[1] === "categories") return `ROI information category — ${title(parts.slice(2).join(" "))}`;
   if (parts[0] === "roi" && parts[1] === "purposes") return `ROI purpose — ${title(parts.slice(2).join(" "))}`;
   if (parts[0] === "externalSignatures") return `${title(parts[1] ?? "Signer")} apparent external signature — ${title(parts[2] ?? "evidence").toLowerCase()}`;
+  if (parts[0] === "care") return `Care routine — ${leaf.toLowerCase()}`;
   if (parts[0] === "health") return leaf;
   return `${title(parts[0])} — ${leaf.toLowerCase()}`;
 }
@@ -86,3 +93,13 @@ export function clientImportReviewState(state: string) {
 }
 
 export const clientImportProposalNeedsReview = (state: string) => ["PROPOSED", "CORROBORATED", "CONFLICT"].includes(state);
+
+/** "7/1/2023" or "07/01/23" → "2023-07-01" for date inputs; null when it is not a real date. */
+export function usDateToInputValue(value: unknown) {
+  const match = /^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/.exec(String(value ?? "").trim());
+  if (!match) return null;
+  const month = Number(match[1]), day = Number(match[2]), year = match[3].length === 2 ? 2000 + Number(match[3]) : Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return null;
+  return `${year.toString().padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}

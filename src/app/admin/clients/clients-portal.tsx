@@ -2,6 +2,7 @@
 /* eslint-disable react-hooks/exhaustive-deps -- production organization context is fixed by the authenticated landing route */
 import { FormEvent, useEffect, useRef, useState } from "react";
 import GuidedIntake from "./guided-intake";
+import { CareProfilePanel as CarePanel } from "./care-profile-panel";
 import ClientImportWorkflow from "./client-import-workflow";
 import AddClientDrawer from "./add-client-drawer";
 import { DocumentPdfViewer } from "./document-pdf-viewer";
@@ -329,7 +330,7 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
   useEffect(() => {
     if (selected && initialRequestId && tab === "Documents") document.getElementById(`request-${initialRequestId}`)?.scrollIntoView({ block: "center" });
   }, [selected, initialRequestId, tab]);
-  const tabs = ["Overview", "Intake", "Services", "Documents", "Signatures", "Readiness", "Contacts", "History"];
+  const tabs = ["Overview", "Intake", "Services", "Documents", "Signatures", "Readiness", "Care profile", "Contacts", "History"];
   const directoryView = clientDirectoryView(directoryStatus, clients.length);
   const availableDocuments=selected?.documents.filter(item=>item.status!=="VOIDED"&&!item.isHistoricalDuplicate)??[],historicalVersions=selected?.documents.filter(item=>item.isHistoricalDuplicate)??[];
   const filteredDocuments=availableDocuments.filter(item=>(documentStatus==="ALL"||item.status===documentStatus)&&(!documentSearch.trim()||`${item.template.name} ${item.documentType} ${item.originalFileName??""}`.toLowerCase().includes(documentSearch.trim().toLowerCase())));
@@ -757,6 +758,7 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
               </article>;
             })}
           </section> : null}
+          {tab === "Care profile" ? <CarePanel client={selected} documents={selected.documents}/> : null}
           {tab === "Contacts" ? <section><h3>Contacts and representatives</h3><p>Only people associated with this client in the current tenant are shown.</p>{selected.contacts.map(item=><article key={`${item.professionalContact.id}:${item.role}`}><p className="eyebrow">{pretty(item.role)} · reusable professional contact</p><h4>{item.professionalContact.name}</h4><p>{item.professionalContact.agency??"No agency"} · {item.professionalContact.email??"No email"} · {item.professionalContact.phone??"No phone"}</p></article>)}{selected.representatives.map(item=><article key={item.id}><p className="eyebrow">{pretty(item.representativeType)}</p><h4>{item.name}</h4><p>{item.relationship??"Relationship not recorded"} · {item.email??"No email"}</p></article>)}{selected.emergencyContacts.map(item=><article key={item.id}><p className="eyebrow">Emergency contact</p><h4>{item.name}</h4><p>{item.relationship} · {item.phone}{item.informationSharingAllowed?" · information sharing authorized":" · no information-sharing authorization recorded"}</p></article>)}{!selected.contacts.length&&!selected.representatives.length&&!selected.emergencyContacts.length?<div className="empty-state">No contacts or representatives are recorded.</div>:null}{permissions.includes("client.intake.manage")?<button onClick={()=>selected.intakes[0]?.status==="COMPLETED"?editCompletedIntake("REPRESENTATIVE"):setTab("Intake")}>Manage through guided intake</button>:null}</section>:null}
           {tab === "History" ? <section><h3>Client history and provenance</h3><p>Historical completed documents, signatures, imports, renewals, and lifecycle records remain immutable.</p>{selected.documents.filter(item=>item.isHistoricalDuplicate).map(item=><article key={`duplicate:${item.id}`}><p className="eyebrow">Superseded draft · preserved history</p><h4>{item.template.name}</h4><p>Created {date(item.generatedAt)}. A newer equivalent document is the only actionable cycle.</p>{permissions.includes("client.document.read")?<a href={`/api/organizations/${organizationId}/clients/${selected.id}/documents?documentId=${item.id}`}>View preserved draft</a>:null}</article>)}{selected.importSessions.map(item=><article key={item.id}><p className="eyebrow">Import · {pretty(item.status)}</p><h4>{item._count.documents} preserved document(s)</h4><p>{item.confirmedAt?`Confirmed ${date(item.confirmedAt)}`:`Updated ${date(item.updatedAt)}`} · {item._count.proposals} reviewed proposal(s)</p></article>)}{selected.history.length?selected.history.map(item=><article key={item.id}><p className="eyebrow">{date(item.occurredAt)} · {pretty(item.entityType)}</p><h4>{pretty(item.eventType.replace(/^client\./,""))}</h4><p>{item.actor?.email?`Recorded by ${item.actor.email}`:"Recorded by the platform workflow"}</p></article>):<div className="empty-state">No material client events have been recorded.</div>}</section> : null}
         </section>
