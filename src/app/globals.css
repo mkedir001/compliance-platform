@@ -139,8 +139,11 @@ body{color:var(--portal-ink);background:var(--portal-canvas)}
 .portal-app .care-segmented label:hover{background:#fafaf7}
 .portal-app .care-segmented label.selected{background:var(--portal-green);color:#fff;font-weight:700}
 .portal-app .care-segmented input{position:absolute;inset:0;width:100%;height:100%;min-height:0;margin:0;opacity:0;cursor:pointer}
+.portal-app .care-segmented input:disabled{cursor:not-allowed}
 .portal-app .care-segmented label:focus-within{outline:2px solid #1f3d2f;outline-offset:-2px}
 .portal-app .care-detail{width:100%;box-sizing:border-box;padding:0 12px;border:1px solid #c9cbc5;border-radius:8px;font:inherit;font-size:.88rem}
 .portal-app .care-buttons{display:flex;justify-content:flex-end;gap:8px}
 .portal-app .care-buttons button{min-height:44px;padding:0 18px;font-size:.88rem;font-weight:700}
+.portal-app .import-field-row.care-item .import-field-copy,.portal-app .import-field-row.care-item .import-field-value{min-width:0;overflow-wrap:anywhere}
 @media(max-width:900px){.portal-app .import-field-row.care-item{grid-template-columns:1fr}.portal-app .care-answer{padding-right:0}}
+@media(max-width:480px){.care-segmented{flex-direction:column}.portal-app .care-segmented label,.portal-app .care-segmented label:last-child{min-height:44px;border-right:0;border-bottom:1px solid #c9cbc5}.portal-app .care-segmented label:last-child{border-bottom:0}.portal-app .care-buttons{align-items:stretch;flex-direction:column-reverse}.portal-app .care-buttons button{width:100%}}

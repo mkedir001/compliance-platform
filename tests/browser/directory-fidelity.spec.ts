@@ -34,6 +34,8 @@ test("approved employee directory structure keeps filtering and actions accessib
   await page.getByRole("link", { name: "Employees", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Employees", exact: true })).toBeVisible();
   await expect(page.getByPlaceholder("Search by name or employee number")).toBeVisible();
+  await expect(page.locator(".directory-toolbar.employee-toolbar")).toBeVisible();
+  await expect(page.locator(".directory-alert")).toBeVisible();
   await expect(page.getByText("Employment, portal access, and compliance are tracked separately for each person.")).toBeVisible();
   await expect(page.getByRole("link", { name: /Import from CSV/ })).toBeVisible();
   await expect(page.getByText(/Showing \d+ of \d+ employees/)).toBeVisible();
@@ -58,9 +60,18 @@ test("employee rows support pointer and keyboard navigation without hijacking in
   await expect(firstRowAction).toBeFocused();
   await firstRowAction.press("Enter");
   await expect(page.getByText("Employee record", { exact: true })).toBeVisible();
+  await expect(page.getByPlaceholder("Search by name or employee number")).toHaveCount(0);
+  await expect(page.locator(".directory-toolbar.employee-toolbar")).toHaveCount(0);
+  await expect(page.locator(".directory-alert")).toHaveCount(0);
+  await expect(page.getByRole("tab", { name: "Certifications", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Portal access", exact: true })).toBeVisible();
+  const directEmployeeUrl = page.url();
+  await page.goto(directEmployeeUrl);
+  await expect(page.getByText("Employee record", { exact: true })).toBeVisible();
+  await expect(page.getByPlaceholder("Search by name or employee number")).toHaveCount(0);
 
   await page.getByRole("link", { name: "Employees", exact: true }).click();
-  const keyboardRowAction = page.locator(".employee-directory-row").nth(1);
+  const keyboardRowAction = page.locator(".employee-directory-row").first();
   await keyboardRowAction.focus();
   await keyboardRowAction.press("Space");
   await expect(page.getByText("Employee record", { exact: true })).toBeVisible();
@@ -77,6 +88,20 @@ test("employee rows support pointer and keyboard navigation without hijacking in
   await page.getByRole("button", { name: "Reissue invitation", exact: true }).first().click();
   await expect(page).toHaveURL(directoryUrl);
   await expect(page.getByRole("heading", { name: "Employees", exact: true })).toBeVisible();
+});
+
+test("authorized owner can discover Test Data Management without causing cleanup", async ({ page }) => {
+  const mutationRequests: string[] = [];
+  page.on("request", request => {
+    if (request.url().includes("/test-data-cleanup") && request.method() !== "GET") mutationRequests.push(request.method());
+  });
+  await enterVisualQa(page);
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
+  await expect(page.getByRole("link", { name: "Test Data Management", exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "Test Data Management", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Test Data Management", exact: true })).toBeVisible();
+  await expect(page.getByText("Names and dates never determine test data.", { exact: false })).toBeVisible();
+  expect(mutationRequests).toEqual([]);
 });
 
 test("document actions use readable controls and accessible dropdowns", async ({ page }) => {
