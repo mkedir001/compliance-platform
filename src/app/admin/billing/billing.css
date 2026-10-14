@@ -30,6 +30,7 @@
 .billing-card-grid span{display:flex;flex-direction:column;justify-content:space-between;gap:2px}
 .billing-card-grid small,.billing-table small{color:var(--portal-muted);font-size:.72rem}
 .billing-card-grid b{font-size:1.05rem}
+.billing-card-grid em{font-style:normal;color:var(--portal-muted);font-size:.82rem}
 .billing-card-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;padding-top:12px;border-top:1px solid var(--portal-border);font-size:.88rem}
 .billing-muted{color:var(--portal-muted);font-size:.88rem}
 .billing-empty{margin:0;padding:18px;border:1px dashed var(--portal-border);border-radius:10px;background:#fafaf7;color:var(--portal-muted)}
@@ -51,9 +52,6 @@
 .billing-reasons{margin:0;padding-left:18px;color:#7a2922}
 .billing-reasons li.billing-muted{color:var(--portal-muted)}
 .billing-review{display:grid;gap:14px}
-.billing-mode{display:grid;gap:8px;margin:0;padding:12px;border:1px solid var(--portal-border);border-radius:10px}
-.billing-mode label{display:flex;flex-direction:row;align-items:center;justify-content:flex-start;gap:10px;min-height:36px}
-.billing-mode input{width:18px;height:18px;min-height:0;margin:0;padding:0;flex:none}
 .billing-note{margin:0;padding:10px 12px;border-radius:8px;background:#fff0c7;color:#6d4a00;font-size:.88rem}
 .billing-review-actions{display:flex;justify-content:flex-end;gap:10px}
 @media(max-width:900px){.billing-actions{margin-left:0}.billing-detail-head,.billing-banner{flex-direction:column;align-items:stretch}}

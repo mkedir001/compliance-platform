@@ -3,12 +3,12 @@ import "./billing.css";
 import { useMemo, useState } from "react";
 import { Drawer, StatusChip } from "@/app/components/portal-ui";
 import {
-  EVV_ISSUE_LABELS, applyBillingPlan, billableVisits, formatHours, formatMoney, nonCompliantVisits, planBilling, summarizeClient,
+  EVV_ISSUE_LABELS, applyBillingPlan, billableVisits, formatHours, formatHoursWithAmount, formatMoney, nonCompliantVisits, planBilling, summarizeClient,
   type BillingMode, type BillingRun, type BillingVisit, type ClientBillingSummary,
 } from "@/domain/billing/evv";
 import { sampleBillingData } from "@/domain/billing/sample";
 
-export type BillingClient = { id: string; name: string; status: string; serviceStart: string | null };
+export type BillingClient = { id: string; name: string; status: string; serviceStart: string | null; serviceEnd: string | null; approvedHours: number | null };
 
 const pretty = (value: string) => value.toLowerCase().replaceAll("_", " ").replace(/^./, c => c.toUpperCase());
 const day = (value: string | null | undefined) => (value ? new Intl.DateTimeFormat(undefined, { year: "numeric", month: "short", day: "numeric" }).format(new Date(value)) : "—");
@@ -18,6 +18,14 @@ function Stat({ label, value, note, tone }: { label: string; value: string; note
   return <p className={`billing-stat${tone ? ` ${tone}` : ""}`}><span>{label}</span><strong>{value}</strong>{note ? <small>{note}</small> : null}</p>;
 }
 
+/** Approved hours for the service period, priced at the client's current rate. */
+const approvedMinutes = (client: BillingClient) => (client.approvedHours === null ? null : Math.round(client.approvedHours * 60));
+const approvedCents = (client: BillingClient, summary: ClientBillingSummary) => (client.approvedHours === null || summary.latestRateCents === null ? null : Math.round(client.approvedHours * summary.latestRateCents));
+
+function Figure({ label, minutes, cents }: { label: string; minutes: number | null; cents: number | null }) {
+  return <span><small>{label}</small><b>{minutes === null ? "Not recorded" : formatHours(minutes)}</b><em>{minutes === null ? "" : `(${cents === null ? "—" : formatMoney(cents)})`}</em></span>;
+}
+
 function ClientCard({ client, summary, selected, onSelect, onOpen }: { client: BillingClient; summary: ClientBillingSummary; selected: boolean; onSelect: () => void; onOpen: () => void }) {
   return (
     <article className={`billing-card${selected ? " selected" : ""}`}>
@@ -25,13 +33,12 @@ function ClientCard({ client, summary, selected, onSelect, onOpen }: { client: B
       <button type="button" className="billing-card-open" onClick={onOpen} aria-label={`Open billing for ${client.name}`}>
         <span className="billing-card-head"><strong>{client.name}</strong><StatusChip tone={client.status === "ACTIVE" ? "good" : "neutral"}>{pretty(client.status)}</StatusChip></span>
         <span className="billing-card-grid">
-          <span><small>Total hours</small><b>{formatHours(summary.totalMinutes)}</b></span>
-          <span><small>Since start of service</small><b>{formatHours(summary.evvMinutes)}</b></span>
-          <span><small>Since last billing</small><b>{formatHours(summary.unbilledEvvMinutes)}</b></span>
+          <Figure label="Total approved hours" minutes={approvedMinutes(client)} cents={approvedCents(client, summary)} />
+          <Figure label="Billed since start of service" minutes={summary.billedMinutes} cents={summary.billedCents} />
+          <Figure label="Since last billing" minutes={summary.unbilledEvvMinutes} cents={summary.unbilledEvvCents} />
         </span>
         <span className="billing-card-foot">
-          <span>Billable now <b>{formatMoney(summary.unbilledEvvCents)}</b></span>
-          {summary.nonEvvVisitCount ? <StatusChip tone="warning">{summary.nonEvvVisitCount} non-EVV</StatusChip> : <span className="billing-muted">All EVV compliant</span>}
+          {summary.nonEvvVisitCount ? <StatusChip tone="warning">{summary.nonEvvVisitCount} non-EVV visits, not billable</StatusChip> : <span className="billing-muted">All visits EVV compliant</span>}
         </span>
       </button>
     </article>
@@ -75,12 +82,12 @@ export default function BillingPortal({ clients }: { clients: BillingClient[] })
   const [onlyBillable, setOnlyBillable] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
   const [openId, setOpenId] = useState<string | null>(null);
-  const [review, setReview] = useState<{ ids: string[]; mode: BillingMode } | null>(null);
+  const [review, setReview] = useState<{ ids: string[]; mode: BillingMode; all?: boolean } | null>(null);
   const [notice, setNotice] = useState("");
 
   const summaries = useMemo(() => new Map(clients.map(client => [client.id, summarizeClient(client.id, visits, runs)])), [clients, visits, runs]);
   const shown = clients.filter(client => client.name.toLowerCase().includes(search.trim().toLowerCase()) && (!onlyBillable || (summaries.get(client.id)?.unbilledEvvCents ?? 0) > 0));
-  const totals = [...summaries.values()].reduce((sum, item) => ({ billable: sum.billable + item.unbilledEvvCents, excluded: sum.excluded + item.unbilledNonEvvCents, billed: sum.billed + item.billedCents, hours: sum.hours + item.unbilledEvvMinutes }), { billable: 0, excluded: 0, billed: 0, hours: 0 });
+  const totals = [...summaries.values()].reduce((sum, item) => ({ billable: sum.billable + item.unbilledEvvCents, excluded: sum.excluded + item.unbilledNonEvvCents, billed: sum.billed + item.billedCents, hours: sum.hours + item.unbilledEvvMinutes, excludedMinutes: sum.excludedMinutes + item.unbilledNonEvvMinutes, billedMinutes: sum.billedMinutes + item.billedMinutes }), { billable: 0, excluded: 0, billed: 0, hours: 0, excludedMinutes: 0, billedMinutes: 0 });
   const open = openId ? clients.find(client => client.id === openId) ?? null : null;
   const billableIds = clients.filter(client => (summaries.get(client.id)?.unbilledEvvCents ?? 0) > 0).map(client => client.id);
   const plan = review ? planBilling(review.ids, visits, review.mode) : null;
@@ -128,9 +135,9 @@ export default function BillingPortal({ clients }: { clients: BillingClient[] })
       {!open ? (
         <>
           <section className="billing-stats" aria-label="Billing totals">
-            <Stat label="Billable now (EVV compliant)" value={formatMoney(totals.billable)} note={formatHours(totals.hours)} tone="good" />
-            <Stat label="Not billable (non-EVV)" value={formatMoney(totals.excluded)} note="Excluded until fixed" tone="warning" />
-            <Stat label="Billed to date" value={formatMoney(totals.billed)} />
+            <Stat label="Billable now (EVV compliant)" value={formatHoursWithAmount(totals.hours, totals.billable)} note="EVV compliant, not yet billed" tone="good" />
+            <Stat label="Not billable (non-EVV)" value={formatHoursWithAmount(totals.excludedMinutes, totals.excluded)} note="Excluded until fixed" tone="warning" />
+            <Stat label="Billed to date" value={formatHoursWithAmount(totals.billedMinutes, totals.billed)} />
             <Stat label="Clients" value={String(clients.length)} note={`${billableIds.length} with billable visits`} />
           </section>
 
@@ -138,12 +145,11 @@ export default function BillingPortal({ clients }: { clients: BillingClient[] })
             <label className="billing-search">Search clients<input type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder="Name" /></label>
             <label className="billing-check"><input type="checkbox" checked={onlyBillable} onChange={event => setOnlyBillable(event.target.checked)} /> Only clients with billable visits</label>
             <div className="billing-actions">
-              <button type="button" className="secondary" disabled={!selected.length} onClick={() => setReview({ ids: selected, mode: "INDIVIDUAL" })}>Bill selected individually ({selected.length})</button>
-              <button type="button" className="secondary" disabled={selected.length < 2} onClick={() => setReview({ ids: selected, mode: "GROUP" })}>Bill selected as a group</button>
-              <button type="button" disabled={!billableIds.length} onClick={() => setReview({ ids: billableIds, mode: "INDIVIDUAL" })}>Bill all ({billableIds.length})</button>
+              <button type="button" className="secondary" disabled={selected.length < 2} onClick={() => setReview({ ids: selected, mode: "GROUP" })}>Bill group ({selected.length} selected)</button>
+              <button type="button" disabled={!billableIds.length} onClick={() => setReview({ ids: billableIds, mode: billableIds.length > 1 ? "GROUP" : "INDIVIDUAL", all: true })}>Bill all ({billableIds.length})</button>
             </div>
           </section>
-          <p className="billing-hint">Tick the box on each card to build a group, then bill it as one batch or as separate invoices. Open a card for visit detail.</p>
+          <p className="billing-hint">Tick the box on each card to choose a group of clients to bill together. Open a card to bill one client on its own or see visit detail.</p>
 
           {clients.length === 0 ? <p className="billing-empty">There are no clients yet.</p>
             : shown.length === 0 ? <p className="billing-empty">No clients match.</p>
@@ -153,21 +159,14 @@ export default function BillingPortal({ clients }: { clients: BillingClient[] })
         <ClientDetail client={open} summary={summaries.get(open.id)!} visits={visits} runs={runs} onBack={() => setOpenId(null)} onBill={() => setReview({ ids: [open.id], mode: "INDIVIDUAL" })} />
       )}
 
-      <Drawer open={Boolean(review)} title={review?.ids.length === 1 ? `Bill ${nameOf(review.ids[0])}` : "Review billing"} onClose={() => setReview(null)}>
+      <Drawer open={Boolean(review)} title={review?.ids.length === 1 ? `Bill ${nameOf(review.ids[0])}` : review?.all ? "Bill all clients" : "Bill group"} onClose={() => setReview(null)}>
         {review && plan ? (
           <div className="billing-review">
-            {review.ids.length > 1 ? (
-              <fieldset className="billing-mode">
-                <legend>How should these be billed?</legend>
-                <label><input type="radio" name="mode" checked={review.mode === "INDIVIDUAL"} onChange={() => setReview({ ...review, mode: "INDIVIDUAL" })} /> Separate invoice for each client</label>
-                <label><input type="radio" name="mode" checked={review.mode === "GROUP"} onChange={() => setReview({ ...review, mode: "GROUP" })} /> One combined group batch</label>
-              </fieldset>
-            ) : null}
             {plan.lines.length ? (
               <table className="billing-table compact">
                 <thead><tr><th>Client</th><th>Visits</th><th>Hours</th><th>Amount</th></tr></thead>
                 <tbody>{plan.lines.map(line => <tr key={line.clientId}><td>{nameOf(line.clientId)}</td><td>{line.visitIds.length}</td><td>{formatHours(line.minutes)}</td><td>{formatMoney(line.amountCents)}</td></tr>)}</tbody>
-                <tfoot><tr><th colSpan={2}>{review.mode === "GROUP" ? "Group total" : plan.lines.length > 1 ? "Total across invoices" : "Total"}</th><th>{formatHours(plan.totalMinutes)}</th><th>{formatMoney(plan.totalCents)}</th></tr></tfoot>
+                <tfoot><tr><th colSpan={2}>{plan.lines.length > 1 ? "Billed together" : "Total"}</th><th>{formatHours(plan.totalMinutes)}</th><th>{formatMoney(plan.totalCents)}</th></tr></tfoot>
               </table>
             ) : <p className="billing-empty">Nothing billable for the selected clients.</p>}
             {plan.skipped.length ? <p className="billing-muted">Left out, nothing billable: {plan.skipped.map(nameOf).join(", ")}.</p> : null}
@@ -194,16 +193,16 @@ function ClientDetail({ client, summary, visits, runs, onBack, onBill }: { clien
         <div>
           <button type="button" className="secondary billing-back" onClick={onBack}>← All clients</button>
           <h2>{client.name}</h2>
-          <p className="billing-muted">Service start {day(client.serviceStart ?? summary.firstVisitAt)} · Last billed {day(summary.lastBilledAt)}</p>
+          <p className="billing-muted">Service period {day(client.serviceStart ?? summary.firstVisitAt)} to {day(client.serviceEnd)} · Last billed {day(summary.lastBilledAt)}</p>
         </div>
         <button type="button" disabled={!summary.unbilledEvvCents} onClick={onBill}>Bill now {summary.unbilledEvvCents ? formatMoney(summary.unbilledEvvCents) : ""}</button>
       </div>
 
       <div className="billing-stats">
-        <Stat label="Billable since last billing" value={formatMoney(summary.unbilledEvvCents)} note={`${formatHours(summary.unbilledEvvMinutes)} EVV compliant`} tone="good" />
-        <Stat label="Not billable (non-EVV)" value={formatMoney(summary.unbilledNonEvvCents)} note={`${formatHours(summary.unbilledNonEvvMinutes)} · ${excluded.length} visits`} tone="warning" />
-        <Stat label="Total billed, whole service" value={formatMoney(summary.billedCents)} note={`${formatHours(summary.billedMinutes)} · ${summary.runCount} billings`} />
-        <Stat label="Hours" value={formatHours(summary.totalMinutes)} note={`${formatHours(summary.evvMinutes)} EVV · ${formatHours(summary.nonEvvMinutes)} non-EVV`} />
+        <Stat label="Billable since last billing" value={formatHoursWithAmount(summary.unbilledEvvMinutes, summary.unbilledEvvCents)} note="EVV compliant" tone="good" />
+        <Stat label="Not billable (non-EVV)" value={formatHoursWithAmount(summary.unbilledNonEvvMinutes, summary.unbilledNonEvvCents)} note={`${excluded.length} visits excluded`} tone="warning" />
+        <Stat label="Billed since start of service" value={formatHoursWithAmount(summary.billedMinutes, summary.billedCents)} note={`${summary.runCount} billings`} />
+        <Stat label="Total approved hours" value={approvedMinutes(client) === null ? "Not recorded" : formatHours(approvedMinutes(client)!)} note={approvedMinutes(client) === null ? "No authorization on file" : `(${approvedCents(client, summary) === null ? "—" : formatMoney(approvedCents(client, summary)!)}) · ${formatHours(summary.evvMinutes + summary.nonEvvMinutes)} worked`} />
       </div>
 
       <h3>Billable visits <span className="billing-count">{billable.length}</span></h3>

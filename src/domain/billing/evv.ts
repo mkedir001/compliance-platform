@@ -95,13 +95,16 @@ export type ClientBillingSummary = {
   firstVisitAt: string | null;
   lastBilledAt: string | null;
   runCount: number;
+  /** Hourly rate of the most recent visit, used to price approved hours. Null until there is a visit. */
+  latestRateCents: number | null;
 };
 
 export function summarizeClient(clientId: string, visits: readonly BillingVisit[], runs: readonly BillingRun[]): ClientBillingSummary {
   const summary: ClientBillingSummary = {
     clientId, totalMinutes: 0, evvMinutes: 0, nonEvvMinutes: 0, unbilledEvvMinutes: 0, unbilledNonEvvMinutes: 0, billedMinutes: 0, billedCents: 0,
-    unbilledEvvCents: 0, unbilledNonEvvCents: 0, nonEvvVisitCount: 0, visitCount: 0, firstVisitAt: null, lastBilledAt: null, runCount: 0,
+    unbilledEvvCents: 0, unbilledNonEvvCents: 0, nonEvvVisitCount: 0, visitCount: 0, firstVisitAt: null, lastBilledAt: null, runCount: 0, latestRateCents: null,
   };
+  let latestRateAt = "";
   for (const raw of visits) {
     if (raw.clientId !== clientId) continue;
     const visit = classifyVisit(raw);
@@ -110,6 +113,7 @@ export function summarizeClient(clientId: string, visits: readonly BillingVisit[
     summary.totalMinutes += visit.minutes;
     const when = visit.clockIn?.time ?? null;
     if (when && (!summary.firstVisitAt || when < summary.firstVisitAt)) summary.firstVisitAt = when;
+    if (when && when >= latestRateAt) { latestRateAt = when; summary.latestRateCents = visit.hourlyRateCents; }
     if (visit.evvCompliant) {
       summary.evvMinutes += visit.minutes;
       if (visit.billed) { summary.billedMinutes += visit.minutes; summary.billedCents += visit.amountCents; }
@@ -141,8 +145,10 @@ export function nonCompliantVisits(clientId: string, visits: readonly BillingVis
 }
 
 export const formatHours = (minutes: number) => `${(minutes / 60).toFixed(2)} h`;
+export const formatHoursWithAmount = (minutes: number, cents: number | null) => `${formatHours(minutes)} (${cents === null ? "—" : formatMoney(cents)})`;
 export const formatMoney = (cents: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(cents / 100);
 
+/** One client billed on its own, or several clients billed together in one batch (a chosen group, or everyone). */
 export type BillingMode = "INDIVIDUAL" | "GROUP";
 export type BillingPlan = {
   mode: BillingMode;

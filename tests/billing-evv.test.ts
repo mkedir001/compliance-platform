@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyBillingPlan, billableVisits, classifyVisit, nonCompliantVisits, planBilling, summarizeClient, type BillingVisit } from "@/domain/billing/evv";
+import { applyBillingPlan, billableVisits, classifyVisit, formatHoursWithAmount, nonCompliantVisits, planBilling, summarizeClient, type BillingVisit } from "@/domain/billing/evv";
 import { sampleBillingData } from "@/domain/billing/sample";
 
 const gps = { latitude: "44.95", longitude: "-93.09" };
@@ -50,6 +50,14 @@ describe("client rollups", () => {
       unbilledEvvMinutes: 120, unbilledEvvCents: 6000, billedMinutes: 120, billedCents: 6000,
       unbilledNonEvvMinutes: 210, unbilledNonEvvCents: 10500, nonEvvVisitCount: 1, lastBilledAt: "2026-09-10T00:00:00Z", runCount: 1,
     });
+  });
+
+  it("reports the latest hourly rate and formats hours with the amount in brackets", () => {
+    const rated = [visit("a", { hourlyRateCents: 2500 }), visit("z", { hourlyRateCents: 2800, clockIn: { time: "2026-09-20T14:00:00Z", coordinates: gps }, clockOut: { time: "2026-09-20T16:00:00Z", coordinates: gps } })];
+    expect(summarizeClient("c1", rated, []).latestRateCents).toBe(2800);
+    expect(summarizeClient("c1", [], []).latestRateCents).toBeNull();
+    expect(formatHoursWithAmount(120, 6000)).toBe("2.00 h ($60.00)");
+    expect(formatHoursWithAmount(0, null)).toBe("0.00 h (—)");
   });
 
   it("never mixes in another client's visits and ignores in-progress visits", () => {
