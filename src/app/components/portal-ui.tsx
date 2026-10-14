@@ -12,6 +12,7 @@ export function PortalShell({ organizationId, current, children, navigation }: {
     { label: "Home", href: `/admin/home${query}`, group: "Workspace" },
     { label: "Employees", href: `/admin/employees${query}`, group: "People" },
     { label: "Clients", href: `/admin/clients${query}`, group: "People" },
+    { label: "Referrals", href: `/admin/referrals${query}`, group: "People" },
     { label: "Evidence review", href: `/admin/evidence-operations${query}`, group: "Review queues" },
     { label: "Competency assessments", href: `/admin/competencies${query}`, group: "Review queues" },
     { label: "Signatures", href: `/admin/clients${query ? `${query}&` : "?"}view=Signatures`, group: "Review queues" },

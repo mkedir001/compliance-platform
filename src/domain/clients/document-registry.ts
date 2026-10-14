@@ -14,6 +14,7 @@ export type ClientDocumentDefinition={
 
 export const clientDocumentRegistry:readonly ClientDocumentDefinition[]=[
   {id:"ADMISSION_FORM",label:"Admission Form",category:"INTAKE",aliases:["admission form","admission application"]},
+  {id:"REFERRAL_FORM",label:"Referral Form",category:"INTAKE",aliases:["referral form","new client referral","radiant care referral"]},
   {id:"FACE_SHEET",label:"Face Sheet",category:"INTAKE",aliases:["client information / face sheet","face sheet"],extractionMapping:"FACE_SHEET",signaturePolicy:"PLATFORM_SUPPORTED",generationCapability:"PLATFORM_TEMPLATE"},
   {id:"INTAKE_CHECKLIST",label:"Intake Checklist",category:"INTAKE",aliases:["intake checklist","first day of service"],extractionMapping:"INTAKE_CHECKLIST",signaturePolicy:"PLATFORM_SUPPORTED",generationCapability:"PLATFORM_TEMPLATE"},
   {id:"RIGHTS_ACKNOWLEDGMENT",label:"Rights Acknowledgment",category:"RIGHTS_AND_CONSENT",aliases:["rights acknowledgment","service recipient rights acknowledgment"],extractionMapping:"RIGHTS_ACKNOWLEDGMENT",signaturePolicy:"PLATFORM_SUPPORTED",renewalPolicy:"ANNUAL",generationCapability:"PLATFORM_TEMPLATE"},

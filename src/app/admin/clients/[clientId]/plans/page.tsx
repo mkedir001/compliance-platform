@@ -1,0 +1,2 @@
+import { resolveAdminOrganizationId } from "../../../organization-context";import PlanQuestionnaire from "./plan-questionnaire";
+export default async function PlanPage({params,searchParams}:{params:Promise<{clientId:string}>;searchParams:Promise<{organizationId?:string;type?:string}>}){const{clientId}=await params,q=await searchParams;return <PlanQuestionnaire organizationId={await resolveAdminOrganizationId(q.organizationId??"")} clientId={clientId} documentType={q.type==="IAPP"?"IAPP":"CSSP"}/>}

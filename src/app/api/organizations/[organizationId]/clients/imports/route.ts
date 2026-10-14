@@ -3,7 +3,7 @@ import { requireAuthenticatedUser } from "@/domain/auth/authentication";
 import { errorResponse } from "@/domain/auth/errors";
 import { acceptRemainingClientImportProposals, appendClientImportDocuments, cancelClientImport, classifyClientImportDocument, confirmClientImport, createClientImport, getClientImportByRequestId, getClientImportExtractedText, getClientImportPdf, getOpenClientImport, listClientImports, processClientImportDocument, resolveClientImportConflict, reviewClientImportProposal, saveManualClientImportProfile, stageClientImport, stageClientImportDocuments, updateClientImportDocumentSettings } from "@/domain/clients/imports";
 
-const classification=z.enum(["INTAKE_CHECKLIST","FACE_SHEET","RIGHTS_ACKNOWLEDGMENT","ROI","ADMISSION_FORM","RIGHTS_OF_PERSONS_SERVED","CSSP","CSSP_ADDENDUM","CSSP_SIGNATURE_PAGE","COUNTY_SUPPORT_PLAN","IAPP","SMA","SMA_SIGNATURE_PAGE","SERVICE_AGREEMENT_LETTER","SERVICE_AUTHORIZATION","OTHER","UNKNOWN"]);
+const classification=z.enum(["INTAKE_CHECKLIST","FACE_SHEET","RIGHTS_ACKNOWLEDGMENT","ROI","ADMISSION_FORM","REFERRAL_FORM","RIGHTS_OF_PERSONS_SERVED","CSSP","CSSP_ADDENDUM","CSSP_SIGNATURE_PAGE","COUNTY_SUPPORT_PLAN","IAPP","SMA","SMA_SIGNATURE_PAGE","SERVICE_AGREEMENT_LETTER","SERVICE_AUTHORIZATION","OTHER","UNKNOWN"]);
 
 const actionSchema=z.discriminatedUnion("action",[
   z.object({action:z.literal("CREATE"),requestId:z.string().uuid().optional(),target:z.enum(["CREATE_NEW","UPDATE_EXISTING"]),existingClientId:z.string().cuid().optional(),files:z.array(z.object({fileName:z.string(),mimeType:z.literal("application/pdf"),pdfBase64:z.string()}))}),

@@ -751,6 +751,9 @@ model Organization {
   clientImportSessions      ClientImportSession[]
   clientImportDocuments     ClientImportDocument[]
   clientImportProposals     ClientImportProposal[]
+  referrals                 Referral[]
+  referralIntakeDrafts      ReferralIntakeDraft[]
+  documentQuestionnaires    ClientDocumentQuestionnaire[]
 }
 
 model OrganizationLicense {
@@ -814,60 +817,65 @@ model Location {
 }
 
 model User {
-  id                            String                                   @id @default(cuid())
-  authProviderUserId            String?                                  @unique
-  email                         String?                                  @unique
-  phone                         String?
-  status                        UserStatus                               @default(INVITED)
-  lastLoginAt                   DateTime?
-  createdAt                     DateTime                                 @default(now())
-  updatedAt                     DateTime                                 @updatedAt
-  memberships                   OrganizationMembership[]
-  employees                     Employee[]
-  recordedEvents                EmployeeServiceEvent[]                   @relation("RecordedBy")
-  verifiedRegulationVersions    RegulationVersion[]                      @relation("RegulationVerifiedBy")
-  assignedTraining              TrainingAssignment[]                     @relation("TrainingAssignedBy")
-  cancelledTraining             TrainingAssignment[]                     @relation("TrainingCancelledBy")
-  trainingAssignmentEvents      TrainingAssignmentEvent[]
-  trainingAcknowledgments       TrainingAcknowledgment[]                 @relation("TrainingAcknowledgedBy")
-  competencyAssessments         CompetencyAssessment[]                   @relation("CompetencyAssessorUser")
-  credentials                   ProfessionalCredential[]                 @relation("CredentialUser")
-  verifiedCredentials           ProfessionalCredential[]                 @relation("CredentialVerifiedBy")
-  reviewedExternalTraining      ExternalTrainingRecord[]                 @relation("ExternalTrainingReviewedBy")
-  equivalencyDecisions          RequirementEquivalencyDecision[]         @relation("EquivalencyReviewer")
-  attestations                  Attestation[]                            @relation("AttestationSigner")
-  evidenceCorrections           EvidenceCorrection[]                     @relation("EvidenceCorrectedBy")
-  issuedCertificates            Certificate[]                            @relation("CertificateIssuedBy")
-  createdOnboardings            EmployeeOnboarding[]                     @relation("OnboardingCreatedBy")
-  completedOnboardingSteps      EmployeeOnboardingStep[]                 @relation("OnboardingStepCompletedBy")
-  createdPolicyVersions         PolicyVersion[]                          @relation("PolicyVersionCreatedBy")
-  assignedPolicies              PolicyAssignment[]                       @relation("PolicyAssignedBy")
-  clinicalApprovals             ClinicalCurriculumApproval[]             @relation("ClinicalCurriculumReviewer")
-  medicationQualifications      MedicationQualification[]                @relation("MedicationQualificationReviewer")
-  medicationInstructions        PersonSpecificMedicationInstruction[]    @relation("MedicationInstructionReviewer")
-  medicationAuthorizations      MedicationAuthorizationEvidence[]        @relation("MedicationAuthorizationRecorder")
-  clinicalEvents                ClinicalGovernanceEvent[]                @relation("ClinicalGovernanceActor")
-  createdServiceAssignments     ServiceAssignment[]                      @relation("ServiceAssignmentCreator")
-  cancelledServiceAssignments   ServiceAssignment[]                      @relation("ServiceAssignmentCanceller")
-  assignmentEvaluations         ServiceAssignmentEligibilityEvaluation[] @relation("AssignmentEvaluationActor")
-  assignmentEvents              ServiceAssignmentEvent[]                 @relation("AssignmentEventActor")
-  managedComplianceIssues       ComplianceIssue[]                        @relation("ComplianceIssueWorkflowActor")
-  complianceIssueEvents         ComplianceIssueEvent[]                   @relation("ComplianceIssueEventActor")
-  requestedAuditPackages        AuditPackage[]                           @relation("AuditPackageRequester")
-  auditEvents                   AuditEvent[]                             @relation("AuditEventActor")
-  sentEmployeeInvitations       EmployeePortalInvitation[]               @relation("EmployeePortalInvitationSender")
-  acceptedEmployeeInvitations   EmployeePortalInvitation[]               @relation("EmployeePortalInvitationAccepter")
-  notifications                 Notification[]                           @relation("NotificationRecipient")
-  notificationPreferences       NotificationPreference[]
-  createdClients                Client[]                                 @relation("ClientCreatedBy")
-  completedClientIntakes        ClientIntake[]                           @relation("ClientIntakeCompletedBy")
-  generatedClientDocuments      ClientDocument[]                         @relation("ClientDocumentGeneratedBy")
-  createdClientDocumentRequests ClientDocumentRequest[]                  @relation("ClientDocumentRequestCreator")
-  inspectorAuditSessions        AuditAccessSession[]                     @relation("AuditAccessInspector")
-  createdAuditAccessSessions    AuditAccessSession[]                     @relation("AuditAccessCreator")
-  revokedAuditAccessSessions    AuditAccessSession[]                     @relation("AuditAccessRevoker")
-  uploadedClientImports         ClientImportSession[]                    @relation("ClientImportUploader")
-  reviewedClientImportProposals ClientImportProposal[]                   @relation("ClientImportProposalReviewer")
+  id                             String                                   @id @default(cuid())
+  authProviderUserId             String?                                  @unique
+  email                          String?                                  @unique
+  phone                          String?
+  status                         UserStatus                               @default(INVITED)
+  lastLoginAt                    DateTime?
+  createdAt                      DateTime                                 @default(now())
+  updatedAt                      DateTime                                 @updatedAt
+  memberships                    OrganizationMembership[]
+  employees                      Employee[]
+  recordedEvents                 EmployeeServiceEvent[]                   @relation("RecordedBy")
+  verifiedRegulationVersions     RegulationVersion[]                      @relation("RegulationVerifiedBy")
+  assignedTraining               TrainingAssignment[]                     @relation("TrainingAssignedBy")
+  cancelledTraining              TrainingAssignment[]                     @relation("TrainingCancelledBy")
+  trainingAssignmentEvents       TrainingAssignmentEvent[]
+  trainingAcknowledgments        TrainingAcknowledgment[]                 @relation("TrainingAcknowledgedBy")
+  competencyAssessments          CompetencyAssessment[]                   @relation("CompetencyAssessorUser")
+  credentials                    ProfessionalCredential[]                 @relation("CredentialUser")
+  verifiedCredentials            ProfessionalCredential[]                 @relation("CredentialVerifiedBy")
+  reviewedExternalTraining       ExternalTrainingRecord[]                 @relation("ExternalTrainingReviewedBy")
+  equivalencyDecisions           RequirementEquivalencyDecision[]         @relation("EquivalencyReviewer")
+  attestations                   Attestation[]                            @relation("AttestationSigner")
+  evidenceCorrections            EvidenceCorrection[]                     @relation("EvidenceCorrectedBy")
+  issuedCertificates             Certificate[]                            @relation("CertificateIssuedBy")
+  createdOnboardings             EmployeeOnboarding[]                     @relation("OnboardingCreatedBy")
+  completedOnboardingSteps       EmployeeOnboardingStep[]                 @relation("OnboardingStepCompletedBy")
+  createdPolicyVersions          PolicyVersion[]                          @relation("PolicyVersionCreatedBy")
+  assignedPolicies               PolicyAssignment[]                       @relation("PolicyAssignedBy")
+  clinicalApprovals              ClinicalCurriculumApproval[]             @relation("ClinicalCurriculumReviewer")
+  medicationQualifications       MedicationQualification[]                @relation("MedicationQualificationReviewer")
+  medicationInstructions         PersonSpecificMedicationInstruction[]    @relation("MedicationInstructionReviewer")
+  medicationAuthorizations       MedicationAuthorizationEvidence[]        @relation("MedicationAuthorizationRecorder")
+  clinicalEvents                 ClinicalGovernanceEvent[]                @relation("ClinicalGovernanceActor")
+  createdServiceAssignments      ServiceAssignment[]                      @relation("ServiceAssignmentCreator")
+  cancelledServiceAssignments    ServiceAssignment[]                      @relation("ServiceAssignmentCanceller")
+  assignmentEvaluations          ServiceAssignmentEligibilityEvaluation[] @relation("AssignmentEvaluationActor")
+  assignmentEvents               ServiceAssignmentEvent[]                 @relation("AssignmentEventActor")
+  managedComplianceIssues        ComplianceIssue[]                        @relation("ComplianceIssueWorkflowActor")
+  complianceIssueEvents          ComplianceIssueEvent[]                   @relation("ComplianceIssueEventActor")
+  requestedAuditPackages         AuditPackage[]                           @relation("AuditPackageRequester")
+  auditEvents                    AuditEvent[]                             @relation("AuditEventActor")
+  sentEmployeeInvitations        EmployeePortalInvitation[]               @relation("EmployeePortalInvitationSender")
+  acceptedEmployeeInvitations    EmployeePortalInvitation[]               @relation("EmployeePortalInvitationAccepter")
+  notifications                  Notification[]                           @relation("NotificationRecipient")
+  notificationPreferences        NotificationPreference[]
+  createdClients                 Client[]                                 @relation("ClientCreatedBy")
+  completedClientIntakes         ClientIntake[]                           @relation("ClientIntakeCompletedBy")
+  generatedClientDocuments       ClientDocument[]                         @relation("ClientDocumentGeneratedBy")
+  createdClientDocumentRequests  ClientDocumentRequest[]                  @relation("ClientDocumentRequestCreator")
+  inspectorAuditSessions         AuditAccessSession[]                     @relation("AuditAccessInspector")
+  createdAuditAccessSessions     AuditAccessSession[]                     @relation("AuditAccessCreator")
+  revokedAuditAccessSessions     AuditAccessSession[]                     @relation("AuditAccessRevoker")
+  uploadedClientImports          ClientImportSession[]                    @relation("ClientImportUploader")
+  reviewedClientImportProposals  ClientImportProposal[]                   @relation("ClientImportProposalReviewer")
+  createdReferrals               Referral[]                               @relation("ReferralCreator")
+  reviewedReferrals              Referral[]                               @relation("ReferralReviewer")
+  referralEvents                 ReferralEvent[]                          @relation("ReferralEventActor")
+  createdDocumentQuestionnaires  ClientDocumentQuestionnaire[]            @relation("DocumentQuestionnaireCreator")
+  reviewedDocumentQuestionnaires ClientDocumentQuestionnaire[]            @relation("DocumentQuestionnaireReviewer")
 }
 
 model OrganizationMembership {
@@ -2842,6 +2850,7 @@ enum ClientDocumentType {
   SMA_SIGNATURE_PAGE
   SERVICE_AGREEMENT_LETTER
   SERVICE_AUTHORIZATION
+  REFERRAL_FORM
   OTHER
   UNKNOWN
 }
@@ -2907,6 +2916,7 @@ enum ClientImportClassification {
   SMA_SIGNATURE_PAGE
   SERVICE_AGREEMENT_LETTER
   SERVICE_AUTHORIZATION
+  REFERRAL_FORM
   OTHER
   UNKNOWN
 }
@@ -3048,13 +3058,13 @@ enum RoiStatus {
 }
 
 model Client {
-  id                      String                      @id @default(cuid())
+  id                      String                        @id @default(cuid())
   organizationId          String
-  status                  ClientStatus                @default(PROSPECTIVE)
+  status                  ClientStatus                  @default(PROSPECTIVE)
   legalFirstName          String
   legalLastName           String
   preferredName           String?
-  dateOfBirth             DateTime?                   @db.Date
+  dateOfBirth             DateTime?                     @db.Date
   creationRequestId       String?
   gender                  String?
   phone                   String?
@@ -3068,7 +3078,7 @@ model Client {
   waiverProgram           String?
   financialResponsibility String?
   primaryLanguage         String?
-  interpreterNeeded       Boolean                     @default(false)
+  interpreterNeeded       Boolean                       @default(false)
   preferredCommunication  String?
   livingSituation         String?
   strengthsInterests      String?
@@ -3077,10 +3087,10 @@ model Client {
   dischargedAt            DateTime?
   archivedAt              DateTime?
   createdByUserId         String
-  createdAt               DateTime                    @default(now())
-  updatedAt               DateTime                    @updatedAt
-  organization            Organization                @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  createdBy               User                        @relation("ClientCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  createdAt               DateTime                      @default(now())
+  updatedAt               DateTime                      @updatedAt
+  organization            Organization                  @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  createdBy               User                          @relation("ClientCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
   services                ClientService[]
   representatives         ClientRepresentative[]
   emergencyContacts       ClientEmergencyContact[]
@@ -3094,6 +3104,9 @@ model Client {
   documentRequests        ClientDocumentRequest[]
   auditAccessScopes       AuditAccessClient[]
   importSessions          ClientImportSession[]
+  referrals               Referral[]
+  referralIntakeDrafts    ReferralIntakeDraft[]
+  documentQuestionnaires  ClientDocumentQuestionnaire[]
 
   @@unique([organizationId, creationRequestId])
   @@index([organizationId, status, legalLastName, legalFirstName])
@@ -3270,35 +3283,36 @@ model ClientIntakeChecklistItem {
 }
 
 model ClientDocumentTemplate {
-  id                 String                      @id @default(cuid())
+  id                 String                        @id @default(cuid())
   organizationId     String?
   code               String
   name               String
   documentType       ClientDocumentType
   versionNumber      Int
-  status             String                      @default("ACTIVE")
+  status             String                        @default("ACTIVE")
   contentJson        Json
-  effectiveFrom      DateTime?                   @db.Date
-  renewalPolicy      ClientDocumentRenewalPolicy @default(NONE)
-  renewalWarningDays Int                         @default(30)
-  createdAt          DateTime                    @default(now())
-  organization       Organization?               @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  effectiveFrom      DateTime?                     @db.Date
+  renewalPolicy      ClientDocumentRenewalPolicy   @default(NONE)
+  renewalWarningDays Int                           @default(30)
+  createdAt          DateTime                      @default(now())
+  organization       Organization?                 @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   documents          ClientDocument[]
   documentRequests   ClientDocumentRequest[]
+  questionnaires     ClientDocumentQuestionnaire[]
 
   @@unique([organizationId, code, versionNumber])
   @@index([organizationId, documentType, status])
 }
 
 model ClientDocument {
-  id                        String                  @id @default(cuid())
+  id                        String                       @id @default(cuid())
   organizationId            String
   clientId                  String
   intakeId                  String?
   templateId                String
   documentType              ClientDocumentType
-  status                    ClientDocumentStatus    @default(DRAFT)
-  source                    ClientDocumentSource    @default(GENERATED)
+  status                    ClientDocumentStatus         @default(DRAFT)
+  source                    ClientDocumentSource         @default(GENERATED)
   originalFileName          String?
   originalMimeType          String?
   originalFileSize          Int?
@@ -3309,34 +3323,232 @@ model ClientDocument {
   renderedPdf               Bytes?
   finalPdf                  Bytes?
   generatedByUserId         String
-  generatedAt               DateTime                @default(now())
-  versionNumber             Int                     @default(1)
+  generatedAt               DateTime                     @default(now())
+  versionNumber             Int                          @default(1)
   supersedesDocumentId      String?
   sourceDataOutdatedAt      DateTime?
   finalizedAt               DateTime?
   authoritativeCompletedAt  DateTime?
-  renewalOfDocumentId       String?                 @unique
+  renewalOfDocumentId       String?                      @unique
   voidedAt                  DateTime?
-  createdAt                 DateTime                @default(now())
-  updatedAt                 DateTime                @updatedAt
-  client                    Client                  @relation(fields: [clientId], references: [id], onDelete: Restrict)
-  intake                    ClientIntake?           @relation(fields: [intakeId], references: [id], onDelete: Restrict)
-  template                  ClientDocumentTemplate  @relation(fields: [templateId], references: [id], onDelete: Restrict)
-  generatedBy               User                    @relation("ClientDocumentGeneratedBy", fields: [generatedByUserId], references: [id], onDelete: Restrict)
-  supersedes                ClientDocument?         @relation("ClientDocumentVersions", fields: [supersedesDocumentId], references: [id], onDelete: Restrict)
-  supersededBy              ClientDocument[]        @relation("ClientDocumentVersions")
+  createdAt                 DateTime                     @default(now())
+  updatedAt                 DateTime                     @updatedAt
+  client                    Client                       @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  intake                    ClientIntake?                @relation(fields: [intakeId], references: [id], onDelete: Restrict)
+  template                  ClientDocumentTemplate       @relation(fields: [templateId], references: [id], onDelete: Restrict)
+  generatedBy               User                         @relation("ClientDocumentGeneratedBy", fields: [generatedByUserId], references: [id], onDelete: Restrict)
+  supersedes                ClientDocument?              @relation("ClientDocumentVersions", fields: [supersedesDocumentId], references: [id], onDelete: Restrict)
+  supersededBy              ClientDocument[]             @relation("ClientDocumentVersions")
   envelope                  SignatureEnvelope?
   roiAuthorization          RoiAuthorization?
-  renewalOf                 ClientDocument?         @relation("ClientDocumentRenewals", fields: [renewalOfDocumentId], references: [id], onDelete: Restrict)
-  renewals                  ClientDocument[]        @relation("ClientDocumentRenewals")
-  requestObligations        ClientDocumentRequest[] @relation("DocumentRequestObligation")
-  fulfilledRequests         ClientDocumentRequest[] @relation("DocumentRequestFulfillment")
+  renewalOf                 ClientDocument?              @relation("ClientDocumentRenewals", fields: [renewalOfDocumentId], references: [id], onDelete: Restrict)
+  renewals                  ClientDocument[]             @relation("ClientDocumentRenewals")
+  requestObligations        ClientDocumentRequest[]      @relation("DocumentRequestObligation")
+  fulfilledRequests         ClientDocumentRequest[]      @relation("DocumentRequestFulfillment")
   confirmedImportDocument   ClientImportDocument?
+  questionnaire             ClientDocumentQuestionnaire? @relation("GeneratedQuestionnaireDocument")
+  referralSubmission        ReferralSubmission?
 
   @@index([organizationId, clientId, documentType, status])
   @@index([organizationId, clientId, documentType, versionNumber])
   @@index([supersedesDocumentId])
   @@index([organizationId, clientId, authoritativeCompletedAt])
+}
+
+enum ReferralFormStatus {
+  DRAFT
+  SENT
+  IN_PROGRESS
+  SUBMITTED
+  EXPIRED
+  REVOKED
+}
+
+enum ReferralDispositionStatus {
+  PENDING_REVIEW
+  UNDER_REVIEW
+  INTAKE_STARTED
+  ACCEPTED
+  DECLINED
+  CLOSED
+}
+
+enum ReferralAccessStatus {
+  ACTIVE
+  REVOKED
+  EXPIRED
+  REPLACED
+  USED
+}
+
+enum ReferralSource {
+  EXTERNAL_FORM
+  UPLOADED_PDF
+}
+
+enum ReferralProposalState {
+  PROPOSED
+  ACCEPTED
+  CORRECTED
+  REJECTED
+}
+
+model Referral {
+  id                String                    @id @default(cuid())
+  organizationId    String
+  createdByUserId   String
+  reviewedByUserId  String?
+  recipientName     String
+  recipientEmail    String?
+  formStatus        ReferralFormStatus        @default(DRAFT)
+  dispositionStatus ReferralDispositionStatus @default(PENDING_REVIEW)
+  source            ReferralSource            @default(EXTERNAL_FORM)
+  draftAnswersJson  Json?
+  sentAt            DateTime?
+  firstViewedAt     DateTime?
+  submittedAt       DateTime?
+  reviewedAt        DateTime?
+  acceptedAt        DateTime?
+  declinedAt        DateTime?
+  closedAt          DateTime?
+  linkedClientId    String?
+  createdAt         DateTime                  @default(now())
+  updatedAt         DateTime                  @updatedAt
+  organization      Organization              @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  createdBy         User                      @relation("ReferralCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  reviewedBy        User?                     @relation("ReferralReviewer", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
+  linkedClient      Client?                   @relation(fields: [linkedClientId], references: [id], onDelete: Restrict)
+  accessTokens      ReferralAccessToken[]
+  submission        ReferralSubmission?
+  intakeDraft       ReferralIntakeDraft?
+  events            ReferralEvent[]
+  proposals         ReferralProposal[]
+
+  @@index([organizationId, formStatus, dispositionStatus, updatedAt])
+  @@index([organizationId, recipientEmail])
+  @@index([organizationId, linkedClientId])
+}
+
+model ReferralAccessToken {
+  id             String               @id @default(cuid())
+  referralId     String
+  tokenHash      String               @unique
+  status         ReferralAccessStatus @default(ACTIVE)
+  expiresAt      DateTime
+  issuedAt       DateTime             @default(now())
+  firstUsedAt    DateTime?
+  lastUsedAt     DateTime?
+  revokedAt      DateTime?
+  reminderCount  Int                  @default(0)
+  lastReminderAt DateTime?
+  replacedById   String?              @unique
+  referral       Referral             @relation(fields: [referralId], references: [id], onDelete: Restrict)
+  replacedBy     ReferralAccessToken? @relation("ReferralTokenReplacement", fields: [replacedById], references: [id], onDelete: Restrict)
+  replaces       ReferralAccessToken? @relation("ReferralTokenReplacement")
+
+  @@index([referralId, status, expiresAt])
+}
+
+model ReferralSubmission {
+  id               String          @id @default(cuid())
+  referralId       String          @unique
+  idempotencyKey   String          @unique
+  answersJson      Json
+  submittedPdf     Bytes
+  sha256           String
+  originalFileName String?
+  source           ReferralSource
+  clientDocumentId String?         @unique
+  submittedAt      DateTime        @default(now())
+  referral         Referral        @relation(fields: [referralId], references: [id], onDelete: Restrict)
+  clientDocument   ClientDocument? @relation(fields: [clientDocumentId], references: [id], onDelete: Restrict)
+}
+
+model ReferralIntakeDraft {
+  id                    String       @id @default(cuid())
+  organizationId        String
+  referralId            String       @unique
+  status                String       @default("PENDING_REVIEW")
+  proposedFieldsJson    Json
+  provenanceJson        Json
+  possibleClientIdsJson Json
+  resolvedClientId      String?
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
+  organization          Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  referral              Referral     @relation(fields: [referralId], references: [id], onDelete: Restrict)
+  resolvedClient        Client?      @relation(fields: [resolvedClientId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId, status, updatedAt])
+}
+
+model ReferralProposal {
+  id               String                @id @default(cuid())
+  referralId       String
+  fieldPath        String
+  proposedValue    Json
+  correctedValue   Json?
+  confidence       Float?
+  sourceLocation   String?
+  state            ReferralProposalState @default(PROPOSED)
+  reviewedByUserId String?
+  reviewedAt       DateTime?
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+  referral         Referral              @relation(fields: [referralId], references: [id], onDelete: Restrict)
+
+  @@unique([referralId, fieldPath])
+  @@index([referralId, state])
+}
+
+model ReferralEvent {
+  id           String   @id @default(cuid())
+  referralId   String
+  actorUserId  String?
+  eventType    String
+  metadataJson Json?
+  occurredAt   DateTime @default(now())
+  referral     Referral @relation(fields: [referralId], references: [id], onDelete: Restrict)
+  actor        User?    @relation("ReferralEventActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([referralId, occurredAt])
+}
+
+enum DocumentQuestionnaireStatus {
+  DRAFT
+  READY_FOR_REVIEW
+  GENERATED
+  CANCELED
+}
+
+model ClientDocumentQuestionnaire {
+  id                  String                      @id @default(cuid())
+  organizationId      String
+  clientId            String
+  templateId          String
+  documentType        ClientDocumentType
+  pathway             String?
+  status              DocumentQuestionnaireStatus @default(DRAFT)
+  answersJson         Json
+  sourcesJson         Json
+  missingFieldsJson   Json
+  conflictsJson       Json
+  careProposalsJson   Json
+  priorDocumentId     String?
+  generatedDocumentId String?                     @unique
+  createdByUserId     String
+  reviewedByUserId    String?
+  reviewedAt          DateTime?
+  createdAt           DateTime                    @default(now())
+  updatedAt           DateTime                    @updatedAt
+  organization        Organization                @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  client              Client                      @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  template            ClientDocumentTemplate      @relation(fields: [templateId], references: [id], onDelete: Restrict)
+  generatedDocument   ClientDocument?             @relation("GeneratedQuestionnaireDocument", fields: [generatedDocumentId], references: [id], onDelete: Restrict)
+  createdBy           User                        @relation("DocumentQuestionnaireCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  reviewedBy          User?                       @relation("DocumentQuestionnaireReviewer", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, clientId, documentType, status])
 }
 
 model ClientImportSession {

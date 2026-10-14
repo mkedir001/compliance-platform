@@ -22,7 +22,7 @@ function extractionMetadata(document:ImportDocument|undefined,fieldCount:number)
 const groupFor=(path:string)=>({client:"Client details",identity:"Client details",caseManager:"Case manager",representatives:"Representatives",emergencyContacts:"Emergency contacts",services:"Services",health:"Health",medications:"Medications",rights:"Rights acknowledgement",roi:"Release of information",externalSignatures:"Apparent external signatures — review required",care:"Care routines and safety — answers needed",document:"Document dates and author"}[path.split(".")[0]]??"Other information");
 const maxFiles=20,maxFileBytes=25_000_000,maxTotalBytes=50_000_000;
 const classificationGroups=[
-  ["Intake",[["ADMISSION_FORM","Admission Form"],["FACE_SHEET","Face Sheet"],["INTAKE_CHECKLIST","Intake Checklist"]]],
+  ["Intake",[["ADMISSION_FORM","Admission Form"],["REFERRAL_FORM","Referral Form"],["FACE_SHEET","Face Sheet"],["INTAKE_CHECKLIST","Intake Checklist"]]],
   ["Rights and consent",[["RIGHTS_ACKNOWLEDGMENT","Rights Acknowledgment"],["RIGHTS_OF_PERSONS_SERVED","Rights of Persons Served"],["ROI","Release of Information"]]],
   ["Support planning",[["CSSP","Coordinated Services and Supports Plan (CSSP)"],["CSSP_ADDENDUM","CSSP Addendum"],["CSSP_SIGNATURE_PAGE","CSSP Signature Page"],["COUNTY_SUPPORT_PLAN","County Support Plan"],["IAPP","Individual Abuse Prevention Plan (IAPP)"]]],
   ["Assessments",[["SMA","Self-Management Assessment (SMA)"],["SMA_SIGNATURE_PAGE","SMA Signature Page"]]],
