@@ -7,10 +7,22 @@
  * certification that a visit satisfies a payer's EVV requirements.
  *
  * All money is whole cents and all durations are whole minutes, so totals never drift.
+ *
+ * STATUS: UX TEMPLATE. These functions let the Billing screen show a realistic layout. They are NOT production billing logic.
+ * WIRING for other agents:
+ *   - `BillingVisit` mirrors one AxisCare visit from GET /api/visits (fields noted on the type below). Map the API response into it
+ *     in a single adapter function; keep this module free of HTTP and database code.
+ *   - `amountCents` / `hourlyRateCents` are PLACEHOLDERS. The business will provide the real calculation; replace `amountCents`
+ *     (and where `hourlyRateCents` comes from) and nothing else in the screen needs to change.
+ *   - `evvIssues` is the EVV compliance rule. It is an operational check, to be confirmed against Minnesota DHS EVV requirements.
+ *   - `planBilling` / `applyBillingPlan` describe what a billing action includes. In the live version applyBillingPlan's effect
+ *     (billedRunId on visits, new billing runs) must be done by a server route in a database transaction, not in the browser.
  */
 export type VisitLocation = { latitude?: string | null; longitude?: string | null; streetAddress1?: string | null; city?: string | null; telephonyPhone?: string | null } | null;
 export type ClockEvent = { time: string | null; method?: string | null; location?: VisitLocation; coordinates?: { latitude: string; longitude: string } | null; telephonyPhone?: string | null } | null;
 
+/** One AxisCare visit. WIRING: id = visit.id; clockIn/clockOut = visit.clockIn/clockOut; service = visit.service; verified = visit.verified;
+ * modificationReason = visit.modificationReason.name. hourlyRateCents is NOT in the AxisCare visit payload (source to be decided). billedRunId is Waldah's own field. */
 export type BillingVisit = {
   id: string;
   clientId: string;
@@ -65,6 +77,7 @@ export function workedMinutes(visit: BillingVisit) {
   return start !== null && end !== null && end > start ? Math.round((end - start) / 60000) : 0;
 }
 
+/** PLACEHOLDER dollar calculation (minutes / 60 times hourly rate). Replace with the business's provided calculation. */
 export const amountCents = (minutes: number, hourlyRateCents: number) => Math.round((minutes * hourlyRateCents) / 60);
 
 export type ClassifiedVisit = BillingVisit & { minutes: number; amountCents: number; issues: EvvIssue[]; evvCompliant: boolean; billed: boolean };
@@ -74,6 +87,7 @@ export function classifyVisit(visit: BillingVisit): ClassifiedVisit {
   return { ...visit, minutes, amountCents: amountCents(minutes, visit.hourlyRateCents), issues, evvCompliant: issues.length === 0, billed: Boolean(visit.billedRunId) };
 }
 
+/** One billing action for one client. WIRING: stored in a Waldah billing-runs table; created by the confirm action, never derived. */
 export type BillingRun = { id: string; clientId: string; billedAt: string; hours: number; amountCents: number };
 
 export type ClientBillingSummary = {

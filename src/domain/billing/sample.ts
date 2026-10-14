@@ -1,6 +1,7 @@
 import type { BillingRun, BillingVisit } from "./evv";
 
 /**
+ * PREVIEW ONLY. Delete this file when live data is connected (see WIRING notes in src/app/admin/billing/billing-portal.tsx).
  * Clearly labelled sample visits for previewing the Billing screen before the AxisCare feed is connected.
  * Deterministic: the same client ids and date always give the same data. Never use this as billing input.
  */
