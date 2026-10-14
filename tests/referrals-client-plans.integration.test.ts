@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { PrismaClient } from "@prisma/client";
 import { PDFDocument, StandardFonts } from "pdf-lib";
 import { beforeAll, describe, expect, it } from "vitest";
-import { createReferral, getPublicReferral, getReferral, issueReferralLink, linkReferralClient, reviewReferralProposal, revokeReferral, savePublicReferralDraft, searchReferralClientCandidates, submitPublicReferral, uploadReferralPdf } from "@/domain/referrals/service";
+import { createClientFromReferral, createReferral, getPublicReferral, getReferral, issueReferralLink, linkReferralClient, reviewReferralProposal, revokeReferral, savePublicReferralDraft, searchReferralClientCandidates, submitPublicReferral, uploadReferralPdf } from "@/domain/referrals/service";
 import { REFERRAL_REQUIRED_FIELDS, REFERRAL_TEMPLATE } from "@/domain/referrals/templates";
 import { classifyCsspServices, decideCareProposal, generatePlanDocument, preparePlanQuestionnaire, savePlanQuestionnaire } from "@/domain/client-plans/service";
 import { CSSP_BASIC, CSSP_INTENSIVE, IAPP } from "@/domain/client-plans/templates";
@@ -30,6 +30,170 @@ it("issues only a hashed expiring token, saves drafts, submits immutable evidenc
 
  it("extracts uploaded referral AcroForm values for human review while retaining the original",async()=>{const pdf=await PDFDocument.create(),page=pdf.addPage([612,792]),font=await pdf.embedFont(StandardFonts.Helvetica),form=pdf.getForm();for(const[name,value,y]of [["client_name","Upload Person",700],["client_dob","01/02/1990",660],["case_manager_name","Synthetic Coordinator",620]] as const){const field=form.createTextField(name);field.setText(value);field.addToPage(page,{x:40,y,width:220,height:20})}form.updateFieldAppearances(font);const uploaded=await uploadReferralPdf(user(),organizationId,{fileName:"synthetic-referral.pdf",pdfBase64:Buffer.from(await pdf.save()).toString("base64")});expect(uploaded.source).toBe("UPLOADED_PDF");expect(uploaded.submission?.originalFileName).toBe("synthetic-referral.pdf");expect(intakeView(uploaded)?.duplicateCheck.status).toBe("NOT_RUN");expect(uploaded.proposals.map(row=>row.fieldPath)).toEqual(expect.arrayContaining(["client.fullName","client.dateOfBirth","caseManager.name"]));expect(uploaded.proposals.every(row=>row.state==="PROPOSED")).toBe(true);const nameProposal=uploaded.proposals.find(row=>row.fieldPath==="client.fullName")!;await reviewReferralProposal(user(),organizationId,uploaded.id,{proposalId:nameProposal.id,state:"CORRECTED",correctedValue:"Reviewed Upload Person"});const reviewed=await db.referralIntakeDraft.findUniqueOrThrow({where:{referralId:uploaded.id}});expect(reviewed.proposedFieldsJson).toMatchObject({legalFirstName:"Reviewed",legalLastName:"Upload Person"})});
 
+    it("persists accepted, rejected, and corrected extraction decisions and creates one prospective client with a prefilled intake", async () => {
+      const suffix=Date.now().toString(),correctedName=`Reviewed Upload ${suffix}`;
+      const pdf = await PDFDocument.create(),
+        page = pdf.addPage([612, 792]),
+        font = await pdf.embedFont(StandardFonts.Helvetica),
+        form = pdf.getForm();
+      for (const [name, value, y] of [
+        ["client_name", `Upload Person ${suffix}`, 700],
+        ["client_dob", "01/02/1990", 660],
+        ["case_manager_name", "Synthetic Coordinator", 620],
+      ] as const) {
+        const field = form.createTextField(name);
+        field.setText(value);
+        field.addToPage(page, { x: 40, y, width: 220, height: 20 });
+      }
+      form.updateFieldAppearances(font);
+      const uploaded = await uploadReferralPdf(user(), organizationId, {
+        fileName: "synthetic-referral.pdf",
+        pdfBase64: Buffer.from(await pdf.save()).toString("base64"),
+      });
+      expect(uploaded.source).toBe("UPLOADED_PDF");
+      expect(uploaded.submission?.originalFileName).toBe(
+        "synthetic-referral.pdf",
+      );
+      expect(intakeView(uploaded)?.duplicateCheck.status).toBe("NOT_RUN");
+      expect(uploaded.proposals.map((row) => row.fieldPath)).toEqual(
+        expect.arrayContaining([
+          "client.fullName",
+          "client.dateOfBirth",
+          "caseManager.name",
+        ]),
+      );
+      expect(uploaded.proposals.every((row) => row.state === "PROPOSED")).toBe(
+        true,
+      );
+      const nameProposal = uploaded.proposals.find(
+          (row) => row.fieldPath === "client.fullName",
+        )!,
+        dobProposal = uploaded.proposals.find(
+          (row) => row.fieldPath === "client.dateOfBirth",
+        )!,
+        caseManager = uploaded.proposals.find(
+          (row) => row.fieldPath === "caseManager.name",
+        )!;
+      await reviewReferralProposal(user(), organizationId, uploaded.id, {
+        proposalId: nameProposal.id,
+        state: "CORRECTED",
+        correctedValue: correctedName,
+      });
+      await Promise.all([
+        reviewReferralProposal(user(), organizationId, uploaded.id, {
+          proposalId: dobProposal.id,
+          state: "ACCEPTED",
+        }),
+        reviewReferralProposal(user(), organizationId, uploaded.id, {
+          proposalId: caseManager.id,
+          state: "REJECTED",
+        }),
+      ]);
+      await reviewReferralProposal(user(), organizationId, uploaded.id, {
+        proposalId: dobProposal.id,
+        state: "ACCEPTED",
+      });
+      const refreshed = await getReferral(user(), organizationId, uploaded.id);
+      expect(
+        refreshed.proposals.find((row) => row.id === nameProposal.id),
+      ).toMatchObject({
+        state: "CORRECTED",
+        correctedValue: correctedName,
+      });
+      expect(
+        refreshed.proposals.find((row) => row.id === caseManager.id)?.state,
+      ).toBe("REJECTED");
+      const reviewed = await db.referralIntakeDraft.findUniqueOrThrow({
+        where: { referralId: uploaded.id },
+      });
+      expect(reviewed.proposedFieldsJson).toMatchObject({
+        legalFirstName: "Reviewed",
+        legalLastName: `Upload ${suffix}`,
+        dateOfBirth: "01/02/1990",
+        reviewedAnswers: expect.not.objectContaining({
+          "caseManager.name": expect.anything(),
+        }),
+      });
+      expect(
+        await db.referralEvent.count({
+          where: {
+            referralId: uploaded.id,
+            eventType: "referral.proposal_reviewed",
+          },
+        }),
+      ).toBe(3);
+      const created = await createClientFromReferral(
+          user(),
+          organizationId,
+          uploaded.id,
+        ),
+        again = await createClientFromReferral(
+          user(),
+          organizationId,
+          uploaded.id,
+        );
+      expect(created.navigation.clientId).toBe(again.navigation.clientId);
+    expect(created.navigation.href).toContain("view=Intake");
+      const client = await db.client.findUniqueOrThrow({
+        where: { id: created.navigation.clientId },
+        include: { intakes: true, documents: true },
+      });
+      expect(client).toMatchObject({
+        status: "PROSPECTIVE",
+        legalFirstName: "Reviewed",
+        legalLastName: `Upload ${suffix}`,
+      });
+      expect(client.intakes).toHaveLength(1);
+      expect(client.intakes[0].progressJson).toMatchObject({
+        source: "REVIEWED_REFERRAL",
+        approvedFields: { legalFirstName: "Reviewed" },
+      });
+      expect(
+        client.documents.some(
+          (document) => document.documentType === "REFERRAL_FORM",
+        ),
+      ).toBe(true);
+      expect(
+        await db.client.count({
+          where: {
+            organizationId,
+            creationRequestId: `referral:${uploaded.id}`,
+          },
+        }),
+      ).toBe(1);
+    });
+
+    it("returns field-specific validation for incomplete reviewed referral identity", async () => {
+      const pdf = await PDFDocument.create(),
+        page = pdf.addPage(),
+        font = await pdf.embedFont(StandardFonts.Helvetica),
+        form = pdf.getForm(),
+        field = form.createTextField("client_name");
+      field.setText("Single");
+      field.addToPage(page, { x: 40, y: 700, width: 220, height: 20 });
+      form.updateFieldAppearances(font);
+      const uploaded = await uploadReferralPdf(user(), organizationId, {
+          fileName: "invalid-synthetic-referral.pdf",
+          pdfBase64: Buffer.from(await pdf.save()).toString("base64"),
+        }),
+        proposal = uploaded.proposals.find(
+          (row) => row.fieldPath === "client.fullName",
+        )!;
+      await reviewReferralProposal(user(), organizationId, uploaded.id, {
+        proposalId: proposal.id,
+        state: "ACCEPTED",
+      });
+      await expect(
+        createClientFromReferral(user(), organizationId, uploaded.id),
+      ).rejects.toMatchObject({
+        message: expect.stringContaining("highlighted"),
+        details: {
+          fields: expect.arrayContaining([
+            expect.objectContaining({ path: "legalLastName" }),
+          ]),
+        },
+      });
+    });
  it("searches bounded tenant candidates, reports duplicate-check states, and links explicitly and concurrently without mutations",async()=>{const referral=await createReferral(user(),organizationId,{recipientName:"Synthetic Linkage",recipientEmail:"linkage@example.test"}),token=(await issueReferralLink(user(),organizationId,referral.id,{},delivery) as {token:string}).token,answers={...completeReferralAnswers,"client.fullName":"Synthetic Candidate","client.dateOfBirth":"1994-03-04","client.email":"candidate@example.test"};await submitPublicReferral(token,{answers,idempotencyKey:randomUUID()});const firstPage=await searchReferralClientCandidates(user(),organizationId,referral.id,{search:"Synthetic",page:1,pageSize:1}),byIdentifier=await searchReferralClientCandidates(user(),organizationId,referral.id,{search:"SYNTHETIC-200",page:1,pageSize:10});expect(firstPage).toMatchObject({page:1,pageSize:1,hasNext:true});expect(firstPage.clients).toHaveLength(1);expect(byIdentifier.clients).toEqual([expect.objectContaining({id:secondClientId,matchedOn:"Permitted identifier"})]);expect(JSON.stringify(byIdentifier.clients)).not.toContain("SYNTHETIC-200");expect([...firstPage.clients,...byIdentifier.clients].some(client=>client.id===otherClientId)).toBe(false);await expect(searchReferralClientCandidates(user(),otherOrganizationId,referral.id,{search:"Synthetic"})).rejects.toThrow();const reviewed=await getReferral(user(),organizationId,referral.id);expect(intakeView(reviewed)?.duplicateCheck.status).toBe("MATCHES_FOUND");expect(intakeView(reviewed)?.possibleClients).toEqual([expect.objectContaining({id:secondClientId,matchExplanation:"Same name and date of birth"})]);const noMatch=await createReferral(user(),organizationId,{recipientName:"Synthetic No Match",recipientEmail:"no-match@example.test"}),noMatchToken=(await issueReferralLink(user(),organizationId,noMatch.id,{},delivery) as {token:string}).token;await submitPublicReferral(noMatchToken,{answers:{...completeReferralAnswers,"client.fullName":"Entirely Unmatched","client.dateOfBirth":"1977-07-07","client.email":"unmatched@example.test"},idempotencyKey:randomUUID()});expect(intakeView(await getReferral(user(),organizationId,noMatch.id))?.duplicateCheck.status).toBe("NO_MATCHES");await db.referralIntakeDraft.update({where:{referralId:referral.id},data:{provenanceJson:{source:"REFERRAL_SUBMISSION",duplicateCheck:{status:"FAILED"}}}});expect(intakeView(await getReferral(user(),organizationId,referral.id))?.duplicateCheck.status).toBe("FAILED");await expect(linkReferralClient(user(),organizationId,referral.id,otherClientId)).rejects.toThrow(/Client not found/);const before=await db.client.findUniqueOrThrow({where:{id:secondClientId}}),servicesBefore=await db.clientService.count({where:{clientId:secondClientId}}),results=await Promise.all([linkReferralClient(user(),organizationId,referral.id,secondClientId),linkReferralClient(user(),organizationId,referral.id,secondClientId)]);expect(results.every(result=>result.linkedClientId===secondClientId)).toBe(true);await linkReferralClient(user(),organizationId,referral.id,secondClientId);const after=await db.client.findUniqueOrThrow({where:{id:secondClientId}});expect({first:after.legalFirstName,last:after.legalLastName,email:after.email,dob:after.dateOfBirth}).toEqual({first:before.legalFirstName,last:before.legalLastName,email:before.email,dob:before.dateOfBirth});expect(await db.clientService.count({where:{clientId:secondClientId}})).toBe(servicesBefore);expect(await db.referralEvent.count({where:{referralId:referral.id,eventType:"referral.client_linked"}})).toBe(1);expect(await db.clientDocument.count({where:{clientId:secondClientId,documentType:"REFERRAL_FORM"}})).toBe(1)});
 
  it("classifies verified Basic, Intensive, mixed, and ambiguous CSSP services conservatively",()=>{expect(classifyCsspServices([{serviceType:"Homemaker services",status:"ACTIVE",authorizationIdentifier:"AUTH-1"}]).pathway).toBe("BASIC");expect(classifyCsspServices([{serviceType:"IHS with training",status:"ACTIVE",authorizationIdentifier:"AUTH-2"}]).pathway).toBe("INTENSIVE");expect(classifyCsspServices([{serviceType:"Homemaker services",status:"ACTIVE",authorizationIdentifier:"AUTH-1"},{serviceType:"IHS with family training",status:"ACTIVE",authorizationIdentifier:"AUTH-2"}])).toMatchObject({pathway:"INTENSIVE",reason:expect.stringContaining("takes precedence")});expect(classifyCsspServices([{serviceType:"IHS with training",status:"ACTIVE",authorizationIdentifier:null}]).pathway).toBe("CONFIRMATION_REQUIRED");expect(classifyCsspServices([{serviceType:"Homemaker services",status:"PROPOSED",authorizationIdentifier:"AUTH-3"}]).pathway).toBe("CONFIRMATION_REQUIRED")});

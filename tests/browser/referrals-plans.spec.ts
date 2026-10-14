@@ -64,6 +64,25 @@ test("referral duplicate review supports bounded candidate selection and a non-o
   await expect(page.getByRole("heading",{name:"Linked client"})).toBeVisible();
 });
 
+test("uploaded referral review persists decisions and opens one prefilled prospective-client intake",async({page})=>{
+  test.setTimeout(60_000);
+  await enterVisualQa(page);
+  await page.getByRole("link",{name:"Referrals",exact:true}).click();
+  await page.waitForLoadState("networkidle");
+  await expect(page.getByRole("heading",{name:"Referrals",exact:true})).toBeVisible();
+  const suffix=Date.now().toString().slice(-6),correctedName=`Browser Prospect ${suffix}`,pdf=await PDFDocument.create(),pdfPage=pdf.addPage([612,792]),form=pdf.getForm(),font=await pdf.embedFont(StandardFonts.Helvetica);for(const[name,value,y]of [["client_name",`Browser Original ${suffix}`,700],["client_dob","02/03/1992",660],["client_phone","555-0199",620],["case_manager_name","Reject This Coordinator",580]] as const){const field=form.createTextField(name);field.setText(value);field.addToPage(pdfPage,{x:40,y,width:260,height:20})}form.updateFieldAppearances(font);
+  await page.getByLabel("Upload completed referral PDF").setInputFiles({name:"synthetic-prospective-referral.pdf",mimeType:"application/pdf",buffer:Buffer.from(await pdf.save())});
+  const [uploadResponse]=await Promise.all([page.waitForResponse(response=>response.request().method()==="POST"&&response.url().endsWith("/referrals")),page.getByRole("button",{name:"Upload and extract"}).click()]);expect(await uploadResponse.text()).toContain('"source":"UPLOADED_PDF"');
+  const dialog=page.getByRole("dialog",{name:"Referral details"});await expect(dialog).toBeVisible();
+  const nameRow=dialog.locator(".referral-proposal").filter({hasText:"client.fullName"}),dobRow=dialog.locator(".referral-proposal").filter({hasText:"client.dateOfBirth"}),phoneRow=dialog.locator(".referral-proposal").filter({hasText:"client.phone"}),caseRow=dialog.locator(".referral-proposal").filter({hasText:"caseManager.name"});
+  await nameRow.getByLabel("Reviewed value").fill(correctedName);await nameRow.getByRole("button",{name:"Accept"}).click();await expect(nameRow.getByText("Corrected",{exact:true})).toBeVisible();
+  await dobRow.getByRole("button",{name:"Accept"}).click();await expect(dobRow.getByText("Accepted",{exact:true})).toBeVisible();
+  await phoneRow.getByRole("button",{name:"Accept"}).click();await expect(phoneRow.getByText("Accepted",{exact:true})).toBeVisible();
+  await caseRow.getByRole("button",{name:"Reject"}).click();await expect(caseRow.getByText("Rejected",{exact:true})).toBeVisible();
+  await page.reload();await expect(page.getByRole("heading",{name:"Referrals",exact:true})).toBeVisible();await page.getByText("Uploaded referral",{exact:true}).first().click();const refreshed=page.getByRole("dialog",{name:"Referral details"});await expect(refreshed.locator(".referral-proposal").filter({hasText:"client.fullName"}).getByText("Corrected",{exact:true})).toBeVisible();await expect(refreshed.locator(".referral-proposal").filter({hasText:"caseManager.name"}).getByText("Rejected",{exact:true})).toBeVisible();
+  await refreshed.getByRole("button",{name:"Create new prospective client"}).click();await page.waitForURL(/\/admin\/clients\/[^?]+\?.*view=Intake/);await expect(page.getByRole("button",{name:"Intake",exact:true})).toHaveClass(/active/);await expect(page.getByLabel("Legal first name")).toHaveValue("Browser");await expect(page.getByLabel("Legal last name")).toHaveValue(`Prospect ${suffix}`);await expect(page.getByLabel("Phone",{exact:true})).toHaveValue("555-0199");
+});
+
 test("external referral, CSSP, and IAPP questionnaires expose accessible section progress without losing answers",async({page})=>{
   test.setTimeout(60_000);
   await page.route("**/api/public/referrals/**",async route=>route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({template:REFERRAL_TEMPLATE,answers:{},status:"IN_PROGRESS",submittedAt:null,expiresAt:"2026-10-30T12:00:00.000Z"})}));

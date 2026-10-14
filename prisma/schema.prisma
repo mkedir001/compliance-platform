@@ -754,6 +754,7 @@ model Organization {
   referrals                 Referral[]
   referralIntakeDrafts      ReferralIntakeDraft[]
   documentQuestionnaires    ClientDocumentQuestionnaire[]
+  testDataCleanupPreviews   TestDataCleanupPreview[]
 }
 
 model OrganizationLicense {
@@ -962,6 +963,9 @@ model Employee {
   employmentType           EmploymentType?
   createdAt                DateTime                                 @default(now())
   updatedAt                DateTime                                 @updatedAt
+  testDataMarkedAt         DateTime?
+  testDataMarkedByUserId   String?
+  testDataReason           String?
   organization             Organization                             @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   user                     User?                                    @relation(fields: [userId], references: [id], onDelete: SetNull)
   roles                    EmployeeRole[]
@@ -2819,6 +2823,13 @@ enum ClientStatus {
   ARCHIVED
 }
 
+enum TestDataCleanupPreviewStatus {
+  READY
+  EXECUTED
+  EXPIRED
+  STALE
+}
+
 enum ClientServiceStatus {
   PROPOSED
   ACTIVE
@@ -3089,6 +3100,9 @@ model Client {
   createdByUserId         String
   createdAt               DateTime                      @default(now())
   updatedAt               DateTime                      @updatedAt
+  testDataMarkedAt        DateTime?
+  testDataMarkedByUserId  String?
+  testDataReason          String?
   organization            Organization                  @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   createdBy               User                          @relation("ClientCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
   services                ClientService[]
@@ -3512,6 +3526,26 @@ model ReferralEvent {
   actor        User?    @relation("ReferralEventActor", fields: [actorUserId], references: [id], onDelete: SetNull)
 
   @@index([referralId, occurredAt])
+}
+
+model TestDataCleanupPreview {
+  id                String                       @id @default(cuid())
+  organizationId    String
+  requestedByUserId String
+  status            TestDataCleanupPreviewStatus @default(READY)
+  selectionHash     String
+  selectionJson     Json
+  snapshotJson      Json
+  resultJson        Json?
+  idempotencyKey    String?                      @unique
+  expiresAt         DateTime
+  executedAt        DateTime?
+  createdAt         DateTime                     @default(now())
+  updatedAt         DateTime                     @updatedAt
+  organization      Organization                 @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId, status, expiresAt])
+  @@index([organizationId, requestedByUserId, createdAt])
 }
 
 enum DocumentQuestionnaireStatus {
