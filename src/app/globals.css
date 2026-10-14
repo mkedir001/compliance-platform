@@ -124,3 +124,26 @@ body{color:var(--portal-ink);background:var(--portal-canvas)}
 .questionnaire-navigation{display:grid;gap:12px;margin:0 0 18px;padding:14px;border:1px solid var(--portal-border);border-radius:11px;background:#f7f8f5}.questionnaire-section-list{display:flex;gap:7px;overflow-x:auto;padding:2px 1px 7px}.questionnaire-section-list button{display:flex;align-items:center;gap:7px;flex:0 0 auto;min-height:44px;padding:8px 11px;border-color:#bfc9c2;background:#fff;color:var(--portal-green);font-size:.82rem;text-align:left}.questionnaire-section-list button small{display:block;margin-top:2px;color:inherit}.questionnaire-section-list button[aria-current="step"],.questionnaire-section-list button.is-current{border-color:var(--portal-green);background:var(--portal-green);color:#fff}.questionnaire-paging{display:flex;align-items:center;justify-content:space-between;gap:10px}.questionnaire-paging button{min-width:132px}.questionnaire-paging>span{color:var(--portal-muted);font-size:.82rem;font-weight:700}.questionnaire-section{scroll-margin-top:18px}.completion-summary{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin:0 0 16px;padding:14px;border:1px solid #d5dcd6;border-radius:10px;background:#f7f8f5}.completion-summary strong,.completion-summary small{display:block}.completion-summary p{margin:0;color:var(--portal-muted)}.completion-summary small{margin-top:3px;color:var(--portal-muted)}.required-marker{color:#9b2d24;font-weight:900}.field-error{color:#9b2d24;font-size:.78rem;font-weight:700}
 @media(max-width:800px){.referral-card-list{grid-template-columns:1fr}.referral-card{grid-template-columns:1fr 1fr}.referral-card>span:first-child{grid-column:1/-1}.status-dimensions{grid-template-columns:1fr}}
 @media(max-width:600px){.referral-card{grid-template-columns:1fr;padding:14px}.referral-card>span:first-child{grid-column:auto}.candidate-pagination,.link-confirmation,.completion-summary,.questionnaire-paging{align-items:stretch;flex-direction:column}.candidate-pagination button,.link-confirmation button,.questionnaire-paging button{width:100%}.questionnaire-section-list{display:grid;grid-template-columns:1fr;overflow:visible}.questionnaire-section-list button{width:100%;text-align:left}.questionnaire-navigation{padding:12px}}
+/* Care answer rows in the import review: one row, answer controls on the right (replaces browser-default radios). */
+.portal-app .import-field-row.care-item{position:relative;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr) minmax(300px,360px);align-items:start;gap:20px;padding:16px 20px}
+.portal-app .import-field-row.care-item>*{grid-column:auto!important}
+.portal-app .import-field-row.care-item>.review-state{justify-self:end}
+.portal-app .import-field-row.care-item>.technical-details{position:absolute;top:12px;right:12px;margin:0}
+.care-chip{display:inline-block!important;margin-bottom:4px;padding:2px 8px;border-radius:999px;font-size:.68rem!important;font-weight:800;letter-spacing:.04em;text-transform:uppercase}
+.care-chip.needed{background:#fff0c7;color:#6d4a00}
+.care-chip.chosen{background:#dceee3;color:#174c32}
+.portal-app .care-answer{display:flex;flex-direction:column;gap:10px;flex-wrap:nowrap;padding-right:22px}
+.care-segmented{display:flex;border:1px solid #c9cbc5;border-radius:8px;overflow:hidden;background:#fff}
+.portal-app .care-segmented label{position:relative;display:flex;flex:1;align-items:center;justify-content:center;margin:0;padding:0 10px;min-height:44px;border-right:1px solid #c9cbc5;background:#fff;color:var(--portal-ink);font-size:.88rem;font-weight:600;text-align:center;cursor:pointer}
+.portal-app .care-segmented label:last-child{flex:1.4;border-right:0}
+.portal-app .care-segmented label:hover{background:#fafaf7}
+.portal-app .care-segmented label.selected{background:var(--portal-green);color:#fff;font-weight:700}
+.portal-app .care-segmented input{position:absolute;inset:0;width:100%;height:100%;min-height:0;margin:0;opacity:0;cursor:pointer}
+.portal-app .care-segmented input:disabled{cursor:not-allowed}
+.portal-app .care-segmented label:focus-within{outline:2px solid #1f3d2f;outline-offset:-2px}
+.portal-app .care-detail{width:100%;box-sizing:border-box;padding:0 12px;border:1px solid #c9cbc5;border-radius:8px;font:inherit;font-size:.88rem}
+.portal-app .care-buttons{display:flex;justify-content:flex-end;gap:8px}
+.portal-app .care-buttons button{min-height:44px;padding:0 18px;font-size:.88rem;font-weight:700}
+.portal-app .import-field-row.care-item .import-field-copy,.portal-app .import-field-row.care-item .import-field-value{min-width:0;overflow-wrap:anywhere}
+@media(max-width:900px){.portal-app .import-field-row.care-item{grid-template-columns:1fr}.portal-app .care-answer{padding-right:0}}
+@media(max-width:480px){.care-segmented{flex-direction:column}.portal-app .care-segmented label,.portal-app .care-segmented label:last-child{min-height:44px;border-right:0;border-bottom:1px solid #c9cbc5}.portal-app .care-segmented label:last-child{border-bottom:0}.portal-app .care-buttons{align-items:stretch;flex-direction:column-reverse}.portal-app .care-buttons button{width:100%}}

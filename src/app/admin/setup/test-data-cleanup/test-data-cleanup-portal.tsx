@@ -165,7 +165,7 @@ export default function TestDataCleanupPortal({
       <header className="section-heading">
         <div>
           <p className="eyebrow">Organization settings</p>
-          <h1>Test data cleanup</h1>
+          <h1>Test Data Management</h1>
           <p className="lede">
             Select exact synthetic or legacy dummy records, inspect
             dependencies, and archive or delete only when the preview proves it

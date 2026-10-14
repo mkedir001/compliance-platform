@@ -1,5 +1,5 @@
 import { PortalShell } from "@/app/components/portal-ui";
-import { resolveAdminOrganizationId } from "../../organization-context";
+import { resolveAdminOrganizationIdWithPermission } from "../../organization-context";
 import TestDataCleanupPortal from "./test-data-cleanup-portal";
 
 export default async function TestDataCleanupPage({
@@ -7,8 +7,9 @@ export default async function TestDataCleanupPage({
 }: {
   searchParams: Promise<{ organizationId?: string }>;
 }) {
-  const organizationId = await resolveAdminOrganizationId(
+  const organizationId = await resolveAdminOrganizationIdWithPermission(
     (await searchParams).organizationId ?? "",
+    "organization.manage",
   );
   return (
     <PortalShell organizationId={organizationId} current="Settings">
