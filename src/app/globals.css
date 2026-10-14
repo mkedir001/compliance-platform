@@ -42,7 +42,7 @@ body{color:var(--portal-ink);background:var(--portal-canvas)}
 .portal-app .organization-metrics>button strong{color:var(--portal-ink);line-height:1.1}
 .portal-app .organization-metrics>button span{color:var(--portal-muted);font-size:.82rem;line-height:1.35}
 .employee-record{margin-top:0;padding-top:0;border-top:0}
-.employee-record>.record-header,.client-record>.record-header{padding:24px;border:1px solid var(--portal-border);border-radius:14px;background:#fff}
+.employee-record>.record-header,.client-record>.record-header{padding:24px;border:1px solid var(--portal-border);border-radius:14px;background:#fff}.employee-record>.record-header{padding:14px 16px;align-items:center}.employee-record .record-avatar{width:42px;height:42px;font-size:1rem}.employee-record .record-header h1{font-size:1.65rem}.employee-record .record-header p{margin:.1rem 0}
 .employee-record .record-header h1,.client-record .record-header h2{margin:.15rem 0;font-family:Georgia,serif;font-size:clamp(1.8rem,3vw,2.2rem);line-height:1.15;color:var(--portal-ink)}
 .record-tabs{margin:0!important;padding:0!important;gap:4px!important;background:transparent!important}
 .record-tabs button{min-height:46px!important;padding:0 14px!important;font-weight:500!important}

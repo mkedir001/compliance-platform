@@ -57,7 +57,7 @@ export default function EmployerOperationsPortal({initialOrganizationId="",produ
 }
 function Metric({value,label,action}:{value:number;label:string;action:()=>void}){return <button onClick={action}><strong>{value}</strong><span>{label}</span></button>}
 function Records({rows}:{rows:unknown[]}){return rows.length?<div className="card-list">{rows.map((row,i)=><article key={i}><pre className="data-preview">{JSON.stringify(row,null,2)}</pre></article>)}</div>:<div className="empty-state">No records are available for this authorized view.</div>}
-const employeeTabLabel:Record<EmployeeRecordTab,string>={overview:"Overview",training:"Training",certifications:"Certifications and evidence",policies:"Policies",medication:"Medication","client-assignments":"Client assignments","access-roles":"Access and roles",history:"History"};
+const employeeTabLabel:Record<EmployeeRecordTab,string>={overview:"Overview",training:"Training",certifications:"Certifications",policies:"Policies",medication:"Medication","client-assignments":"Client assignments","access-roles":"Access and roles",history:"History"};
 function EmployeeDetail({detail,selectedTab,onTabChange,onBack,invite,exportEmployee,userId,organizationId,productionIdentity,trainingWorkspace,reload}:{detail:Detail;selectedTab:EmployeeRecordTab;onTabChange:(tab:EmployeeRecordTab)=>void;onBack:()=>void;invite:()=>void;exportEmployee:()=>void;userId:string;organizationId:string;productionIdentity:boolean;trainingWorkspace:ReactNode;reload:()=>void}){
  const e=detail.profile.employee;
  return <section className="employee-detail employee-record">

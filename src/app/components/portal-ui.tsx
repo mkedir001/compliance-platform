@@ -18,6 +18,7 @@ export function PortalShell({ organizationId, current, children, navigation }: {
     { label: "Signatures", href: `/admin/clients${query ? `${query}&` : "?"}view=Signatures`, group: "Review queues" },
     { label: "Policies", href: `/admin/policy-operations${query}`, group: "Library" },
     { label: "Training catalog", href: `/admin/training${query}`, group: "Library" },
+    { label: "Billing", href: `/admin/billing${query}`, group: "Records" },
     { label: "Reports and audit", href: `/admin/reporting${query}`, group: "Records" },
     { label: "Settings", href: `/admin/setup${query}`, group: "Administration" },
   ];

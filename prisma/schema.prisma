@@ -845,6 +845,7 @@ model User {
   createdOnboardings             EmployeeOnboarding[]                     @relation("OnboardingCreatedBy")
   completedOnboardingSteps       EmployeeOnboardingStep[]                 @relation("OnboardingStepCompletedBy")
   createdPolicyVersions          PolicyVersion[]                          @relation("PolicyVersionCreatedBy")
+  publishedPolicyVersions        PolicyVersion[]                          @relation("PolicyVersionPublishedBy")
   assignedPolicies               PolicyAssignment[]                       @relation("PolicyAssignedBy")
   clinicalApprovals              ClinicalCurriculumApproval[]             @relation("ClinicalCurriculumReviewer")
   medicationQualifications       MedicationQualification[]                @relation("MedicationQualificationReviewer")
@@ -2025,6 +2026,7 @@ model Policy {
   code                      String
   title                     String
   description               String?
+  category                  String          @default("GENERAL")
   status                    PolicyStatus    @default(ACTIVE)
   requiresAcknowledgment    Boolean         @default(false)
   reacknowledgeOnNewVersion Boolean         @default(false)
@@ -2036,6 +2038,7 @@ model Policy {
 
   @@unique([organizationId, code])
   @@index([organizationId, status])
+  @@index([organizationId, category, status])
 }
 
 model PolicyVersion {
@@ -2048,13 +2051,21 @@ model PolicyVersion {
   publishedAt     DateTime?
   body            String
   contentHash     String
+  versionLabel    String?
+  originalFileName String?
+  originalMimeType String?
+  originalFileSize Int?
+  originalDocument Bytes?
   createdByUserId String
+  publishedByUserId String?
   createdAt       DateTime            @default(now())
   policy          Policy              @relation(fields: [policyId], references: [id], onDelete: Restrict)
   createdBy       User                @relation("PolicyVersionCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  publishedBy     User?               @relation("PolicyVersionPublishedBy", fields: [publishedByUserId], references: [id], onDelete: Restrict)
   assignments     PolicyAssignment[]
 
   @@unique([policyId, versionNumber])
+  @@unique([policyId, versionLabel])
   @@index([status, effectiveFrom, effectiveUntil])
 }
 
