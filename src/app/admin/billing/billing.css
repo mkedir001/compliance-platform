@@ -56,6 +56,9 @@
 .billing-review-actions{display:flex;justify-content:flex-end;gap:10px}
 @media(max-width:900px){.billing-actions{margin-left:0}.billing-detail-head,.billing-banner{flex-direction:column;align-items:stretch}}
 @media(max-width:700px){
+  .billing-card-grid{grid-template-columns:1fr}
+  .billing-card-grid span{padding:8px 0;border-bottom:1px solid var(--portal-border)}
+  .billing-card-grid span:last-child{border-bottom:0}
   .billing-table thead{display:none}
   .billing-table tr{display:block;padding:10px 0;border-bottom:1px solid var(--portal-border)}
   .billing-table td{display:flex;justify-content:space-between;gap:12px;border:0;padding:4px 12px}
