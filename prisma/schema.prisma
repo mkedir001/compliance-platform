@@ -755,6 +755,13 @@ model Organization {
   referralIntakeDrafts      ReferralIntakeDraft[]
   documentQuestionnaires    ClientDocumentQuestionnaire[]
   testDataCleanupPreviews   TestDataCleanupPreview[]
+  axisCareConnection        AxisCareConnection?
+  axisCareWebhookEvents     AxisCareWebhookEvent[]
+  axisCareRecords           AxisCareRecord[]
+  axisCareVisits            AxisCareVisit[]
+  axisCareClientMatches     AxisCareClientMatch[]
+  axisCareSyncStates        AxisCareSyncState[]
+  axisCareServiceMappings   AxisCareServiceMapping[]
 }
 
 model OrganizationLicense {
@@ -967,6 +974,7 @@ model Employee {
   testDataMarkedAt         DateTime?
   testDataMarkedByUserId   String?
   testDataReason           String?
+  axisCareCaregiverId      String?
   organization             Organization                             @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   user                     User?                                    @relation(fields: [userId], references: [id], onDelete: SetNull)
   roles                    EmployeeRole[]
@@ -995,9 +1003,11 @@ model Employee {
   portalInvitations        EmployeePortalInvitation[]
   workforceReadiness       EmployeeWorkforceReadiness?
   auditAccessScopes        AuditAccessEmployee[]
+  axisCareVisits           AxisCareVisit[]
 
   @@unique([organizationId, employeeNumber])
   @@unique([organizationId, userId])
+  @@unique([organizationId, axisCareCaregiverId])
   @@index([organizationId, employmentStatus])
   @@index([organizationId, lastName, firstName])
 }
@@ -2042,27 +2052,27 @@ model Policy {
 }
 
 model PolicyVersion {
-  id              String              @id @default(cuid())
-  policyId        String
-  versionNumber   Int
-  status          PolicyVersionStatus @default(DRAFT)
-  effectiveFrom   DateTime            @db.Date
-  effectiveUntil  DateTime?           @db.Date
-  publishedAt     DateTime?
-  body            String
-  contentHash     String
-  versionLabel    String?
-  originalFileName String?
-  originalMimeType String?
-  originalFileSize Int?
-  originalDocument Bytes?
-  createdByUserId String
+  id                String              @id @default(cuid())
+  policyId          String
+  versionNumber     Int
+  status            PolicyVersionStatus @default(DRAFT)
+  effectiveFrom     DateTime            @db.Date
+  effectiveUntil    DateTime?           @db.Date
+  publishedAt       DateTime?
+  body              String
+  contentHash       String
+  versionLabel      String?
+  originalFileName  String?
+  originalMimeType  String?
+  originalFileSize  Int?
+  originalDocument  Bytes?
+  createdByUserId   String
   publishedByUserId String?
-  createdAt       DateTime            @default(now())
-  policy          Policy              @relation(fields: [policyId], references: [id], onDelete: Restrict)
-  createdBy       User                @relation("PolicyVersionCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
-  publishedBy     User?               @relation("PolicyVersionPublishedBy", fields: [publishedByUserId], references: [id], onDelete: Restrict)
-  assignments     PolicyAssignment[]
+  createdAt         DateTime            @default(now())
+  policy            Policy              @relation(fields: [policyId], references: [id], onDelete: Restrict)
+  createdBy         User                @relation("PolicyVersionCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  publishedBy       User?               @relation("PolicyVersionPublishedBy", fields: [publishedByUserId], references: [id], onDelete: Restrict)
+  assignments       PolicyAssignment[]
 
   @@unique([policyId, versionNumber])
   @@unique([policyId, versionLabel])
@@ -3080,60 +3090,65 @@ enum RoiStatus {
 }
 
 model Client {
-  id                      String                        @id @default(cuid())
-  organizationId          String
-  status                  ClientStatus                  @default(PROSPECTIVE)
-  legalFirstName          String
-  legalLastName           String
-  preferredName           String?
-  dateOfBirth             DateTime?                     @db.Date
-  creationRequestId       String?
-  gender                  String?
-  phone                   String?
-  email                   String?
-  addressLine1            String?
-  addressLine2            String?
-  city                    String?
-  state                   String?
-  postalCode              String?
-  maPmiNumber             String?
-  waiverProgram           String?
-  financialResponsibility String?
-  primaryLanguage         String?
-  interpreterNeeded       Boolean                       @default(false)
-  preferredCommunication  String?
-  livingSituation         String?
-  strengthsInterests      String?
-  culturalPractices       String?
-  supportNeeds            String?
-  dischargedAt            DateTime?
-  archivedAt              DateTime?
-  createdByUserId         String
-  createdAt               DateTime                      @default(now())
-  updatedAt               DateTime                      @updatedAt
-  testDataMarkedAt        DateTime?
-  testDataMarkedByUserId  String?
-  testDataReason          String?
-  organization            Organization                  @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  createdBy               User                          @relation("ClientCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
-  services                ClientService[]
-  representatives         ClientRepresentative[]
-  emergencyContacts       ClientEmergencyContact[]
-  healthProfile           ClientHealthProfile?
-  medications             ClientMedication[]
-  contacts                ClientProfessionalContact[]
-  intakes                 ClientIntake[]
-  documents               ClientDocument[]
-  roiAuthorizations       RoiAuthorization[]
-  signatureEnvelopes      SignatureEnvelope[]
-  documentRequests        ClientDocumentRequest[]
-  auditAccessScopes       AuditAccessClient[]
-  importSessions          ClientImportSession[]
-  referrals               Referral[]
-  referralIntakeDrafts    ReferralIntakeDraft[]
-  documentQuestionnaires  ClientDocumentQuestionnaire[]
+  id                       String                        @id @default(cuid())
+  organizationId           String
+  status                   ClientStatus                  @default(PROSPECTIVE)
+  legalFirstName           String
+  legalLastName            String
+  preferredName            String?
+  dateOfBirth              DateTime?                     @db.Date
+  creationRequestId        String?
+  gender                   String?
+  phone                    String?
+  email                    String?
+  addressLine1             String?
+  addressLine2             String?
+  city                     String?
+  state                    String?
+  postalCode               String?
+  maPmiNumber              String?
+  waiverProgram            String?
+  financialResponsibility  String?
+  primaryLanguage          String?
+  interpreterNeeded        Boolean                       @default(false)
+  preferredCommunication   String?
+  livingSituation          String?
+  strengthsInterests       String?
+  culturalPractices        String?
+  supportNeeds             String?
+  dischargedAt             DateTime?
+  archivedAt               DateTime?
+  createdByUserId          String
+  createdAt                DateTime                      @default(now())
+  updatedAt                DateTime                      @updatedAt
+  testDataMarkedAt         DateTime?
+  testDataMarkedByUserId   String?
+  testDataReason           String?
+  axisCareClientId         String?
+  axisCareServiceStartDate DateTime?                     @db.Date
+  organization             Organization                  @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  createdBy                User                          @relation("ClientCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  services                 ClientService[]
+  representatives          ClientRepresentative[]
+  emergencyContacts        ClientEmergencyContact[]
+  healthProfile            ClientHealthProfile?
+  medications              ClientMedication[]
+  contacts                 ClientProfessionalContact[]
+  intakes                  ClientIntake[]
+  documents                ClientDocument[]
+  roiAuthorizations        RoiAuthorization[]
+  signatureEnvelopes       SignatureEnvelope[]
+  documentRequests         ClientDocumentRequest[]
+  auditAccessScopes        AuditAccessClient[]
+  importSessions           ClientImportSession[]
+  referrals                Referral[]
+  referralIntakeDrafts     ReferralIntakeDraft[]
+  documentQuestionnaires   ClientDocumentQuestionnaire[]
+  axisCareMatches          AxisCareClientMatch[]
+  axisCareVisits           AxisCareVisit[]
 
   @@unique([organizationId, creationRequestId])
+  @@unique([organizationId, axisCareClientId])
   @@index([organizationId, status, legalLastName, legalFirstName])
   @@index([organizationId, maPmiNumber])
 }
@@ -3884,4 +3899,172 @@ model SignatureRendition {
   @@unique([envelopeId, signerId])
   @@index([previousRenditionId])
   @@index([envelopeId, isFinal])
+}
+
+// ---- AxisCare integration (read-only mirror of the agency's AxisCare data) ----
+enum AxisCareMatchStatus {
+  AUTO_LINKED
+  SUGGESTED
+  CONFIRMED
+  REJECTED
+}
+
+enum AxisCareConnectionStatus {
+  CONFIGURATION_INCOMPLETE
+  CONNECTED
+  AUTHENTICATION_FAILED
+  CONNECTION_UNAVAILABLE
+}
+
+model AxisCareConnection {
+  id                String                   @id @default(cuid())
+  organizationId    String                   @unique
+  baseUrl           String
+  encryptedApiToken String
+  tokenFingerprint  String
+  historyMonths     Int                      @default(12)
+  extraEntities     String                   @default("")
+  status            AxisCareConnectionStatus @default(CONFIGURATION_INCOMPLETE)
+  lastTestedAt      DateTime?
+  lastConnectedAt   DateTime?
+  lastErrorCode     String?
+  createdByUserId   String
+  updatedByUserId   String
+  createdAt         DateTime                 @default(now())
+  updatedAt         DateTime                 @updatedAt
+  organization      Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+}
+
+model AxisCareWebhookEvent {
+  id             String       @id @default(cuid())
+  organizationId String
+  dedupeKey      String
+  event          String
+  entity         String?
+  action         String?
+  entityId       String?
+  payload        Json
+  receivedAt     DateTime     @default(now())
+  processedAt    DateTime?
+  attempts       Int          @default(0)
+  lastError      String?
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, dedupeKey])
+  @@index([organizationId, processedAt, receivedAt])
+}
+
+model AxisCareRecord {
+  id             String       @id @default(cuid())
+  organizationId String
+  entity         String
+  externalId     String
+  payload        Json
+  payloadHash    String
+  firstSeenAt    DateTime     @default(now())
+  lastSyncedAt   DateTime     @default(now())
+  removedAt      DateTime?
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, entity, externalId])
+  @@index([organizationId, entity, lastSyncedAt])
+}
+
+model AxisCareVisit {
+  id                  String       @id @default(cuid())
+  organizationId      String
+  externalId          String
+  axisCareClientId    String?
+  axisCareCaregiverId String?
+  clientId            String?
+  employeeId          String?
+  startAt             DateTime?
+  endAt               DateTime?
+  scheduledStartAt    DateTime?
+  scheduledEndAt      DateTime?
+  clockInAt           DateTime?
+  clockOutAt          DateTime?
+  clockInMethod       String?
+  clockOutMethod      String?
+  clockInLatitude     Decimal?     @db.Decimal(9, 6)
+  clockInLongitude    Decimal?     @db.Decimal(9, 6)
+  clockOutLatitude    Decimal?     @db.Decimal(9, 6)
+  clockOutLongitude   Decimal?     @db.Decimal(9, 6)
+  clockInPhone        String?
+  clockOutPhone       String?
+  serviceCode         String?
+  procedureCode       String?
+  visitType           String?
+  timezone            String?
+  verified            Boolean      @default(false)
+  removed             Boolean      @default(false)
+  chargeRateCents     Int?
+  billableRateMode    String?
+  modificationReason  String?
+  detailPayload       Json?
+  payload             Json
+  payloadHash         String
+  firstSeenAt         DateTime     @default(now())
+  lastSyncedAt        DateTime     @default(now())
+  client              Client?      @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  employee            Employee?    @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+  organization        Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, externalId])
+  @@index([organizationId, clientId, startAt])
+  @@index([organizationId, axisCareClientId, startAt])
+  @@index([organizationId, employeeId, startAt])
+  @@index([organizationId, lastSyncedAt])
+}
+
+model AxisCareClientMatch {
+  id               String              @id @default(cuid())
+  organizationId   String
+  axisCareClientId String
+  clientId         String?
+  status           AxisCareMatchStatus
+  score            Int                 @default(0)
+  reason           String
+  decidedByUserId  String?
+  decidedAt        DateTime?
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+  client           Client?             @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  organization     Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, axisCareClientId, clientId])
+  @@index([organizationId, status])
+}
+
+model AxisCareSyncState {
+  id             String       @id @default(cuid())
+  organizationId String
+  entity         String
+  cursor         String?
+  lastStartedAt  DateTime?
+  lastSuccessAt  DateTime?
+  lastError      String?
+  lastCount      Int          @default(0)
+  backfillDone   Boolean      @default(false)
+  updatedAt      DateTime     @updatedAt
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, entity])
+}
+
+model AxisCareServiceMapping {
+  id                  String       @id @default(cuid())
+  organizationId      String
+  axisCareServiceCode String
+  waldahServiceType   String
+  createdByUserId     String
+  updatedByUserId     String
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+  organization        Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, axisCareServiceCode])
+  @@index([organizationId, waldahServiceType])
 }

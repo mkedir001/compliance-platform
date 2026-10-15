@@ -53,9 +53,18 @@
 .billing-reasons li.billing-muted{color:var(--portal-muted)}
 .billing-review{display:grid;gap:14px}
 .billing-note{margin:0;padding:10px 12px;border-radius:8px;background:#fff0c7;color:#6d4a00;font-size:.88rem}
+.billing-integration-admin{border:1px solid var(--portal-border);border-radius:12px;background:#fff}
+.billing-integration-admin>summary{cursor:pointer;padding:14px 16px;font-weight:700}
+.billing-integration-body{display:grid;gap:14px;padding:0 16px 16px;border-top:1px solid var(--portal-border)}
+.billing-integration-body>.billing-card-head{padding:14px 0 0;flex-direction:row;align-items:center;justify-content:space-between}
+.billing-mapping-list{display:grid;gap:8px}
+.billing-mapping-list form{display:grid;grid-template-columns:minmax(180px,1fr) minmax(220px,1fr) auto;align-items:center;gap:10px;padding:10px;border:1px solid var(--portal-border);border-radius:8px}
+.billing-mapping-list span{display:grid}.billing-mapping-list small{color:var(--portal-muted)}
+.billing-mapping-list input,.billing-mapping-list select{min-height:42px}
 .billing-review-actions{display:flex;justify-content:flex-end;gap:10px}
 @media(max-width:900px){.billing-actions{margin-left:0}.billing-detail-head,.billing-banner{flex-direction:column;align-items:stretch}}
 @media(max-width:700px){
+  .billing-mapping-list form{grid-template-columns:1fr}
   .billing-card-grid{grid-template-columns:1fr}
   .billing-card-grid span{padding:8px 0;border-bottom:1px solid var(--portal-border)}
   .billing-card-grid span:last-child{border-bottom:0}
@@ -64,3 +73,7 @@
   .billing-table td{display:flex;justify-content:space-between;gap:12px;border:0;padding:4px 12px}
   .billing-table td::before{content:attr(data-label);color:var(--portal-muted);font-size:.74rem;font-weight:700}
 }
+.billing-row-flagged{background:#fffaf0}
+.billing-table td input[type=checkbox]{width:18px;height:18px}
+.billing-table.compact tfoot th,.billing-table tfoot th{border-top:1px solid var(--portal-border);color:var(--portal-ink);text-transform:none;font-size:.9rem}
+.sr-only{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
