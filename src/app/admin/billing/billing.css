@@ -64,3 +64,7 @@
   .billing-table td{display:flex;justify-content:space-between;gap:12px;border:0;padding:4px 12px}
   .billing-table td::before{content:attr(data-label);color:var(--portal-muted);font-size:.74rem;font-weight:700}
 }
+.billing-row-flagged{background:#fffaf0}
+.billing-table td input[type=checkbox]{width:18px;height:18px}
+.billing-table.compact tfoot th,.billing-table tfoot th{border-top:1px solid var(--portal-border);color:var(--portal-ink);text-transform:none;font-size:.9rem}
+.sr-only{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}

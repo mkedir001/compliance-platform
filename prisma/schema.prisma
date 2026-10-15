@@ -3114,6 +3114,8 @@ model Client {
   testDataMarkedAt        DateTime?
   testDataMarkedByUserId  String?
   testDataReason          String?
+  axisCareClientId        String?
+  axisCareServiceStartDate DateTime?                    @db.Date
   organization            Organization                  @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   createdBy               User                          @relation("ClientCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
   services                ClientService[]
@@ -3132,8 +3134,11 @@ model Client {
   referrals               Referral[]
   referralIntakeDrafts    ReferralIntakeDraft[]
   documentQuestionnaires  ClientDocumentQuestionnaire[]
+  axisCareMatches         AxisCareClientMatch[]
+  axisCareVisits          AxisCareVisit[]
 
   @@unique([organizationId, creationRequestId])
+  @@unique([organizationId, axisCareClientId])
   @@index([organizationId, status, legalLastName, legalFirstName])
   @@index([organizationId, maPmiNumber])
 }
@@ -3884,4 +3889,121 @@ model SignatureRendition {
   @@unique([envelopeId, signerId])
   @@index([previousRenditionId])
   @@index([envelopeId, isFinal])
+}
+
+// ---- AxisCare integration (read-only mirror of the agency's AxisCare data) ----
+enum AxisCareMatchStatus {
+  AUTO_LINKED
+  SUGGESTED
+  CONFIRMED
+  REJECTED
+}
+
+model AxisCareWebhookEvent {
+  id             String    @id @default(cuid())
+  organizationId String
+  dedupeKey      String
+  event          String
+  entity         String?
+  action         String?
+  entityId       String?
+  payload        Json
+  receivedAt     DateTime  @default(now())
+  processedAt    DateTime?
+  attempts       Int       @default(0)
+  lastError      String?
+
+  @@unique([organizationId, dedupeKey])
+  @@index([organizationId, processedAt, receivedAt])
+}
+
+model AxisCareRecord {
+  id              String    @id @default(cuid())
+  organizationId  String
+  entity          String
+  externalId      String
+  payload         Json
+  payloadHash     String
+  firstSeenAt     DateTime  @default(now())
+  lastSyncedAt    DateTime  @default(now())
+  removedAt       DateTime?
+
+  @@unique([organizationId, entity, externalId])
+  @@index([organizationId, entity, lastSyncedAt])
+}
+
+model AxisCareVisit {
+  id                  String    @id @default(cuid())
+  organizationId      String
+  externalId          String
+  axisCareClientId    String?
+  axisCareCaregiverId String?
+  clientId            String?
+  startAt             DateTime?
+  endAt               DateTime?
+  scheduledStartAt    DateTime?
+  scheduledEndAt      DateTime?
+  clockInAt           DateTime?
+  clockOutAt          DateTime?
+  clockInMethod       String?
+  clockOutMethod      String?
+  clockInLatitude     Decimal?  @db.Decimal(9, 6)
+  clockInLongitude    Decimal?  @db.Decimal(9, 6)
+  clockOutLatitude    Decimal?  @db.Decimal(9, 6)
+  clockOutLongitude   Decimal?  @db.Decimal(9, 6)
+  clockInPhone        String?
+  clockOutPhone       String?
+  serviceCode         String?
+  procedureCode       String?
+  visitType           String?
+  timezone            String?
+  verified            Boolean   @default(false)
+  removed             Boolean   @default(false)
+  chargeRateCents     Int?
+  billableRateMode    String?
+  modificationReason  String?
+  detailPayload       Json?
+  payload             Json
+  payloadHash         String
+  firstSeenAt         DateTime  @default(now())
+  lastSyncedAt        DateTime  @default(now())
+  client              Client?   @relation(fields: [clientId], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, externalId])
+  @@index([organizationId, clientId, startAt])
+  @@index([organizationId, axisCareClientId, startAt])
+  @@index([organizationId, lastSyncedAt])
+}
+
+model AxisCareClientMatch {
+  id               String              @id @default(cuid())
+  organizationId   String
+  axisCareClientId String
+  clientId         String?
+  status           AxisCareMatchStatus
+  score            Int                 @default(0)
+  reason           String
+  decidedByUserId  String?
+  decidedAt        DateTime?
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+  client           Client?             @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, axisCareClientId, clientId])
+  @@index([organizationId, status])
+}
+
+model AxisCareSyncState {
+  id             String    @id @default(cuid())
+  organizationId String
+  entity         String
+  cursor         String?
+  lastStartedAt  DateTime?
+  lastSuccessAt  DateTime?
+  lastError      String?
+  lastCount      Int       @default(0)
+  backfillDone   Boolean   @default(false)
+  updatedAt      DateTime  @updatedAt
+
+  @@unique([organizationId, entity])
 }
