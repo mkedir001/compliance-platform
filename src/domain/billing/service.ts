@@ -44,7 +44,7 @@ export async function getBillingWorkspaceClients(user: Pick<User, "id">, organiz
 
 // ---- AxisCare-backed billing data -------------------------------------------------------------------------
 // billing.run: sees everything (visits, rates, clock data) and may bill. billing.view_billed: billed amounts only.
-export type BillingAccess = { canRun: boolean; canViewBilled: boolean };
+export type BillingAccess = { canRun: boolean; canViewBilled: boolean; canManageIntegration: boolean };
 
 export async function getBillingAccess(user: Pick<User, "id">, organizationId: string): Promise<BillingAccess> {
   const { membership } = await requireOrganizationAccess(user, organizationId);
@@ -52,12 +52,13 @@ export async function getBillingAccess(user: Pick<User, "id">, organizationId: s
   const canRun = codes.has("billing.run");
   const canViewBilled = canRun || codes.has("billing.view_billed");
   if (!canViewBilled) throw new AuthorizationError("Missing permission: billing.view_billed");
-  return { canRun, canViewBilled };
+  return { canRun, canViewBilled, canManageIntegration: codes.has("organization.manage") };
 }
 
 export type BillingVisit = {
   id: string; clientId: string; startAt: string | null; clockInAt: string | null; clockOutAt: string | null;
   serviceCode: string | null; hours: number | null; rateCents: number | null; amountCents: number | null;
+  waldahServiceType: string | null;
   compliant: boolean; reasons: EvvReason[];
 };
 
@@ -66,14 +67,15 @@ export async function getBillingVisits(user: Pick<User, "id">, organizationId: s
   const { membership } = await requireOrganizationAccess(user, organizationId);
   await requirePermission(membership.id, "billing.run");
   const since = new Date(now); since.setUTCMonth(since.getUTCMonth() - 12);
-  const rows = await prisma.axisCareVisit.findMany({
+  const [rows, mappings] = await Promise.all([prisma.axisCareVisit.findMany({
     where: { organizationId, removed: false, clientId: { not: null }, startAt: { gte: since }, client: { testDataMarkedAt: null, archivedAt: null } },
     orderBy: { startAt: "desc" }, take: 5000,
     select: { id: true, clientId: true, startAt: true, clockInAt: true, clockOutAt: true, clockInLatitude: true, clockInLongitude: true, clockOutLatitude: true, clockOutLongitude: true, clockInPhone: true, clockOutPhone: true, serviceCode: true, chargeRateCents: true, removed: true }
-  });
+  }), prisma.axisCareServiceMapping.findMany({ where: { organizationId }, select: { axisCareServiceCode: true, waldahServiceType: true } })]);
+  const serviceTypes = new Map(mappings.map(mapping => [mapping.axisCareServiceCode, mapping.waldahServiceType]));
   return rows.map(row => {
     const evv = classifyEvv(row), rateCents = row.chargeRateCents;
-    return { id: row.id, clientId: row.clientId!, startAt: row.startAt?.toISOString() ?? null, clockInAt: row.clockInAt?.toISOString() ?? null, clockOutAt: row.clockOutAt?.toISOString() ?? null, serviceCode: row.serviceCode, hours: evv.hours, rateCents, amountCents: evv.hours !== null && rateCents !== null ? roundMoneyCents(evv.hours, rateCents) : null, compliant: evv.compliant, reasons: evv.reasons };
+    return { id: row.id, clientId: row.clientId!, startAt: row.startAt?.toISOString() ?? null, clockInAt: row.clockInAt?.toISOString() ?? null, clockOutAt: row.clockOutAt?.toISOString() ?? null, serviceCode: row.serviceCode, waldahServiceType: row.serviceCode ? serviceTypes.get(row.serviceCode) ?? null : null, hours: evv.hours, rateCents, amountCents: evv.hours !== null && rateCents !== null ? roundMoneyCents(evv.hours, rateCents) : null, compliant: evv.compliant, reasons: evv.reasons };
   });
 }
 

@@ -7,7 +7,12 @@ test("authorized owner opens the safe responsive billing screen from the existin
   await page.getByRole("link", { name: "Billing", exact: true }).click();
   await page.waitForURL(/\/admin\/billing\?organizationId=/);
   await expect(page.getByRole("heading", { name: "Billing", exact: true })).toBeVisible();
-  await expect(page.getByText("Billing and visit data are not connected.")).toBeVisible();
+  await expect(page.getByText("AxisCare visit synchronization is not connected.")).toBeVisible();
+  await page.getByText("AxisCare integration settings", { exact: true }).click();
+  await expect(page.locator(".billing-integration-admin").getByText("Not configured", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("AxisCare site URL")).toHaveValue("https://10461.axiscare.com");
+  await expect(page.getByLabel("API bearer token")).toHaveValue("");
+  await expect(page.getByRole("button", { name: "Synchronize now" })).toBeDisabled();
   await expect(page.getByRole("button", { name: "Billing actions unavailable" })).toBeDisabled();
   await expect(page.getByText("Preview with sample data")).toHaveCount(0);
   await expect(page.getByRole("button", { name: /Confirm billing|Bill now/ })).toHaveCount(0);

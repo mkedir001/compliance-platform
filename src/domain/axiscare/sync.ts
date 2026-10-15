@@ -7,6 +7,7 @@ import { proposeMatches } from "./matching";
 
 type Json = Record<string, unknown>;
 const toJson = (v: unknown) => v as Prisma.InputJsonValue;
+const obj = (v: unknown): Json | null => v && typeof v === "object" && !Array.isArray(v) ? v as Json : null;
 const decimal = (v: number | null) => v === null ? null : v.toFixed(6);
 
 // Entity catalog. Every entry is a GET list. Notes and call logs can contain free-text care notes, so they are
@@ -14,9 +15,9 @@ const decimal = (v: number | null) => v === null ? null : v.toFixed(6);
 // "Notes" (GET /api/notes/...) are not fetched anywhere yet; add an entry here when a use case exists.
 export const AXISCARE_ENTITY_CATALOG: { entity: string; path: string; defaultOn: boolean }[] = [
   { entity: "client", path: "/api/clients", defaultOn: true }, { entity: "caregiver", path: "/api/caregivers", defaultOn: true },
-  { entity: "contact", path: "/api/contacts", defaultOn: true }, { entity: "applicant", path: "/api/applicants", defaultOn: true },
-  { entity: "adl", path: "/api/adls", defaultOn: true }, { entity: "tagging_category", path: "/api/taggingCategories", defaultOn: true },
-  { entity: "organization", path: "/api/organizations", defaultOn: true },
+  { entity: "contact", path: "/api/contacts", defaultOn: false }, { entity: "applicant", path: "/api/applicants", defaultOn: false },
+  { entity: "adl", path: "/api/adls", defaultOn: false }, { entity: "tagging_category", path: "/api/taggingCategories", defaultOn: false },
+  { entity: "organization", path: "/api/organizations", defaultOn: false },
   { entity: "call_log", path: "/api/call-logs", defaultOn: false }
 ];
 export function enabledEntities(config: Pick<AxisCareConfig, "AXISCARE_EXTRA_ENTITIES">) {
@@ -25,6 +26,14 @@ export function enabledEntities(config: Pick<AxisCareConfig, "AXISCARE_EXTRA_ENT
 }
 
 export function newClient(config: AxisCareConfig) { return new AxisCareClient({ baseUrl: config.AXISCARE_BASE_URL, token: config.AXISCARE_API_TOKEN }); }
+
+const pick = (raw: Json, keys: string[]) => Object.fromEntries(keys.filter(key => raw[key] !== undefined).map(key => [key, raw[key]]));
+/** Keep only fields used by Waldah workflows. The AxisCare client response can include SSNs, addresses and free-text notes. */
+export function sanitizeAxisCarePayload(entity: string, raw: Json): Json {
+  if (entity === "client") return pick(raw, ["id", "firstName", "lastName", "goesBy", "dateOfBirth", "startDate", "medicaidNumber", "status", "externalId"]);
+  if (entity === "caregiver") return pick(raw, ["id", "firstName", "lastName", "goesBy", "status", "externalId", "employeeNumber"]);
+  return pick(raw, ["id", "code", "label", "name", "status", "externalId"]);
+}
 
 /** Lightweight connection check: one small GET. Returns only whether it worked, never the token. */
 export async function testConnection(config: AxisCareConfig) {
@@ -35,22 +44,28 @@ export async function testConnection(config: AxisCareConfig) {
 async function upsertRecord(organizationId: string, entity: string, raw: Json) {
   const externalId = raw.id === undefined || raw.id === null ? null : String(raw.id);
   if (!externalId) return false;
-  const payloadHash = hashPayload(raw), now = new Date();
+  const payload = sanitizeAxisCarePayload(entity, raw), payloadHash = hashPayload(payload), now = new Date();
   await prisma.axisCareRecord.upsert({
     where: { organizationId_entity_externalId: { organizationId, entity, externalId } },
-    create: { organizationId, entity, externalId, payload: toJson(raw), payloadHash, lastSyncedAt: now },
-    update: { payload: toJson(raw), payloadHash, lastSyncedAt: now, removedAt: null }
+    create: { organizationId, entity, externalId, payload: toJson(payload), payloadHash, lastSyncedAt: now },
+    update: { payload: toJson(payload), payloadHash, lastSyncedAt: now, removedAt: null }
   });
   return true;
 }
 
 export async function upsertVisit(organizationId: string, raw: Json, detail?: Json | null) {
+  void detail; // Detail/ADL payload ingestion remains disabled until a minimum-necessary data contract is approved.
   const mapped = mapVisit(raw);
   if (!mapped.externalId) return false;
-  const payloadHash = hashPayload(raw), now = new Date();
-  const link = mapped.axisCareClientId ? await prisma.client.findFirst({ where: { organizationId, axisCareClientId: mapped.axisCareClientId }, select: { id: true } }) : null;
+  const now = new Date();
+  const [link, employee] = await Promise.all([
+    mapped.axisCareClientId ? prisma.client.findFirst({ where: { organizationId, axisCareClientId: mapped.axisCareClientId }, select: { id: true } }) : null,
+    mapped.axisCareCaregiverId ? prisma.employee.findFirst({ where: { organizationId, axisCareCaregiverId: mapped.axisCareCaregiverId }, select: { id: true } }) : null,
+  ]);
   const { externalId, clockInLatitude, clockInLongitude, clockOutLatitude, clockOutLongitude, ...rest } = mapped;
-  const data = { ...rest, clientId: link?.id ?? null, clockInLatitude: decimal(clockInLatitude), clockInLongitude: decimal(clockInLongitude), clockOutLatitude: decimal(clockOutLatitude), clockOutLongitude: decimal(clockOutLongitude), payload: toJson(raw), payloadHash, lastSyncedAt: now, ...(detail ? { detailPayload: toJson(detail) } : {}) };
+  const safeClock = (value: unknown) => { const clock = obj(value), coordinates = obj(clock?.coordinates); return clock ? { ...pick(clock, ["time", "method", "telephonyPhone"]), coordinates: coordinates ? pick(coordinates, ["latitude", "longitude"]) : null } : null; };
+  const visitPayload = { id: raw.id, client: obj(raw.client) ? pick(obj(raw.client)!, ["id"]) : null, caregiver: obj(raw.caregiver) ? pick(obj(raw.caregiver)!, ["id"]) : null, startDate: raw.startDate, endDate: raw.endDate, scheduledStartDate: raw.scheduledStartDate, scheduledEndDate: raw.scheduledEndDate, clockIn: safeClock(raw.clockIn), clockOut: safeClock(raw.clockOut), timezone: raw.timezone, service: obj(raw.service) ? pick(obj(raw.service)!, ["id", "code", "description", "procedureCode"]) : null, type: raw.type, verified: raw.verified, removed: raw.removed, chargeRate: raw.chargeRate, billableRateMode: raw.billableRateMode, modificationReason: obj(raw.modificationReason) ? pick(obj(raw.modificationReason)!, ["id", "name"]) : null };
+  const data = { ...rest, clientId: link?.id ?? null, employeeId: employee?.id ?? null, clockInLatitude: decimal(clockInLatitude), clockInLongitude: decimal(clockInLongitude), clockOutLatitude: decimal(clockOutLatitude), clockOutLongitude: decimal(clockOutLongitude), payload: toJson(visitPayload), payloadHash: hashPayload(visitPayload), lastSyncedAt: now };
   await prisma.axisCareVisit.upsert({ where: { organizationId_externalId: { organizationId, externalId } }, create: { organizationId, externalId, ...data }, update: data });
   return true;
 }
@@ -72,15 +87,20 @@ export async function syncSimpleEntity(client: AxisCareClient, organizationId: s
   return count;
 }
 
+export function visitSyncQuery(historyMonths: number, state: { backfillDone: boolean; lastSuccessAt: Date | null } | null, now = new Date()) {
+  const query: Record<string, string | number> = { limit: 100 };
+  if (state?.backfillDone && state.lastSuccessAt) query.updatedSinceDate = new Date(state.lastSuccessAt.getTime() - 5 * 60_000).toISOString();
+  else { query.startDate = monthsAgo(historyMonths, now).toISOString().slice(0, 10); query.endDate = new Date(now.getTime() + 31 * 86_400_000).toISOString().slice(0, 10); }
+  return query;
+}
+
 /** Visits: first run backfills `historyMonths`; later runs fetch only visits changed since the last success (updatedSinceDate). */
 export async function syncVisits(client: AxisCareClient, config: AxisCareConfig, now = new Date()) {
   const organizationId = config.AXISCARE_ORGANIZATION_ID;
   const state = await prisma.axisCareSyncState.findUnique({ where: { organizationId_entity: { organizationId, entity: "visit" } } });
   const startedAt = new Date();
   await setState(organizationId, "visit", { lastStartedAt: startedAt });
-  const query: Record<string, string | number> = { limit: 100 };
-  if (state?.backfillDone && state.lastSuccessAt) query.updatedSinceDate = new Date(state.lastSuccessAt.getTime() - 5 * 60_000).toISOString();
-  else { query.startDate = monthsAgo(config.AXISCARE_HISTORY_MONTHS, now).toISOString(); query.endDate = new Date(now.getTime() + 31 * 86_400_000).toISOString(); }
+  const query = visitSyncQuery(config.AXISCARE_HISTORY_MONTHS, state, now);
   let count = 0;
   try {
     for await (const page of client.list("/api/visits", "visits", query)) for (const raw of page) if (await upsertVisit(organizationId, raw)) count += 1;
@@ -104,20 +124,24 @@ export async function reconcileClientLinks(organizationId: string) {
   for (const { payload } of records) {
     const identity = mapClientIdentity(payload as Json);
     if (!identity.externalId) continue;
-    if (clients.some(c => c.axisCareClientId === identity.externalId)) continue;
-    const proposals = proposeMatches(identity, clients).filter(p => !rejected.has(`${identity.externalId}:${p.clientId}`));
+    const axisCareClientId = identity.externalId;
+    if (clients.some(c => c.axisCareClientId === axisCareClientId)) continue;
+    const proposals = proposeMatches(identity, clients).filter(p => !rejected.has(`${axisCareClientId}:${p.clientId}`));
     for (const p of proposals) {
       if (p.kind === "AUTO" && !clients.some(c => c.id === p.clientId && c.axisCareClientId)) {
-        await prisma.$transaction([
-          prisma.client.update({ where: { id: p.clientId }, data: { axisCareClientId: identity.externalId, axisCareServiceStartDate: identity.startDate ? new Date(identity.startDate) : undefined } }),
-          prisma.axisCareClientMatch.upsert({ where: { organizationId_axisCareClientId_clientId: { organizationId, axisCareClientId: identity.externalId, clientId: p.clientId } }, create: { organizationId, axisCareClientId: identity.externalId, clientId: p.clientId, status: "AUTO_LINKED", score: p.score, reason: p.reason }, update: { status: "AUTO_LINKED", score: p.score, reason: p.reason } }),
-          prisma.axisCareVisit.updateMany({ where: { organizationId, axisCareClientId: identity.externalId, clientId: null }, data: { clientId: p.clientId } })
-        ]);
-        const linked = clients.find(c => c.id === p.clientId); if (linked) linked.axisCareClientId = identity.externalId;
+        const linkedNow = await prisma.$transaction(async tx => {
+          const claimed = await tx.client.updateMany({ where: { id: p.clientId, organizationId, axisCareClientId: null }, data: { axisCareClientId, axisCareServiceStartDate: identity.startDate ? new Date(identity.startDate) : undefined } });
+          if (claimed.count !== 1) return false;
+          await tx.axisCareClientMatch.upsert({ where: { organizationId_axisCareClientId_clientId: { organizationId, axisCareClientId, clientId: p.clientId } }, create: { organizationId, axisCareClientId, clientId: p.clientId, status: "AUTO_LINKED", score: p.score, reason: p.reason }, update: { status: "AUTO_LINKED", score: p.score, reason: p.reason } });
+          await tx.axisCareVisit.updateMany({ where: { organizationId, axisCareClientId, clientId: null }, data: { clientId: p.clientId } });
+          return true;
+        }, { isolationLevel: "Serializable" });
+        if (!linkedNow) continue;
+        const linked = clients.find(c => c.id === p.clientId); if (linked) linked.axisCareClientId = axisCareClientId;
         summary.autoLinked += 1; break;
       }
       if (p.kind === "SUGGEST") {
-        await prisma.axisCareClientMatch.upsert({ where: { organizationId_axisCareClientId_clientId: { organizationId, axisCareClientId: identity.externalId, clientId: p.clientId } }, create: { organizationId, axisCareClientId: identity.externalId, clientId: p.clientId, status: "SUGGESTED", score: p.score, reason: p.reason }, update: { score: p.score, reason: p.reason } });
+        await prisma.axisCareClientMatch.upsert({ where: { organizationId_axisCareClientId_clientId: { organizationId, axisCareClientId, clientId: p.clientId } }, create: { organizationId, axisCareClientId, clientId: p.clientId, status: "SUGGESTED", score: p.score, reason: p.reason }, update: { score: p.score, reason: p.reason } });
         summary.suggested += 1;
       }
     }
@@ -127,17 +151,18 @@ export async function reconcileClientLinks(organizationId: string) {
 
 /** A person confirms a suggested match. Sets the AxisCare client ID on the Waldah client and attaches its visits. */
 export async function confirmClientMatch(organizationId: string, matchId: string, decidedByUserId: string) {
-  const match = await prisma.axisCareClientMatch.findFirst({ where: { id: matchId, organizationId, status: "SUGGESTED" } });
-  if (!match?.clientId) return null;
-  const record = await prisma.axisCareRecord.findUnique({ where: { organizationId_entity_externalId: { organizationId, entity: "client", externalId: match.axisCareClientId } }, select: { payload: true } });
-  const startDate = record ? mapClientIdentity(record.payload as Json).startDate : null;
-  await prisma.$transaction([
-    prisma.client.update({ where: { id: match.clientId }, data: { axisCareClientId: match.axisCareClientId, axisCareServiceStartDate: startDate ? new Date(startDate) : undefined } }),
-    prisma.axisCareClientMatch.update({ where: { id: match.id }, data: { status: "CONFIRMED", decidedByUserId, decidedAt: new Date() } }),
-    prisma.axisCareClientMatch.updateMany({ where: { organizationId, axisCareClientId: match.axisCareClientId, status: "SUGGESTED", id: { not: match.id } }, data: { status: "REJECTED", decidedByUserId, decidedAt: new Date() } }),
-    prisma.axisCareVisit.updateMany({ where: { organizationId, axisCareClientId: match.axisCareClientId, clientId: null }, data: { clientId: match.clientId } })
-  ]);
-  return match.clientId;
+  return prisma.$transaction(async tx => {
+    const match = await tx.axisCareClientMatch.findFirst({ where: { id: matchId, organizationId, status: "SUGGESTED" } });
+    if (!match?.clientId) return null;
+    const record = await tx.axisCareRecord.findUnique({ where: { organizationId_entity_externalId: { organizationId, entity: "client", externalId: match.axisCareClientId } }, select: { payload: true } });
+    const startDate = record ? mapClientIdentity(record.payload as Json).startDate : null;
+    const claimed = await tx.client.updateMany({ where: { id: match.clientId, organizationId, OR: [{ axisCareClientId: null }, { axisCareClientId: match.axisCareClientId }] }, data: { axisCareClientId: match.axisCareClientId, axisCareServiceStartDate: startDate ? new Date(startDate) : undefined } });
+    if (claimed.count !== 1) return null;
+    await tx.axisCareClientMatch.update({ where: { id: match.id }, data: { status: "CONFIRMED", decidedByUserId, decidedAt: new Date() } });
+    await tx.axisCareClientMatch.updateMany({ where: { organizationId, axisCareClientId: match.axisCareClientId, status: "SUGGESTED", id: { not: match.id } }, data: { status: "REJECTED", decidedByUserId, decidedAt: new Date() } });
+    await tx.axisCareVisit.updateMany({ where: { organizationId, axisCareClientId: match.axisCareClientId, clientId: null }, data: { clientId: match.clientId } });
+    return match.clientId;
+  }, { isolationLevel: "Serializable" });
 }
 
 export async function runFullSync(config: AxisCareConfig) {
@@ -152,7 +177,7 @@ export async function runFullSync(config: AxisCareConfig) {
 
 /** Webhook events are thin; re-fetch the entity from AxisCare (GET) so we store the authoritative version. */
 export async function processWebhookEvent(config: AxisCareConfig, eventId: string) {
-  const organizationId = config.AXISCARE_ORGANIZATION_ID, row = await prisma.axisCareWebhookEvent.findUnique({ where: { id: eventId } });
+  const organizationId = config.AXISCARE_ORGANIZATION_ID, row = await prisma.axisCareWebhookEvent.findFirst({ where: { id: eventId, organizationId } });
   if (!row || row.processedAt) return;
   await prisma.axisCareWebhookEvent.update({ where: { id: eventId }, data: { attempts: { increment: 1 } } });
   try {

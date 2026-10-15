@@ -22,7 +22,7 @@ describe("billing screen integration", () => {
     expect(service).toContain('codes.has("billing.run")');
     expect(service).toContain('codes.has("billing.view_billed")');
     expect(service).toContain('requirePermission(membership.id, "billing.run")');
-    expect(service).not.toContain('"organization.manage"');
+    expect(service).toContain('canManageIntegration: codes.has("organization.manage")');
     expect(service).toContain("where: { organizationId, archivedAt: null, testDataMarkedAt: null }");
     expect(service.match(/where: \{ organizationId,/g)?.length).toBeGreaterThanOrEqual(3);
     expect(page).toContain("access.canRun?await Promise.all");
@@ -32,8 +32,9 @@ describe("billing screen integration", () => {
     for (const text of ["EVV compliant", "Not EVV compliant", "Billing runs are not enabled yet", "Billing actions are disabled."]) expect(portal).toContain(text);
     for (const forbidden of ["Preview with sample data", "Confirm billing", "Bill now", "hourlyRateCents"]) expect(portal).not.toContain(forbidden);
     const fetches = portal.match(/fetch\(/g) ?? [];
-    expect(fetches).toHaveLength(1);
+    expect(fetches).toHaveLength(2);
     expect(portal).toContain("/axiscare/matches/");
+    expect(portal).toContain("/axiscare/${path}");
     expect(portal).toContain("canRun ? <MatchReview");
     expect(portal).toContain("Not connected");
   });

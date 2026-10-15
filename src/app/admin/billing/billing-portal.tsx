@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { StatusChip } from "@/app/components/portal-ui";
 import "./billing.css";
 
@@ -16,8 +16,18 @@ export type BillingClient = {
 export type BillingVisitRow = {
   id: string; clientId: string; startAt: string | null; clockInAt: string | null; clockOutAt: string | null; serviceCode: string | null;
   hours: number | null; rateCents: number | null; amountCents: number | null; compliant: boolean; reasons: string[];
+  waldahServiceType: string | null;
 };
 export type PendingMatch = { id: string; axisCareClientId: string; axisCareName: string; axisCareDateOfBirth: string | null; clientId: string; clientName: string; clientDateOfBirth: string | null; reason: string; score: number };
+export type AxisCareConnectionView = { configured: boolean; baseUrl: string | null; status: string; lastTestedAt: string | null; lastConnectedAt: string | null; lastErrorCode: string | null; historyMonths: number };
+type AxisCareAdministration = {
+  connection: AxisCareConnectionView;
+  caregivers: { externalId: string; firstName: string | null; lastName: string | null; employeeId: string | null }[];
+  employees: { id: string; firstName: string; lastName: string; employeeNumber: string | null; axisCareCaregiverId: string | null }[];
+  services: { axisCareServiceCode: string; waldahServiceType: string | null }[];
+  syncStates: { entity: string; lastSuccessAt: string | null; lastError: string | null; lastCount: number }[];
+  webhook: { enabled: false; reason: string };
+};
 
 const REASON_LABELS: Record<string, string> = {
   MISSING_CLOCK_IN: "No clock-in time", MISSING_CLOCK_OUT: "No clock-out time", CLOCK_OUT_BEFORE_IN: "Clock-out is before clock-in",
@@ -43,7 +53,7 @@ function ClientCard({ client, onOpen }: { client: BillingClient; onOpen: () => v
         <span className="billing-card-grid">
           <span><small>Approved service hours</small><b>{hours(client.approvedHours)}</b><em>From current service records</em></span>
           <span><small>Billed since service start</small><b>Not connected</b><em>No billing ledger is configured</em></span>
-          <span><small>Available to bill</small><b>Not connected</b><em>No verified visit feed is configured</em></span>
+          <span><small>Available to bill</small><b>Unavailable</b><em>Billing runs are disabled</em></span>
         </span>
         <span className="billing-card-foot"><span className="billing-muted">View service-period context</span></span>
       </button>
@@ -92,7 +102,40 @@ function MatchReview({ matches, organizationId }: { matches: PendingMatch[]; org
   );
 }
 
-export default function BillingPortal({ clients, canRun = false, visits = [], matches = [], organizationId = "" }: { clients: BillingClient[]; canRun?: boolean; visits?: BillingVisitRow[]; matches?: PendingMatch[]; organizationId?: string }) {
+function AxisCareAdministrationPanel({ organizationId, initial }: { organizationId: string; initial: AxisCareConnectionView }) {
+  const [admin, setAdmin] = useState<AxisCareAdministration | null>(null), [connection, setConnection] = useState(initial), [busy, setBusy] = useState(false), [message, setMessage] = useState("");
+  async function request(path: string, init?: RequestInit) { const response = await fetch(`/api/organizations/${organizationId}/axiscare/${path}`, { ...init, headers: { "content-type": "application/json", ...(init?.headers ?? {}) } }), body = await response.json(); if (!response.ok) throw new Error(body.error ?? "AxisCare request failed"); return body; }
+  async function load() { try { setAdmin(await request("connection")); } catch (error) { setMessage(error instanceof Error ? error.message : "AxisCare settings could not be loaded"); } }
+  useEffect(() => { void load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  async function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); setBusy(true); setMessage("");
+    const form = event.currentTarget, data = new FormData(form), token = String(data.get("apiToken") ?? "").trim();
+    try {
+      const result = await request("connection", { method: "PUT", body: JSON.stringify({ baseUrl: data.get("baseUrl"), ...(token ? { apiToken: token } : {}), historyMonths: Number(data.get("historyMonths")) }) });
+      setConnection(result); form.reset(); setMessage("Configuration saved. Test the connection before synchronization."); await load();
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Configuration was not saved"); } finally { setBusy(false); }
+  }
+  async function action(action: "TEST" | "SYNC") {
+    setBusy(true); setMessage("");
+    try { const result = await request("connection", { method: "POST", body: JSON.stringify({ action }) }); if (action === "TEST") setConnection(result); setMessage(action === "TEST" ? result.status === "CONNECTED" ? "AxisCare connection verified." : "AxisCare connection could not be verified." : result.failures?.length ? `Synchronization completed with failures: ${result.failures.join(", ")}.` : "AxisCare synchronization completed."); await load(); }
+    catch (error) { setMessage(error instanceof Error ? error.message : "AxisCare operation failed"); } finally { setBusy(false); }
+  }
+  async function mapCaregiver(event: FormEvent<HTMLFormElement>, externalId: string) { event.preventDefault(); setBusy(true); try { const employeeId = new FormData(event.currentTarget).get("employeeId"); await request("mappings", { method: "POST", body: JSON.stringify({ kind: "CAREGIVER", externalId, employeeId }) }); setMessage("Caregiver mapping saved."); await load(); } catch (error) { setMessage(error instanceof Error ? error.message : "Caregiver mapping failed"); } finally { setBusy(false); } }
+  async function mapService(event: FormEvent<HTMLFormElement>, axisCareServiceCode: string) { event.preventDefault(); setBusy(true); try { const waldahServiceType = new FormData(event.currentTarget).get("waldahServiceType"); await request("mappings", { method: "POST", body: JSON.stringify({ kind: "SERVICE", axisCareServiceCode, waldahServiceType }) }); setMessage("Service mapping saved."); await load(); } catch (error) { setMessage(error instanceof Error ? error.message : "Service mapping failed"); } finally { setBusy(false); } }
+  return <details className="billing-integration-admin"><summary>AxisCare integration settings</summary><div className="billing-integration-body">
+    <div className="billing-card-head"><strong>Connection</strong><StatusChip tone={connection.status === "CONNECTED" ? "good" : connection.status === "AUTHENTICATION_FAILED" ? "danger" : "warning"}>{pretty(connection.status)}</StatusChip></div>
+    <p className="billing-muted">Credentials are encrypted server-side and are never returned to this screen. “Connected” appears only after a real authenticated API check.</p>
+    <form className="settings-form compact" onSubmit={save}><label>AxisCare site URL<input name="baseUrl" type="url" required defaultValue={connection.baseUrl ?? "https://10461.axiscare.com"} /></label><label>API bearer token<input name="apiToken" type="password" autoComplete="new-password" placeholder={connection.configured ? "Leave blank to keep current token" : "Required"} required={!connection.configured} /></label><label>Visit history months<input name="historyMonths" type="number" min="1" max="60" defaultValue={connection.historyMonths} required /></label><button disabled={busy}>Save configuration</button></form>
+    <div className="billing-actions"><button type="button" className="secondary" disabled={busy || !connection.configured} onClick={() => void action("TEST")}>Test connection</button><button type="button" disabled={busy || connection.status !== "CONNECTED"} onClick={() => void action("SYNC")}>Synchronize now</button></div>
+    {message ? <p role="status" className="billing-note">{message}</p> : null}
+    {admin ? <><h3>Explicit mappings</h3><p className="billing-muted">Waldah never merges people by name alone. Confirm caregiver and service mappings explicitly.</p>
+      <div className="billing-mapping-list">{admin.caregivers.map(caregiver => <form key={caregiver.externalId} onSubmit={event => mapCaregiver(event, caregiver.externalId)}><span><strong>{[caregiver.firstName, caregiver.lastName].filter(Boolean).join(" ") || `AxisCare caregiver ${caregiver.externalId}`}</strong><small>AxisCare ID {caregiver.externalId}</small></span><select name="employeeId" defaultValue={caregiver.employeeId ?? ""} required disabled={Boolean(caregiver.employeeId)}><option value="">Select Waldah employee</option>{admin.employees.map(employee => <option key={employee.id} value={employee.id}>{employee.lastName}, {employee.firstName}{employee.employeeNumber ? ` · ${employee.employeeNumber}` : ""}</option>)}</select><button disabled={busy || Boolean(caregiver.employeeId)}>{caregiver.employeeId ? "Mapped" : "Map"}</button></form>)}</div>
+      <div className="billing-mapping-list">{admin.services.map(service => <form key={service.axisCareServiceCode} onSubmit={event => mapService(event, service.axisCareServiceCode)}><span><strong>{service.axisCareServiceCode}</strong><small>AxisCare service code</small></span><input name="waldahServiceType" defaultValue={service.waldahServiceType ?? ""} placeholder="Waldah service type" required /><button disabled={busy}>Save mapping</button></form>)}</div>
+      <p className="billing-note">Webhook intake disabled: {admin.webhook.reason}</p></> : null}
+  </div></details>;
+}
+
+export default function BillingPortal({ clients, canRun = false, canManageIntegration = false, visits = [], matches = [], organizationId = "", connection }: { clients: BillingClient[]; canRun?: boolean; canManageIntegration?: boolean; visits?: BillingVisitRow[]; matches?: PendingMatch[]; organizationId?: string; connection: AxisCareConnectionView }) {
   const [search, setSearch] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
   const shown = useMemo(() => clients.filter(client => client.name.toLowerCase().includes(search.trim().toLowerCase())), [clients, search]);
@@ -111,11 +154,13 @@ export default function BillingPortal({ clients, canRun = false, visits = [], ma
 
       <section className="billing-banner" role="status">
         <div>
-          <strong>{canRun ? "Visits are read from AxisCare. Billing runs are not enabled yet." : "You can view billed amounts. Billing is limited to billing roles."}</strong>
+          <strong>{connection.status === "CONNECTED" ? "AxisCare is connected for read-only synchronization. Billing runs are not enabled yet." : canRun ? "AxisCare visit synchronization is not connected." : "You can view billed amounts. Billing is limited to billing roles."}</strong>
           <p>No claims, invoices, or billing runs can be submitted or changed from this screen.</p>
         </div>
         <button type="button" className="secondary" disabled aria-disabled="true">Billing actions unavailable</button>
       </section>
+
+      {canManageIntegration ? <AxisCareAdministrationPanel organizationId={organizationId} initial={connection} /> : null}
 
       {canRun ? <MatchReview matches={matches} organizationId={organizationId} /> : null}
 
@@ -124,7 +169,7 @@ export default function BillingPortal({ clients, canRun = false, visits = [], ma
           <section className="billing-stats" aria-label="Billing workspace status">
             <p className="billing-stat"><span>Clients</span><strong>{clients.length}</strong><small>Current organization only</small></p>
             <p className="billing-stat"><span>Service authorizations</span><strong>{authorizationCount}</strong><small>Clients with approved hours recorded</small></p>
-            <p className="billing-stat warning"><span>Visit feed</span><strong>Not connected</strong><small>No EVV status is calculated</small></p>
+            <p className={connection.status === "CONNECTED" ? "billing-stat" : "billing-stat warning"}><span>Visit feed</span><strong>{connection.status === "CONNECTED" ? "Connected" : pretty(connection.status)}</strong><small>{connection.lastConnectedAt ? `Last verified ${stamp(connection.lastConnectedAt)}` : "No verified connection"}</small></p>
             <p className="billing-stat warning"><span>Billing ledger</span><strong>Not connected</strong><small>No financial totals are displayed</small></p>
           </section>
 
@@ -160,7 +205,7 @@ function VisitList({ visits }: { visits: BillingVisitRow[] }) {
           <tbody>{visits.map(visit => (
             <tr key={visit.id} className={visit.compliant ? undefined : "billing-row-flagged"}>
               <td data-label="Bill"><input type="checkbox" checked={selected.has(visit.id)} onChange={() => toggle(visit.id)} aria-label={`Include visit on ${stamp(visit.startAt)}`} /></td>
-              <td data-label="Visit">{stamp(visit.startAt)}<small>{visit.serviceCode ?? "No service type"}</small></td>
+              <td data-label="Visit">{stamp(visit.startAt)}<small>{visit.waldahServiceType ?? visit.serviceCode ?? "No service type"}{visit.serviceCode && visit.waldahServiceType ? ` · AxisCare ${visit.serviceCode}` : ""}</small></td>
               <td data-label="Clock in / out">{stamp(visit.clockInAt)}<small>{stamp(visit.clockOutAt)}</small></td>
               <td data-label="Hours">{visit.hours === null ? "—" : visit.hours.toFixed(2)}</td>
               <td data-label="Rate">{visit.rateCents === null ? "No rate" : money(visit.rateCents)}</td>
@@ -190,7 +235,7 @@ function ClientDetail({ client, canRun, visits, onBack }: { client: BillingClien
 
       <div className="billing-stats">
         <p className="billing-stat"><span>Approved service hours</span><strong>{hours(client.approvedHours)}</strong><small>From organization service records</small></p>
-        <p className="billing-stat warning"><span>Billable visits</span><strong>Unavailable</strong><small>A verified visit source is required</small></p>
+        <p className="billing-stat warning"><span>Billable visits</span><strong>Not calculated</strong><small>Billing runs are disabled</small></p>
         <p className="billing-stat warning"><span>Billing history</span><strong>Unavailable</strong><small>A billing ledger is required</small></p>
       </div>
 

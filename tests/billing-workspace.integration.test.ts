@@ -60,7 +60,7 @@ describe.sequential("organization billing workspace", () => {
   });
 
   it("lets billing.view_billed see clients but not visits or run billing", async () => {
-    expect(await getBillingAccess({ id: viewBilledId }, organizationId)).toEqual({ canRun: false, canViewBilled: true });
+    expect(await getBillingAccess({ id: viewBilledId }, organizationId)).toEqual({ canRun: false, canViewBilled: true, canManageIntegration: false });
     expect((await getBillingWorkspaceClients({ id: viewBilledId }, organizationId))).toHaveLength(1);
     await expect(getBillingVisits({ id: viewBilledId }, organizationId)).rejects.toThrow(/billing.run/);
   });

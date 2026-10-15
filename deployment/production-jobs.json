@@ -13,16 +13,6 @@
       "timeoutSeconds": 120,
       "maxConcurrentRuns": 1,
       "retryAttempts": 2
-    },
-    {
-      "name": "axiscare-sync",
-      "schedule": "*/15 * * * *",
-      "method": "POST",
-      "path": "/api/jobs/axiscare-sync",
-      "authorization": "Bearer ${JOB_SECRET}",
-      "timeoutSeconds": 300,
-      "maxConcurrentRuns": 1,
-      "retryAttempts": 1
     }
   ]
 }

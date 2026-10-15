@@ -3,6 +3,8 @@ import { AxisCareApiError, AxisCareClient, AXISCARE_API_VERSION } from "@/domain
 import { dollarsToCents, hashPayload, mapVisit, monthsAgo } from "@/domain/axiscare/mapping";
 import { proposeMatches, type WaldahClientIdentity } from "@/domain/axiscare/matching";
 import { parseWebhook, webhookIdMatches } from "@/domain/axiscare/webhook";
+import { decryptAxisCareCredential, encryptAxisCareCredential } from "@/domain/axiscare/config";
+import { sanitizeAxisCarePayload, visitSyncQuery } from "@/domain/axiscare/sync";
 
 const visit = { id: "s=1:d=2023-10-01", client: { id: 1, firstName: "John", lastName: "Lakeman" }, caregiver: { id: 4, firstName: "Alice", lastName: "Tavner" }, startDate: "2023-10-01T16:00:00Z", endDate: "2023-10-01T18:00:00Z", scheduledStartDate: "2023-10-01T16:00:00Z", scheduledEndDate: "2023-10-01T18:00:00Z", clockIn: { time: "2023-10-01T12:01:22-04:00", method: "Mobile", coordinates: { latitude: "43.0389", longitude: "87.9065" }, telephonyPhone: null }, clockOut: { time: "2023-10-01T14:00:00-04:00", method: "Web", coordinates: null, location: null, telephonyPhone: null }, timezone: "US/Eastern", service: { id: 1, code: "HOMEMAKING", procedureCode: "S5130" }, type: "Hourly", verified: true, removed: false, chargeRate: 25.5, billableRateMode: "Hourly", modificationReason: { id: 3, name: "Scheduling Error" } };
 
@@ -16,6 +18,23 @@ describe("AxisCare visit mapping", () => {
   it("converts rates to cents without float drift", () => { expect(dollarsToCents(19.99)).toBe(1999); expect(dollarsToCents(null)).toBeNull(); expect(dollarsToCents("22.10")).toBe(2210); });
   it("hashes equal payloads equally", () => { expect(hashPayload({ a: 1 })).toBe(hashPayload({ a: 1 })); expect(hashPayload({ a: 1 })).not.toBe(hashPayload({ a: 2 })); });
   it("computes the history window", () => { expect(monthsAgo(12, new Date("2026-10-15T00:00:00Z")).toISOString()).toBe("2025-10-15T00:00:00.000Z"); });
+  it("uses documented date-only initial filters and a five-minute incremental overlap", () => {
+    expect(visitSyncQuery(12, null, new Date("2026-10-15T00:00:00Z"))).toMatchObject({ startDate: "2025-10-15", endDate: "2026-11-15" });
+    expect(visitSyncQuery(12, { backfillDone: true, lastSuccessAt: new Date("2026-10-15T10:00:00Z") })).toMatchObject({ updatedSinceDate: "2026-10-15T09:55:00.000Z" });
+  });
+});
+
+describe("AxisCare credential and minimum-necessary data boundaries", () => {
+  const source = { AXISCARE_CREDENTIAL_ENCRYPTION_KEY: Buffer.alloc(32, 7).toString("base64") };
+  it("encrypts credentials with organization-bound authenticated encryption", () => {
+    const encrypted = encryptAxisCareCredential("tenant-secret-token", "org-a", source);
+    expect(encrypted).not.toContain("tenant-secret-token");
+    expect(decryptAxisCareCredential(encrypted, "org-a", source)).toBe("tenant-secret-token");
+    expect(() => decryptAxisCareCredential(encrypted, "org-b", source)).toThrow(/cannot be decrypted/);
+  });
+  it("does not persist client SSNs, addresses, free-text notes, or contact data", () => {
+    expect(sanitizeAxisCarePayload("client", { id: 1, firstName: "Ada", lastName: "Lovelace", dateOfBirth: "1815-12-10", ssn: "111-22-3333", priorityNote: "private", residentialAddress: { streetAddress1: "secret" }, personalEmail: "private@example.test", mobilePhone: "555" })).toEqual({ id: 1, firstName: "Ada", lastName: "Lovelace", dateOfBirth: "1815-12-10" });
+  });
 });
 
 const people = (over: Partial<WaldahClientIdentity>[] ): WaldahClientIdentity[] => over.map((o, i) => ({ id: `c${i}`, legalFirstName: "John", legalLastName: "Lakeman", preferredName: null, dateOfBirth: new Date("1972-05-12"), maPmiNumber: null, axisCareClientId: null, ...o }));
@@ -64,6 +83,7 @@ describe("AxisCare API client", () => {
   });
   it("refuses to send the token to another host", async () => {
     await expect(make([]).get("https://evil.example.com/api/clients")).rejects.toBeInstanceOf(AxisCareApiError);
+    expect(() => new AxisCareClient({ baseUrl: "https://example.com", token: "tok-secret-value" })).toThrow(/base URL is invalid/);
   });
   it("retries 429 and 5xx then succeeds, but not 4xx", async () => {
     expect(await make([res(429, {}, { "retry-after": "1" }), res(503), res(200, { ok: true })]).get("/api/x")).toEqual({ ok: true });
@@ -72,5 +92,15 @@ describe("AxisCare API client", () => {
   it("gives up after the retry limit without leaking the token", async () => {
     const err = await (make([res(500), res(500), res(500), res(500), res(500)]).get("/api/x")).catch((e: unknown) => e) as AxisCareApiError;
     expect(err.status).toBe(500); expect(err.message).not.toContain("tok-secret-value");
+  });
+  it("retries a transient network failure and rejects pagination loops", async () => {
+    let attempts = 0;
+    const client = new AxisCareClient({ baseUrl: "https://10461.axiscare.com", token: "tok-secret-value", sleep: async () => {}, fetcher: async () => { attempts += 1; if (attempts === 1) throw new Error("network"); return res(200, { results: { clients: [] } }); } });
+    expect(await client.get("/api/clients")).toEqual({ results: { clients: [] } });
+    const loop = make([res(200, { results: { clients: [{ id: 1 }], nextPage: "/api/clients" } })]);
+    await expect((async () => { for await (const _page of loop.list("/api/clients", "clients")) void _page; })()).rejects.toThrow(/pagination did not terminate/);
+  });
+  it("treats a 200 response containing AxisCare errors as unsuccessful", async () => {
+    await expect(make([res(200, { results: null, errors: ["denied"] })]).get("/api/clients")).rejects.toBeInstanceOf(AxisCareApiError);
   });
 });
