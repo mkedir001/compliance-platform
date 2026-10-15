@@ -9,12 +9,20 @@ type Json = Record<string, unknown>;
 const toJson = (v: unknown) => v as Prisma.InputJsonValue;
 const decimal = (v: number | null) => v === null ? null : v.toFixed(6);
 
-// entity name -> list path. Everything here is a GET. Visits and schedules are windowed separately.
-const SIMPLE_ENTITIES: { entity: string; path: string }[] = [
-  { entity: "client", path: "/api/clients" }, { entity: "caregiver", path: "/api/caregivers" }, { entity: "contact", path: "/api/contacts" },
-  { entity: "applicant", path: "/api/applicants" }, { entity: "adl", path: "/api/adls" }, { entity: "call_log", path: "/api/call-logs" },
-  { entity: "tagging_category", path: "/api/taggingCategories" }, { entity: "organization", path: "/api/organizations" }
+// Entity catalog. Every entry is a GET list. Notes and call logs can contain free-text care notes, so they are
+// OFF by default; add an entity name to AXISCARE_EXTRA_ENTITIES to turn one on later (no code change needed).
+// "Notes" (GET /api/notes/...) are not fetched anywhere yet; add an entry here when a use case exists.
+export const AXISCARE_ENTITY_CATALOG: { entity: string; path: string; defaultOn: boolean }[] = [
+  { entity: "client", path: "/api/clients", defaultOn: true }, { entity: "caregiver", path: "/api/caregivers", defaultOn: true },
+  { entity: "contact", path: "/api/contacts", defaultOn: true }, { entity: "applicant", path: "/api/applicants", defaultOn: true },
+  { entity: "adl", path: "/api/adls", defaultOn: true }, { entity: "tagging_category", path: "/api/taggingCategories", defaultOn: true },
+  { entity: "organization", path: "/api/organizations", defaultOn: true },
+  { entity: "call_log", path: "/api/call-logs", defaultOn: false }
 ];
+export function enabledEntities(config: Pick<AxisCareConfig, "AXISCARE_EXTRA_ENTITIES">) {
+  const extra = new Set(config.AXISCARE_EXTRA_ENTITIES);
+  return AXISCARE_ENTITY_CATALOG.filter(e => e.defaultOn || extra.has(e.entity));
+}
 
 export function newClient(config: AxisCareConfig) { return new AxisCareClient({ baseUrl: config.AXISCARE_BASE_URL, token: config.AXISCARE_API_TOKEN }); }
 
@@ -134,7 +142,7 @@ export async function confirmClientMatch(organizationId: string, matchId: string
 
 export async function runFullSync(config: AxisCareConfig) {
   const client = newClient(config), organizationId = config.AXISCARE_ORGANIZATION_ID, counts: Record<string, number> = {}, failures: string[] = [];
-  for (const { entity, path } of SIMPLE_ENTITIES) {
+  for (const { entity, path } of enabledEntities(config)) {
     try { counts[entity] = await syncSimpleEntity(client, organizationId, entity, path); } catch { failures.push(entity); }
   }
   try { counts.visit = await syncVisits(client, config); } catch { failures.push("visit"); }
@@ -149,7 +157,8 @@ export async function processWebhookEvent(config: AxisCareConfig, eventId: strin
   await prisma.axisCareWebhookEvent.update({ where: { id: eventId }, data: { attempts: { increment: 1 } } });
   try {
     const client = newClient(config), entity = row.entity ?? "", entityId = row.entityId;
-    const paths: Record<string, [string, string, string]> = { client: ["/api/clients", "client", "clientIds"], caregiver: ["/api/caregivers", "caregiver", "caregiverIds"], applicant: ["/api/applicants", "applicant", "applicantIds"], calllog: ["/api/call-logs", "call_log", "callLogIds"] };
+    const paths: Record<string, [string, string, string]> = { client: ["/api/clients", "client", "clientIds"], caregiver: ["/api/caregivers", "caregiver", "caregiverIds"], applicant: ["/api/applicants", "applicant", "applicantIds"] };
+    if (enabledEntities(config).some(e => e.entity === "call_log")) paths.calllog = ["/api/call-logs", "call_log", "callLogIds"];
     if (entityId && paths[entity]) {
       const [path, kind, param] = paths[entity];
       for await (const page of client.list(path, null, { [param]: entityId })) for (const raw of page) await upsertRecord(organizationId, kind, raw);
@@ -168,4 +177,9 @@ export async function processPendingWebhookEvents(config: AxisCareConfig, limit 
   const pending = await prisma.axisCareWebhookEvent.findMany({ where: { organizationId: config.AXISCARE_ORGANIZATION_ID, processedAt: null, attempts: { lt: 5 } }, orderBy: { receivedAt: "asc" }, take: limit, select: { id: true } });
   for (const { id } of pending) await processWebhookEvent(config, id);
   return pending.length;
+}
+
+export async function rejectClientMatch(organizationId: string, matchId: string, decidedByUserId: string) {
+  const result = await prisma.axisCareClientMatch.updateMany({ where: { id: matchId, organizationId, status: "SUGGESTED" }, data: { status: "REJECTED", decidedByUserId, decidedAt: new Date() } });
+  return result.count === 1;
 }

@@ -10,12 +10,13 @@ Read-only mirror of the agency's AxisCare data (site 10461). Nothing here writes
 | `AXISCARE_WEBHOOK_ID` | the `x-webhook-id` value AxisCare sends (it is the only webhook credential) |
 | `AXISCARE_ORGANIZATION_ID` | Waldah organization that owns the data |
 | `AXISCARE_HISTORY_MONTHS` | optional, default 12 |
+| `AXISCARE_EXTRA_ENTITIES` | optional comma list to turn on off-by-default data, e.g. `call_log` |
 
 If any required value is missing the webhook returns 503 and the job returns 503; nothing else is affected.
 
 ## Flow
 - **Webhook** `POST /api/webhooks/axiscare`: checks `x-webhook-id`, stores the raw event (deduped), answers 202, then re-fetches the entity by GET after responding. Failed events are retried by the job (max 5 attempts).
-- **Job** `POST /api/jobs/axiscare-sync` (Bearer `JOB_SECRET`, every 15 min in `deployment/production-jobs.json`): retries stored events, syncs clients, caregivers, contacts, applicants, ADLs, call logs, tagging categories, organizations, then visits, then links clients. `?mode=test` only checks the connection.
+- **Job** `POST /api/jobs/axiscare-sync` (Bearer `JOB_SECRET`, every 15 min in `deployment/production-jobs.json`): retries stored events, syncs clients, caregivers, contacts, applicants, ADLs, tagging categories, organizations (call logs and notes are off; see `AXISCARE_EXTRA_ENTITIES`), then visits, then links clients. `?mode=test` only checks the connection.
 - **Visits**: first run backfills `AXISCARE_HISTORY_MONTHS` months; later runs use `updatedSinceDate`. Promoted columns include clock in/out times, method, GPS/phone, service and procedure code, `chargeRateCents`, `billableRateMode`, `verified`, `removed`. `payload` keeps AxisCare's full original JSON.
 - **Raw store**: `AxisCareRecord` keeps the full original JSON for every other entity.
 - **Client linking**: exact first name + last name + DOB, unique match, links automatically and sets `Client.axisCareClientId` and `axisCareServiceStartDate`. Everything else becomes an `AxisCareClientMatch` row with status `SUGGESTED` that a person confirms (`confirmClientMatch`). A rejected pair is not suggested again.

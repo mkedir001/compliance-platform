@@ -18,15 +18,24 @@ describe("billing screen integration", () => {
     expect(navigation).toContain("/admin/billing");
   });
 
-  it("enforces server-side management permission and tenant-scoped client reads", () => {
-    expect(service).toContain('requirePermission(membership.id, "organization.manage")');
+  it("enforces billing permissions server-side and tenant-scoped reads", () => {
+    expect(service).toContain('codes.has("billing.run")');
+    expect(service).toContain('codes.has("billing.view_billed")');
+    expect(service).toContain('requirePermission(membership.id, "billing.run")');
+    expect(service).not.toContain('"organization.manage"');
     expect(service).toContain("where: { organizationId, archivedAt: null, testDataMarkedAt: null }");
-    expect(service).not.toContain("findMany({\n    where: {}");
+    expect(service.match(/where: \{ organizationId,/g)?.length).toBeGreaterThanOrEqual(3);
+    expect(page).toContain("access.canRun?await Promise.all");
   });
 
-  it("renders a safe read-only screen without fabricated money or mutation paths", () => {
-    for (const text of ["Billing and visit data are not connected.", "Billing actions unavailable", "No financial totals are displayed", "Billing actions are disabled."]) expect(portal).toContain(text);
-    for (const forbidden of ["Preview with sample data", "Confirm billing", "Bill now", "fetch(", "method: \"POST\"", "formatMoney", "hourlyRateCents"]) expect(portal).not.toContain(forbidden);
+  it("shows visits read-only with no billing mutation paths and no invented ledger totals", () => {
+    for (const text of ["EVV compliant", "Not EVV compliant", "Billing runs are not enabled yet", "Billing actions are disabled."]) expect(portal).toContain(text);
+    for (const forbidden of ["Preview with sample data", "Confirm billing", "Bill now", "hourlyRateCents"]) expect(portal).not.toContain(forbidden);
+    const fetches = portal.match(/fetch\(/g) ?? [];
+    expect(fetches).toHaveLength(1);
+    expect(portal).toContain("/axiscare/matches/");
+    expect(portal).toContain("canRun ? <MatchReview");
+    expect(portal).toContain("Not connected");
   });
 
   it("keeps accessible responsive client cards and detail navigation", () => {
