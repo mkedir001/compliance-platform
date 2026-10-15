@@ -21,10 +21,17 @@ If any required value is missing the webhook returns 503 and the job returns 503
 - **Raw store**: `AxisCareRecord` keeps the full original JSON for every other entity.
 - **Client linking**: exact first name + last name + DOB, unique match, links automatically and sets `Client.axisCareClientId` and `axisCareServiceStartDate`. Everything else becomes an `AxisCareClientMatch` row with status `SUGGESTED` that a person confirms (`confirmClientMatch`). A rejected pair is not suggested again.
 
-## Not done yet (next steps)
-- Review screen for suggested matches (data and `confirmClientMatch` exist; no UI yet).
-- Per-client sub-resources (client ADL lists, notes, per-visit detail from GetVisit) and schedules; `AxisCareVisit.detailPayload` is ready for GetVisit.
-- Billing screen wiring to `AxisCareVisit` (rate = `chargeRateCents`).
+## Billing screen and access (phase 2)
+- Permissions (migration `20261015210000_axiscare_billing_access`): `billing.run` sees everything (visits, rates, clock data, match confirmations) and may bill; `billing.view_billed` sees billed amounts only. New platform role `BILLING` and `ORGANIZATION_OWNER` get both; other roles that could open Billing before get `billing.view_billed` only.
+- Billing screen: a linked client's detail lists AxisCare visits from the last 12 months. EVV-compliant visits are pre-selected, others can be added by hand and are flagged "Not EVV compliant" with the reasons. Selection is local only; there is still no billing run or ledger.
+- EVV rule (`src/domain/billing/evv.ts`): clock-in and clock-out present and ordered, GPS or phone at both ends, service type present. AxisCare's `verified` flag is not used as EVV.
+- One-time match confirmation: banner at the top of Billing (billing.run only) lists suggested matches; Confirm sets the AxisCare client ID on the Waldah client, Reject remembers the decision.
+- Notes and call logs: not fetched or stored. Call logs can be turned on with `AXISCARE_EXTRA_ENTITIES=call_log`; a notes fetch can be added to `AXISCARE_ENTITY_CATALOG` in `sync.ts`.
+- Medication: AxisCare's API has no medication data; deferred.
+
+## Not done yet
+- Billing run, ledger, and the three card figures (approved / billed since start / since last billing).
+- Per-visit detail from GetVisit (ADL checklist) if ever needed: `AxisCareVisit.detailPayload` is ready.
 - Visit webhook payload shape is undocumented; visit events trigger an incremental visit sync instead.
-- PHI: "everything" includes notes, call logs, GPS and ADLs. SSN and other sensitive fields are never requested. Restrict who may read these tables when screens are built.
-- Prisma client must be regenerated (`prisma generate`) and the migration applied; this was not runnable in the build sandbox, so it was verified by unit tests only.
+- PHI: clock GPS and client records are stored; SSN and other sensitive fields are never requested. Access is limited by the permissions above.
+- Prisma client must be regenerated and migrations applied; not runnable in the build sandbox, so DB paths are covered by integration tests that need a database and were not run here.
