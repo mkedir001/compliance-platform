@@ -89,4 +89,15 @@ describe("billing screen integration", () => {
     expect(styles).toContain("@media(max-width:700px)");
     expect(styles).toContain(".billing-directory-row{grid-template-columns:34px 1fr 1fr");
   });
+
+  it("lets visits be selected for partial billing and shows the caregiver instead of clock times", () => {
+    for (const text of ["Bill selected", "} selected", "Select all shown visits", "<th>Caregiver</th>", "visit.caregiverName"]) expect(detail).toContain(text);
+    expect(detail).not.toContain("Clock in / out");
+    expect(service).toContain("caregiverName");
+  });
+
+  it("keeps a visible disclosure chevron on the slim AxisCare settings", () => {
+    expect(styles).toContain(".billing-integration-admin>summary::before");
+    expect(styles).toContain(".billing-integration-admin[open]>summary::before");
+  });
 });

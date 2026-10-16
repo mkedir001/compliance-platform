@@ -13,6 +13,7 @@ export type BillingVisitRow = {
   id: string; clientId: string; startAt: string | null; clockInAt: string | null; clockOutAt: string | null; serviceCode: string | null;
   hours: number | null; rateCents: number | null; amountCents: number | null; compliant: boolean; reasons: string[];
   waldahServiceType: string | null;
+  caregiverName: string | null;
 };
 export type PendingMatch = { id: string; axisCareClientId: string; axisCareName: string; axisCareDateOfBirth: string | null; clientId: string; clientName: string; clientDateOfBirth: string | null; reason: string; score: number };
 export type AxisCareConnectionView = { configured: boolean; baseUrl: string | null; status: string; lastTestedAt: string | null; lastConnectedAt: string | null; lastErrorCode: string | null; historyMonths: number };

@@ -62,6 +62,8 @@ export type BillingVisit = {
   id: string; clientId: string; startAt: string | null; clockInAt: string | null; clockOutAt: string | null;
   serviceCode: string | null; hours: number | null; rateCents: number | null; amountCents: number | null;
   waldahServiceType: string | null;
+  /** Staff who worked the shift: the Waldah employee when mapped, else the AxisCare caregiver name. */
+  caregiverName: string | null;
   compliant: boolean; reasons: EvvReason[];
 };
 
@@ -73,12 +75,15 @@ export async function getBillingVisits(user: Pick<User, "id">, organizationId: s
   const [rows, mappings] = await Promise.all([prisma.axisCareVisit.findMany({
     where: { organizationId, removed: false, clientId: clientId ?? { not: null }, startAt: { gte: since }, client: { testDataMarkedAt: null, archivedAt: null } },
     orderBy: { startAt: "desc" }, take: 5000,
-    select: { id: true, clientId: true, startAt: true, clockInAt: true, clockOutAt: true, clockInLatitude: true, clockInLongitude: true, clockOutLatitude: true, clockOutLongitude: true, clockInPhone: true, clockOutPhone: true, serviceCode: true, chargeRateCents: true, removed: true }
+    select: { id: true, clientId: true, startAt: true, clockInAt: true, clockOutAt: true, clockInLatitude: true, clockInLongitude: true, clockOutLatitude: true, clockOutLongitude: true, clockInPhone: true, clockOutPhone: true, axisCareCaregiverId: true, employee: { select: { firstName: true, lastName: true } }, serviceCode: true, chargeRateCents: true, removed: true }
   }), prisma.axisCareServiceMapping.findMany({ where: { organizationId }, select: { axisCareServiceCode: true, waldahServiceType: true } })]);
+  const caregiverIds = [...new Set(rows.flatMap(row => row.axisCareCaregiverId ? [row.axisCareCaregiverId] : []))];
+  const caregiverRecords = caregiverIds.length ? await prisma.axisCareRecord.findMany({ where: { organizationId, entity: "caregiver", externalId: { in: caregiverIds } }, select: { externalId: true, payload: true } }) : [];
+  const caregiverNames = new Map(caregiverRecords.map(record => { const p = record.payload && typeof record.payload === "object" && !Array.isArray(record.payload) ? record.payload as Record<string, unknown> : {}; return [record.externalId, [p.firstName, p.lastName].filter(part => typeof part === "string").join(" ") || null] as const; }));
   const serviceTypes = new Map(mappings.map(mapping => [mapping.axisCareServiceCode, mapping.waldahServiceType]));
   return rows.map(row => {
     const evv = classifyEvv(row), rateCents = row.chargeRateCents;
-    return { id: row.id, clientId: row.clientId!, startAt: row.startAt?.toISOString() ?? null, clockInAt: row.clockInAt?.toISOString() ?? null, clockOutAt: row.clockOutAt?.toISOString() ?? null, serviceCode: row.serviceCode, waldahServiceType: row.serviceCode ? serviceTypes.get(row.serviceCode) ?? null : null, hours: evv.hours, rateCents, amountCents: evv.hours !== null && rateCents !== null ? roundMoneyCents(evv.hours, rateCents) : null, compliant: evv.compliant, reasons: evv.reasons };
+    return { id: row.id, clientId: row.clientId!, startAt: row.startAt?.toISOString() ?? null, clockInAt: row.clockInAt?.toISOString() ?? null, clockOutAt: row.clockOutAt?.toISOString() ?? null, serviceCode: row.serviceCode, waldahServiceType: row.serviceCode ? serviceTypes.get(row.serviceCode) ?? null : null, caregiverName: row.employee ? `${row.employee.firstName} ${row.employee.lastName}` : row.axisCareCaregiverId ? caregiverNames.get(row.axisCareCaregiverId) ?? null : null, hours: evv.hours, rateCents, amountCents: evv.hours !== null && rateCents !== null ? roundMoneyCents(evv.hours, rateCents) : null, compliant: evv.compliant, reasons: evv.reasons };
   });
 }
 

@@ -8,15 +8,19 @@ import "./billing.css";
 
 const NOT_ENABLED = "Billing sessions are not enabled yet. This button is ready to be connected.";
 
-function VisitTable({ visits }: { visits: BillingVisitRow[] }) {
+function VisitTable({ visits, selected, onToggle, onToggleAll, selectable }: { visits: BillingVisitRow[]; selected: Set<string>; onToggle: (id: string) => void; onToggleAll: () => void; selectable: boolean }) {
+  const allSelected = visits.length > 0 && visits.every(visit => selected.has(visit.id));
   return (
     <div className="billing-table-wrap">
       <table className="billing-table">
-        <thead><tr><th>Visit</th><th>Clock in / out</th><th>Hours</th><th>Rate</th><th>Amount</th><th>EVV</th></tr></thead>
+        <thead><tr>
+          {selectable ? <th className="billing-check-col"><input type="checkbox" aria-label="Select all shown visits" checked={allSelected} onChange={onToggleAll} /></th> : null}
+          <th>Visit</th><th>Caregiver</th><th>Hours</th><th>Rate</th><th>Amount</th><th>EVV</th></tr></thead>
         <tbody>{visits.map(visit => (
-          <tr key={visit.id} className={visit.compliant ? undefined : "billing-row-flagged"}>
+          <tr key={visit.id} className={`${visit.compliant ? "" : "billing-row-flagged"} ${selected.has(visit.id) ? "billing-row-selected" : ""}`.trim() || undefined}>
+            {selectable ? <td className="billing-check-col"><input type="checkbox" aria-label={`Select visit ${stamp(visit.startAt)}`} checked={selected.has(visit.id)} onChange={() => onToggle(visit.id)} /></td> : null}
             <td data-label="Visit">{stamp(visit.startAt)}<small>{visit.waldahServiceType ?? visit.serviceCode ?? "No service type"}{visit.serviceCode && visit.waldahServiceType ? ` · AxisCare ${visit.serviceCode}` : ""}</small></td>
-            <td data-label="Clock in / out">{stamp(visit.clockInAt)}<small>{stamp(visit.clockOutAt)}</small></td>
+            <td data-label="Caregiver">{visit.caregiverName ?? "Not recorded"}</td>
             <td data-label="Hours">{visit.hours === null ? "—" : visit.hours.toFixed(2)}</td>
             <td data-label="Rate">{visit.rateCents === null ? "No rate" : money(visit.rateCents)}</td>
             <td data-label="Amount">{visit.amountCents === null ? "—" : money(visit.amountCents)}</td>
@@ -32,10 +36,14 @@ function VisitTable({ visits }: { visits: BillingVisitRow[] }) {
 export default function ClientBillingDetail({ client, visits, canRun, organizationId }: { client: BillingClient; visits: BillingVisitRow[]; canRun: boolean; organizationId: string }) {
   const [notice, setNotice] = useState("");
   const [filter, setFilter] = useState<"ALL" | "NON_EVV">("ALL");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
   const summary = summarizeVisits(visits);
   const nonEvv = visits.filter(visit => !visit.compliant);
   const shown = filter === "NON_EVV" ? nonEvv : visits;
   const linked = canRun && client.axisCareLinked;
+  const picked = visits.filter(visit => selected.has(visit.id)), pickedSummary = summarizeVisits(picked);
+  const toggle = (id: string) => setSelected(current => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; });
+  const toggleAll = () => setSelected(current => shown.every(visit => current.has(visit.id)) ? new Set([...current].filter(id => !shown.some(visit => visit.id === id))) : new Set([...current, ...shown.map(visit => visit.id)]));
   return (
     <main className="admin-shell billing-shell billing-detail" aria-label={`Billing details for ${client.name}`}>
       <Link href={`/admin/billing?organizationId=${encodeURIComponent(organizationId)}`} className="billing-back-link">← All clients</Link>
@@ -87,7 +95,16 @@ export default function ClientBillingDetail({ client, visits, canRun, organizati
             </div>
           </div>
           {visits.length === 0 ? <p className="billing-empty">No AxisCare visits have synced for this client in the last 12 months.</p>
-            : shown.length === 0 ? <p className="billing-empty">Every visit is EVV compliant.</p> : <VisitTable visits={shown} />}
+            : shown.length === 0 ? <p className="billing-empty">Every visit is EVV compliant.</p> : <>
+              {selected.size ? <div className="billing-group-bar" role="status">
+                <b>{selected.size} {selected.size === 1 ? "visit" : "visits"} selected</b>
+                <span>{hoursWithAmount(pickedSummary.readyHours, pickedSummary.readyCents, pickedSummary.unrated)}{pickedSummary.nonEvvCount ? ` · ${pickedSummary.nonEvvCount} not EVV compliant` : ""}</span>
+                {/* WIRING: start a billing session for exactly these visit ids (selected state). */}
+                <button type="button" onClick={() => setNotice(NOT_ENABLED)}>Bill selected</button>
+                <button type="button" className="secondary" onClick={() => setSelected(new Set())}>Clear</button>
+              </div> : null}
+              <VisitTable visits={shown} selected={selected} onToggle={toggle} onToggleAll={toggleAll} selectable />
+            </>}
         </section>
 
       </>}
