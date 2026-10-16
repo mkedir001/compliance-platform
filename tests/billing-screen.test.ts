@@ -10,6 +10,7 @@ describe("billing screen integration", () => {
   const service = source("src/domain/billing/service.ts");
   const navigation = source("src/app/components/portal-ui.tsx");
   const styles = source("src/app/admin/billing/billing.css");
+  const ownerBackfill = source("prisma/migrations/20261016120000_backfill_organization_owner_billing_permissions/migration.sql");
 
   it("reuses the existing route, shell, organization context, and one navigation item", () => {
     expect(page).toContain("resolveAdminOrganizationId");
@@ -26,6 +27,13 @@ describe("billing screen integration", () => {
     expect(service).toContain("where: { organizationId, archivedAt: null, testDataMarkedAt: null }");
     expect(service.match(/where: \{ organizationId,/g)?.length).toBeGreaterThanOrEqual(3);
     expect(page).toContain("access.canRun?await Promise.all");
+  });
+
+  it("backfills Billing access for existing organization-scoped owners", () => {
+    expect(ownerBackfill).toContain('r."code" = \'ORGANIZATION_OWNER\'');
+    expect(ownerBackfill).toContain('r."organizationId" IS NOT NULL');
+    expect(ownerBackfill).toContain("'billing.run', 'billing.view_billed'");
+    expect(ownerBackfill).toContain('ON CONFLICT ("roleDefinitionId", "permissionId") DO NOTHING');
   });
 
   it("shows visits read-only with no billing mutation paths and no invented ledger totals", () => {

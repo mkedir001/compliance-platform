@@ -17,6 +17,12 @@ test("authorized owner opens the safe responsive billing screen from the existin
   await expect(page.getByText("Preview with sample data")).toHaveCount(0);
   await expect(page.getByRole("button", { name: /Confirm billing|Bill now/ })).toHaveCount(0);
 
+  const directBillingUrl = page.url();
+  await page.goto(directBillingUrl);
+  await expect(page.getByRole("heading", { name: "Billing", exact: true })).toBeVisible();
+  await page.getByText("AxisCare integration settings", { exact: true }).click();
+  await expect(page.locator(".billing-integration-admin").getByText("Not configured", { exact: true })).toBeVisible();
+
   const cards = page.locator(".billing-card-open");
   if (await cards.count()) {
     await cards.first().click();
