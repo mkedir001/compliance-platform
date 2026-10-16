@@ -36,7 +36,7 @@ The application requires `AXISCARE_CREDENTIAL_ENCRYPTION_KEY`, a base64-encoded 
 
 ## Mappings
 
-- **Clients:** unique exact first name + last name + date of birth may auto-link. Ambiguous or weaker matches require a one-time human confirmation. Serializable, tenant-scoped conditional updates prevent overwriting existing links.
+- **Clients:** synchronization creates review suggestions but never links clients automatically. Even a unique exact first name + last name + date-of-birth candidate requires one-time administrator confirmation. Serializable, tenant-scoped conditional updates and a database uniqueness constraint prevent duplicate or overwritten links.
 - **Caregivers/employees:** always mapped explicitly by an organization administrator. Names alone never link records.
 - **Services:** AxisCare service codes are explicitly mapped to a Waldah service type. The original AxisCare code remains visible as provenance.
 - Mappings are tenant-scoped, unique, audited, and never overwrite canonical Waldah profile data.

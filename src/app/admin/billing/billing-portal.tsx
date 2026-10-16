@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { StatusChip } from "@/app/components/portal-ui";
+import { axisCareConnectionDisplay } from "@/domain/axiscare/status";
 import "./billing.css";
 
 export type BillingClient = {
@@ -103,31 +104,47 @@ function MatchReview({ matches, organizationId }: { matches: PendingMatch[]; org
 }
 
 function AxisCareAdministrationPanel({ organizationId, initial }: { organizationId: string; initial: AxisCareConnectionView }) {
-  const [admin, setAdmin] = useState<AxisCareAdministration | null>(null), [connection, setConnection] = useState(initial), [busy, setBusy] = useState(false), [message, setMessage] = useState("");
+  const [admin, setAdmin] = useState<AxisCareAdministration | null>(null), [connection, setConnection] = useState(initial), [busy, setBusy] = useState(false), [message, setMessage] = useState(""), [messageTone, setMessageTone] = useState<"good" | "warning" | "danger">("warning");
   async function request(path: string, init?: RequestInit) { const response = await fetch(`/api/organizations/${organizationId}/axiscare/${path}`, { ...init, headers: { "content-type": "application/json", ...(init?.headers ?? {}) } }), body = await response.json(); if (!response.ok) throw new Error(body.error ?? "AxisCare request failed"); return body; }
-  async function load() { try { setAdmin(await request("connection")); } catch (error) { setMessage(error instanceof Error ? error.message : "AxisCare settings could not be loaded"); } }
+  async function load() { try { const result = await request("connection"); setAdmin(result); setConnection(result.connection); } catch (error) { setMessageTone("danger"); setMessage(error instanceof Error ? error.message : "AxisCare settings could not be loaded"); } }
   useEffect(() => { void load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setBusy(true); setMessage("");
     const form = event.currentTarget, data = new FormData(form), token = String(data.get("apiToken") ?? "").trim();
     try {
       const result = await request("connection", { method: "PUT", body: JSON.stringify({ baseUrl: data.get("baseUrl"), ...(token ? { apiToken: token } : {}), historyMonths: Number(data.get("historyMonths")) }) });
-      setConnection(result); form.reset(); setMessage("Configuration saved. Test the connection before synchronization."); await load();
-    } catch (error) { setMessage(error instanceof Error ? error.message : "Configuration was not saved"); } finally { setBusy(false); }
+      setConnection(result); const tokenInput = form.elements.namedItem("apiToken"); if (tokenInput instanceof HTMLInputElement) tokenInput.value = ""; setMessageTone("warning"); setMessage("Configuration saved. Test the connection before synchronization."); await load();
+    } catch (error) { setMessageTone("danger"); setMessage(error instanceof Error ? error.message : "Configuration was not saved"); } finally { setBusy(false); }
   }
   async function action(action: "TEST" | "SYNC") {
     setBusy(true); setMessage("");
-    try { const result = await request("connection", { method: "POST", body: JSON.stringify({ action }) }); if (action === "TEST") setConnection(result); setMessage(action === "TEST" ? result.status === "CONNECTED" ? "AxisCare connection verified." : "AxisCare connection could not be verified." : result.failures?.length ? `Synchronization completed with failures: ${result.failures.join(", ")}.` : "AxisCare synchronization completed."); await load(); }
-    catch (error) { setMessage(error instanceof Error ? error.message : "AxisCare operation failed"); } finally { setBusy(false); }
+    try {
+      const result = await request("connection", { method: "POST", body: JSON.stringify({ action }) });
+      if (action === "TEST") {
+        setConnection(result);
+        const display = axisCareConnectionDisplay(result.status);
+        setMessageTone(result.status === "CONNECTED" ? "good" : result.status === "AUTHENTICATION_FAILED" ? "danger" : "warning");
+        setMessage(result.status === "CONNECTED" ? "AxisCare connection verified successfully." : `${display.title} ${display.detail}`);
+      } else {
+        setMessageTone(result.failures?.length ? "danger" : "good");
+        setMessage(result.failures?.length ? `Synchronization completed with failures: ${result.failures.join(", ")}.` : "Read-only synchronization completed. Review suggested client matches before linking anyone.");
+      }
+      await load();
+    }
+    catch (error) { setMessageTone("danger"); setMessage(error instanceof Error ? error.message : "AxisCare operation failed"); } finally { setBusy(false); }
   }
-  async function mapCaregiver(event: FormEvent<HTMLFormElement>, externalId: string) { event.preventDefault(); setBusy(true); try { const employeeId = new FormData(event.currentTarget).get("employeeId"); await request("mappings", { method: "POST", body: JSON.stringify({ kind: "CAREGIVER", externalId, employeeId }) }); setMessage("Caregiver mapping saved."); await load(); } catch (error) { setMessage(error instanceof Error ? error.message : "Caregiver mapping failed"); } finally { setBusy(false); } }
-  async function mapService(event: FormEvent<HTMLFormElement>, axisCareServiceCode: string) { event.preventDefault(); setBusy(true); try { const waldahServiceType = new FormData(event.currentTarget).get("waldahServiceType"); await request("mappings", { method: "POST", body: JSON.stringify({ kind: "SERVICE", axisCareServiceCode, waldahServiceType }) }); setMessage("Service mapping saved."); await load(); } catch (error) { setMessage(error instanceof Error ? error.message : "Service mapping failed"); } finally { setBusy(false); } }
+  async function mapCaregiver(event: FormEvent<HTMLFormElement>, externalId: string) { event.preventDefault(); setBusy(true); try { const employeeId = new FormData(event.currentTarget).get("employeeId"); await request("mappings", { method: "POST", body: JSON.stringify({ kind: "CAREGIVER", externalId, employeeId }) }); setMessageTone("good"); setMessage("Caregiver mapping saved."); await load(); } catch (error) { setMessageTone("danger"); setMessage(error instanceof Error ? error.message : "Caregiver mapping failed"); } finally { setBusy(false); } }
+  async function mapService(event: FormEvent<HTMLFormElement>, axisCareServiceCode: string) { event.preventDefault(); setBusy(true); try { const waldahServiceType = new FormData(event.currentTarget).get("waldahServiceType"); await request("mappings", { method: "POST", body: JSON.stringify({ kind: "SERVICE", axisCareServiceCode, waldahServiceType }) }); setMessageTone("good"); setMessage("Service mapping saved."); await load(); } catch (error) { setMessageTone("danger"); setMessage(error instanceof Error ? error.message : "Service mapping failed"); } finally { setBusy(false); } }
   return <details className="billing-integration-admin"><summary>AxisCare integration settings</summary><div className="billing-integration-body">
-    <div className="billing-card-head"><strong>Connection</strong><StatusChip tone={connection.status === "CONNECTED" ? "good" : connection.status === "AUTHENTICATION_FAILED" ? "danger" : "warning"}>{pretty(connection.status)}</StatusChip></div>
+    <div className={`billing-connection-status ${axisCareConnectionDisplay(connection.status).tone}`} role="status">
+      <span><strong>{axisCareConnectionDisplay(connection.status).title}</strong><small>{axisCareConnectionDisplay(connection.status).detail}</small></span>
+      <StatusChip tone={axisCareConnectionDisplay(connection.status).tone}>{axisCareConnectionDisplay(connection.status).label}</StatusChip>
+    </div>
     <p className="billing-muted">Credentials are encrypted server-side and are never returned to this screen. “Connected” appears only after a real authenticated API check.</p>
     <form className="settings-form compact" onSubmit={save}><label>AxisCare site URL<input name="baseUrl" type="url" required defaultValue={connection.baseUrl ?? "https://10461.axiscare.com"} /></label><label>API bearer token<input name="apiToken" type="password" autoComplete="new-password" placeholder={connection.configured ? "Leave blank to keep current token" : "Required"} required={!connection.configured} /></label><label>Visit history months<input name="historyMonths" type="number" min="1" max="60" defaultValue={connection.historyMonths} required /></label><button disabled={busy}>Save configuration</button></form>
+    <p className="billing-muted">Synchronization stores a tenant-scoped read-only mirror and creates match suggestions. It does not create Waldah clients or change client profile fields.</p>
     <div className="billing-actions"><button type="button" className="secondary" disabled={busy || !connection.configured} onClick={() => void action("TEST")}>Test connection</button><button type="button" disabled={busy || connection.status !== "CONNECTED"} onClick={() => void action("SYNC")}>Synchronize now</button></div>
-    {message ? <p role="status" className="billing-note">{message}</p> : null}
+    {message ? <p role={messageTone === "danger" ? "alert" : "status"} className={`billing-feedback ${messageTone}`}>{message}</p> : null}
     {admin ? <><h3>Explicit mappings</h3><p className="billing-muted">Waldah never merges people by name alone. Confirm caregiver and service mappings explicitly.</p>
       <div className="billing-mapping-list">{admin.caregivers.map(caregiver => <form key={caregiver.externalId} onSubmit={event => mapCaregiver(event, caregiver.externalId)}><span><strong>{[caregiver.firstName, caregiver.lastName].filter(Boolean).join(" ") || `AxisCare caregiver ${caregiver.externalId}`}</strong><small>AxisCare ID {caregiver.externalId}</small></span><select name="employeeId" defaultValue={caregiver.employeeId ?? ""} required disabled={Boolean(caregiver.employeeId)}><option value="">Select Waldah employee</option>{admin.employees.map(employee => <option key={employee.id} value={employee.id}>{employee.lastName}, {employee.firstName}{employee.employeeNumber ? ` · ${employee.employeeNumber}` : ""}</option>)}</select><button disabled={busy || Boolean(caregiver.employeeId)}>{caregiver.employeeId ? "Mapped" : "Map"}</button></form>)}</div>
       <div className="billing-mapping-list">{admin.services.map(service => <form key={service.axisCareServiceCode} onSubmit={event => mapService(event, service.axisCareServiceCode)}><span><strong>{service.axisCareServiceCode}</strong><small>AxisCare service code</small></span><input name="waldahServiceType" defaultValue={service.waldahServiceType ?? ""} placeholder="Waldah service type" required /><button disabled={busy}>Save mapping</button></form>)}</div>
@@ -141,6 +158,7 @@ export default function BillingPortal({ clients, canRun = false, canManageIntegr
   const shown = useMemo(() => clients.filter(client => client.name.toLowerCase().includes(search.trim().toLowerCase())), [clients, search]);
   const open = openId ? clients.find(client => client.id === openId) ?? null : null;
   const authorizationCount = clients.filter(client => client.approvedHours !== null).length;
+  const connectionDisplay = axisCareConnectionDisplay(connection.status);
 
   return (
     <main className="admin-shell billing-shell" aria-label="Organization billing workspace">
@@ -152,10 +170,10 @@ export default function BillingPortal({ clients, canRun = false, canManageIntegr
         </div>
       </header>
 
-      <section className="billing-banner" role="status">
+      <section className={`billing-banner connection-${connectionDisplay.tone}`} role="status">
         <div>
-          <strong>{connection.status === "CONNECTED" ? "AxisCare is connected for read-only synchronization. Billing runs are not enabled yet." : canRun ? "AxisCare visit synchronization is not connected." : "You can view billed amounts. Billing is limited to billing roles."}</strong>
-          <p>No claims, invoices, or billing runs can be submitted or changed from this screen.</p>
+          <strong>{canManageIntegration ? connectionDisplay.title : connection.status === "CONNECTED" ? "AxisCare is connected for read-only synchronization." : canRun ? "AxisCare visit synchronization is not connected." : "You can view billed amounts. Billing is limited to billing roles."}</strong>
+          <p>{canManageIntegration ? connectionDisplay.detail : "No claims, invoices, or billing runs can be submitted or changed from this screen."}</p>
         </div>
         <button type="button" className="secondary" disabled aria-disabled="true">Billing actions unavailable</button>
       </section>

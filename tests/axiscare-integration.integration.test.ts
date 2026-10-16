@@ -3,7 +3,7 @@ import { PrismaClient } from "@prisma/client";
 import { AxisCareClient } from "@/domain/axiscare/client";
 import { getAxisCareAdministration, mapAxisCareCaregiver, mapAxisCareService, synchronizeAxisCare } from "@/domain/axiscare/administration";
 import { loadAxisCareConfig, recordAxisCareConnectionTest, saveAxisCareConnection } from "@/domain/axiscare/config";
-import { confirmClientMatch, syncSimpleEntity } from "@/domain/axiscare/sync";
+import { confirmClientMatch, reconcileClientLinks, syncSimpleEntity } from "@/domain/axiscare/sync";
 import { POST as webhookPost } from "@/app/api/webhooks/axiscare/route";
 
 const db = new PrismaClient();
@@ -48,6 +48,11 @@ describe.sequential("AxisCare tenant integration", () => {
     expect(rows.every(row => !row.encryptedApiToken.includes("secret-token"))).toBe(true);
     expect((await loadAxisCareConfig(organizationId))?.AXISCARE_API_TOKEN).toBe("tenant-a-secret-token");
     expect((await loadAxisCareConfig(otherOrganizationId))?.AXISCARE_API_TOKEN).toBe("tenant-b-secret-token");
+    const before = await db.axisCareConnection.findUniqueOrThrow({ where: { organizationId }, select: { encryptedApiToken: true, tokenFingerprint: true } });
+    const safe = await saveAxisCareConnection(organizationId, managerId, { baseUrl: "https://10461.axiscare.com", historyMonths: 12 });
+    const after = await db.axisCareConnection.findUniqueOrThrow({ where: { organizationId }, select: { encryptedApiToken: true, tokenFingerprint: true } });
+    expect(after).toEqual(before);
+    expect(JSON.stringify(safe)).not.toContain("tenant-a-secret-token");
   });
 
   it("exposes configuration without credentials and enforces management permission and tenant access", async () => {
@@ -65,6 +70,7 @@ describe.sequential("AxisCare tenant integration", () => {
   it("records genuine connection outcomes without exposing provider details", async () => {
     expect(await recordAxisCareConnectionTest(organizationId, managerId, { ok: false, status: 403 })).toMatchObject({ status: "AUTHENTICATION_FAILED", lastErrorCode: "AUTHENTICATION_FAILED" });
     expect(await recordAxisCareConnectionTest(organizationId, managerId, { ok: true })).toMatchObject({ status: "CONNECTED", lastErrorCode: null });
+    expect(await db.axisCareConnection.findUniqueOrThrow({ where: { organizationId }, select: { status: true, lastTestedAt: true, lastConnectedAt: true, lastErrorCode: true } })).toMatchObject({ status: "CONNECTED", lastErrorCode: null, lastTestedAt: expect.any(Date), lastConnectedAt: expect.any(Date) });
   });
 
   it("maps caregivers and services explicitly and tenant-safely", async () => {
@@ -87,8 +93,29 @@ describe.sequential("AxisCare tenant integration", () => {
   it("does not overwrite an existing client mapping during confirmation", async () => {
     await db.axisCareRecord.create({ data: { organizationId, entity: "client", externalId: "different-client", payload: { id: "different-client", firstName: "Mapped", lastName: "Client" }, payloadHash: "h" } });
     const match = await db.axisCareClientMatch.create({ data: { organizationId, axisCareClientId: "different-client", clientId, status: "SUGGESTED", reason: "review", score: 50 } });
-    expect(await confirmClientMatch(organizationId, match.id, managerId)).toBeNull();
+    await expect(confirmClientMatch(organizationId, match.id, managerId)).rejects.toMatchObject({ code: "WALDAH_CLIENT_ALREADY_MATCHED" });
     expect((await db.client.findUniqueOrThrow({ where: { id: clientId } })).axisCareClientId).toBe("already-linked");
+  });
+
+  it("stages exact client candidates for explicit review without changing canonical fields", async () => {
+    const client = await db.client.create({ data: { organizationId, legalFirstName: "Exact", legalLastName: "Candidate", dateOfBirth: new Date("1980-01-02T00:00:00Z"), createdByUserId: managerId } });
+    await db.axisCareRecord.create({ data: { organizationId, entity: "client", externalId: "axis-exact", payload: { id: "axis-exact", firstName: "Exact", lastName: "Candidate", dateOfBirth: "1980-01-02", startDate: "2024-03-04" }, payloadHash: "exact" } });
+    expect(await reconcileClientLinks(organizationId)).toMatchObject({ autoLinked: 0, suggested: 1 });
+    const unchanged = await db.client.findUniqueOrThrow({ where: { id: client.id } });
+    expect(unchanged).toMatchObject({ axisCareClientId: null, axisCareServiceStartDate: null });
+    const match = await db.axisCareClientMatch.findUniqueOrThrow({ where: { organizationId_axisCareClientId_clientId: { organizationId, axisCareClientId: "axis-exact", clientId: client.id } } });
+    expect(match.status).toBe("SUGGESTED");
+    expect(await confirmClientMatch(organizationId, match.id, managerId)).toBe(client.id);
+    expect(await confirmClientMatch(otherOrganizationId, match.id, managerId)).toBeNull();
+    const linked = await db.client.findUniqueOrThrow({ where: { id: client.id } });
+    expect(linked).toMatchObject({ axisCareClientId: "axis-exact", axisCareServiceStartDate: null });
+  });
+
+  it("prevents one AxisCare client from being linked to two Waldah clients", async () => {
+    const second = await db.client.create({ data: { organizationId, legalFirstName: "Other", legalLastName: "Candidate", createdByUserId: managerId } });
+    const match = await db.axisCareClientMatch.create({ data: { organizationId, axisCareClientId: "axis-exact", clientId: second.id, status: "SUGGESTED", reason: "manual review", score: 50 } });
+    await expect(confirmClientMatch(organizationId, match.id, managerId)).rejects.toMatchObject({ code: "AXISCARE_CLIENT_ALREADY_MATCHED" });
+    expect((await db.client.findUniqueOrThrow({ where: { id: second.id } })).axisCareClientId).toBeNull();
   });
 
   it("keeps the public webhook fail-closed because the documented header is not request authentication", async () => {

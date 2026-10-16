@@ -1,10 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { AxisCareApiError, AxisCareClient, AXISCARE_API_VERSION } from "@/domain/axiscare/client";
 import { dollarsToCents, hashPayload, mapVisit, monthsAgo } from "@/domain/axiscare/mapping";
 import { proposeMatches, type WaldahClientIdentity } from "@/domain/axiscare/matching";
 import { parseWebhook, webhookIdMatches } from "@/domain/axiscare/webhook";
 import { decryptAxisCareCredential, encryptAxisCareCredential } from "@/domain/axiscare/config";
-import { sanitizeAxisCarePayload, visitSyncQuery } from "@/domain/axiscare/sync";
+import { sanitizeAxisCarePayload, testConnection, visitSyncQuery } from "@/domain/axiscare/sync";
+import { axisCareConnectionDisplay } from "@/domain/axiscare/status";
+
+afterEach(() => vi.unstubAllGlobals());
 
 const visit = { id: "s=1:d=2023-10-01", client: { id: 1, firstName: "John", lastName: "Lakeman" }, caregiver: { id: 4, firstName: "Alice", lastName: "Tavner" }, startDate: "2023-10-01T16:00:00Z", endDate: "2023-10-01T18:00:00Z", scheduledStartDate: "2023-10-01T16:00:00Z", scheduledEndDate: "2023-10-01T18:00:00Z", clockIn: { time: "2023-10-01T12:01:22-04:00", method: "Mobile", coordinates: { latitude: "43.0389", longitude: "87.9065" }, telephonyPhone: null }, clockOut: { time: "2023-10-01T14:00:00-04:00", method: "Web", coordinates: null, location: null, telephonyPhone: null }, timezone: "US/Eastern", service: { id: 1, code: "HOMEMAKING", procedureCode: "S5130" }, type: "Hourly", verified: true, removed: false, chargeRate: 25.5, billableRateMode: "Hourly", modificationReason: { id: 3, name: "Scheduling Error" } };
 
@@ -41,13 +44,33 @@ const people = (over: Partial<WaldahClientIdentity>[] ): WaldahClientIdentity[] 
 const axis = { externalId: "1", firstName: "John", lastName: "Lakeman", goesBy: "Sure Shot", dateOfBirth: "1972-05-12", medicaidNumber: null };
 
 describe("AxisCare client matching", () => {
-  it("auto-links on exact name and DOB", () => { expect(proposeMatches(axis, people([{}]))[0]).toMatchObject({ clientId: "c0", kind: "AUTO", score: 100 }); });
-  it("ignores case, accents and punctuation", () => { expect(proposeMatches({ ...axis, firstName: "JOHN", lastName: "Lákeman" }, people([{}]))[0].kind).toBe("AUTO"); });
+  it("requires confirmation even on exact name and DOB", () => { expect(proposeMatches(axis, people([{}]))[0]).toMatchObject({ clientId: "c0", kind: "SUGGEST", score: 100 }); });
+  it("normalizes case, accents and punctuation without auto-linking", () => { expect(proposeMatches({ ...axis, firstName: "JOHN", lastName: "Lákeman" }, people([{}]))[0].kind).toBe("SUGGEST"); });
   it("suggests, not links, when the DOB differs", () => { const [m] = proposeMatches(axis, people([{ dateOfBirth: new Date("1973-05-12") }])); expect(m.kind).toBe("SUGGEST"); });
   it("suggests when a nickname matches the preferred name with the same DOB", () => { const [m] = proposeMatches({ ...axis, firstName: "Jonathan" }, people([{ legalFirstName: "Johnny", preferredName: "Jonathan" }])); expect(m.kind).toBe("SUGGEST"); });
-  it("never auto-links when two clients match exactly", () => { const m = proposeMatches(axis, people([{}, {}])); expect(m.every(x => x.kind === "SUGGEST")).toBe(true); });
+  it("marks several exact candidates as ambiguous suggestions", () => { const m = proposeMatches(axis, people([{}, {}])); expect(m.every(x => x.kind === "SUGGEST" && x.score === 95)).toBe(true); });
   it("skips clients already tied to a different AxisCare client", () => { expect(proposeMatches(axis, people([{ axisCareClientId: "99" }]))).toEqual([]); });
   it("suggests on Medicaid number plus last name", () => { const [m] = proposeMatches({ ...axis, firstName: "Jo", dateOfBirth: null, medicaidNumber: "123" }, people([{ legalFirstName: "Joe", maPmiNumber: "123" }])); expect(m).toMatchObject({ kind: "SUGGEST", score: 90 }); });
+  it("leaves a client unmatched when no reliable candidate exists", () => { expect(proposeMatches({ ...axis, firstName: "No", lastName: "Match", dateOfBirth: "1999-09-09" }, people([{}]))).toEqual([]); });
+});
+
+describe("AxisCare connection verification and display states", () => {
+  it("performs a genuine authenticated client-list request and returns no credential", async () => {
+    const fetcher = vi.fn(async () => res(200, { results: { clients: [{ id: 1 }], nextPage: null } }));
+    vi.stubGlobal("fetch", fetcher);
+    const result = await testConnection({ AXISCARE_BASE_URL: "https://10461.axiscare.com", AXISCARE_API_TOKEN: "synthetic-test-token", AXISCARE_ORGANIZATION_ID: "org-test", AXISCARE_EXTRA_ENTITIES: [], AXISCARE_HISTORY_MONTHS: 12 });
+    expect(result).toEqual({ ok: true, sawClients: true });
+    expect(fetcher).toHaveBeenCalledWith("https://10461.axiscare.com/api/clients?limit=1", expect.objectContaining({ method: "GET", headers: expect.objectContaining({ Authorization: "Bearer synthetic-test-token", "X-AxisCare-Api-Version": AXISCARE_API_VERSION }) }));
+    expect(JSON.stringify(result)).not.toContain("synthetic-test-token");
+  });
+
+  it("distinguishes every user-facing connection state", () => {
+    expect(axisCareConnectionDisplay("NOT_CONFIGURED")).toMatchObject({ label: "Not configured", tone: "neutral" });
+    expect(axisCareConnectionDisplay("CONFIGURATION_INCOMPLETE")).toMatchObject({ label: "Saved, not verified", tone: "warning" });
+    expect(axisCareConnectionDisplay("CONNECTED")).toMatchObject({ label: "Connected and verified", tone: "good" });
+    expect(axisCareConnectionDisplay("AUTHENTICATION_FAILED")).toMatchObject({ label: "Authentication failed", tone: "danger" });
+    expect(axisCareConnectionDisplay("CONNECTION_UNAVAILABLE")).toMatchObject({ label: "Connection unavailable", tone: "warning" });
+  });
 });
 
 describe("AxisCare webhook intake", () => {

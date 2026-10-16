@@ -7,7 +7,7 @@ test("authorized owner opens the safe responsive billing screen from the existin
   await page.getByRole("link", { name: "Billing", exact: true }).click();
   await page.waitForURL(/\/admin\/billing\?organizationId=/);
   await expect(page.getByRole("heading", { name: "Billing", exact: true })).toBeVisible();
-  await expect(page.getByText("AxisCare visit synchronization is not connected.")).toBeVisible();
+  await expect(page.locator(".billing-banner").getByText("AxisCare is not configured.")).toBeVisible();
   await page.getByText("AxisCare integration settings", { exact: true }).click();
   await expect(page.locator(".billing-integration-admin").getByText("Not configured", { exact: true })).toBeVisible();
   await expect(page.getByLabel("AxisCare site URL")).toHaveValue("https://10461.axiscare.com");

@@ -2,6 +2,9 @@
 .billing-banner{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:16px 18px;border:1px solid var(--portal-border);border-radius:12px;background:#fff}
 .billing-banner p{margin:4px 0 0;color:var(--portal-muted);font-size:.92rem}
 .billing-banner.sample{background:#fff8e1;border-color:#e9d9a8}
+.billing-banner.connection-good{border-left:5px solid #2f6b4c;background:#f4faf6}
+.billing-banner.connection-warning{border-left:5px solid #d4a017;background:#fffaf0}
+.billing-banner.connection-danger{border-left:5px solid #a43c35;background:#fff7f5}
 .billing-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
 .billing-stat{display:flex;flex-direction:column;gap:4px;margin:0;padding:16px;border:1px solid var(--portal-border);border-radius:12px;background:#fff}
 .billing-stat span{color:var(--portal-muted);font-size:.78rem}
@@ -53,10 +56,20 @@
 .billing-reasons li.billing-muted{color:var(--portal-muted)}
 .billing-review{display:grid;gap:14px}
 .billing-note{margin:0;padding:10px 12px;border-radius:8px;background:#fff0c7;color:#6d4a00;font-size:.88rem}
+.billing-feedback{margin:0;padding:14px 16px;border:1px solid;border-radius:10px;font-size:.92rem;font-weight:700}
+.billing-feedback.good{border-color:#8db9a0;background:#eaf6ee;color:#174c32}
+.billing-feedback.warning{border-color:#e3c56c;background:#fff8e1;color:#6d4a00}
+.billing-feedback.danger{border-color:#dca49f;background:#fff1ef;color:#7a2922}
 .billing-integration-admin{border:1px solid var(--portal-border);border-radius:12px;background:#fff}
 .billing-integration-admin>summary{cursor:pointer;padding:14px 16px;font-weight:700}
 .billing-integration-body{display:grid;gap:14px;padding:0 16px 16px;border-top:1px solid var(--portal-border)}
 .billing-integration-body>.billing-card-head{padding:14px 0 0;flex-direction:row;align-items:center;justify-content:space-between}
+.billing-connection-status{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:14px;padding:14px 16px;border:1px solid var(--portal-border);border-left:5px solid;border-radius:10px}
+.billing-connection-status span{display:grid;gap:3px}.billing-connection-status small{color:var(--portal-muted)}
+.billing-connection-status.neutral{border-left-color:#8a8f89;background:#fafaf7}
+.billing-connection-status.warning{border-left-color:#d4a017;background:#fffaf0}
+.billing-connection-status.good{border-left-color:#2f6b4c;background:#f4faf6}
+.billing-connection-status.danger{border-left-color:#a43c35;background:#fff7f5}
 .billing-mapping-list{display:grid;gap:8px}
 .billing-mapping-list form{display:grid;grid-template-columns:minmax(180px,1fr) minmax(220px,1fr) auto;align-items:center;gap:10px;padding:10px;border:1px solid var(--portal-border);border-radius:8px}
 .billing-mapping-list span{display:grid}.billing-mapping-list small{color:var(--portal-muted)}

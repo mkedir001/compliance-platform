@@ -1,4 +1,5 @@
 import type { Prisma } from "@prisma/client";
+import { ConflictError } from "@/domain/auth/errors";
 import { prisma } from "@/lib/prisma";
 import { AxisCareClient } from "./client";
 import type { AxisCareConfig } from "./config";
@@ -112,7 +113,7 @@ export async function syncVisits(client: AxisCareClient, config: AxisCareConfig,
   return count;
 }
 
-/** Link AxisCare clients to Waldah clients: exact name+DOB links automatically, everything else becomes a suggestion for a person to confirm. */
+/** Build review suggestions only. Synchronization never links or changes a canonical Waldah client. */
 export async function reconcileClientLinks(organizationId: string) {
   const [records, clients] = await Promise.all([
     prisma.axisCareRecord.findMany({ where: { organizationId, entity: "client", removedAt: null }, select: { payload: true } }),
@@ -128,39 +129,31 @@ export async function reconcileClientLinks(organizationId: string) {
     if (clients.some(c => c.axisCareClientId === axisCareClientId)) continue;
     const proposals = proposeMatches(identity, clients).filter(p => !rejected.has(`${axisCareClientId}:${p.clientId}`));
     for (const p of proposals) {
-      if (p.kind === "AUTO" && !clients.some(c => c.id === p.clientId && c.axisCareClientId)) {
-        const linkedNow = await prisma.$transaction(async tx => {
-          const claimed = await tx.client.updateMany({ where: { id: p.clientId, organizationId, axisCareClientId: null }, data: { axisCareClientId, axisCareServiceStartDate: identity.startDate ? new Date(identity.startDate) : undefined } });
-          if (claimed.count !== 1) return false;
-          await tx.axisCareClientMatch.upsert({ where: { organizationId_axisCareClientId_clientId: { organizationId, axisCareClientId, clientId: p.clientId } }, create: { organizationId, axisCareClientId, clientId: p.clientId, status: "AUTO_LINKED", score: p.score, reason: p.reason }, update: { status: "AUTO_LINKED", score: p.score, reason: p.reason } });
-          await tx.axisCareVisit.updateMany({ where: { organizationId, axisCareClientId, clientId: null }, data: { clientId: p.clientId } });
-          return true;
-        }, { isolationLevel: "Serializable" });
-        if (!linkedNow) continue;
-        const linked = clients.find(c => c.id === p.clientId); if (linked) linked.axisCareClientId = axisCareClientId;
-        summary.autoLinked += 1; break;
-      }
-      if (p.kind === "SUGGEST") {
-        await prisma.axisCareClientMatch.upsert({ where: { organizationId_axisCareClientId_clientId: { organizationId, axisCareClientId, clientId: p.clientId } }, create: { organizationId, axisCareClientId, clientId: p.clientId, status: "SUGGESTED", score: p.score, reason: p.reason }, update: { score: p.score, reason: p.reason } });
-        summary.suggested += 1;
-      }
+      await prisma.axisCareClientMatch.upsert({ where: { organizationId_axisCareClientId_clientId: { organizationId, axisCareClientId, clientId: p.clientId } }, create: { organizationId, axisCareClientId, clientId: p.clientId, status: "SUGGESTED", score: p.score, reason: p.reason }, update: { score: p.score, reason: p.reason } });
+      summary.suggested += 1;
     }
   }
   return summary;
 }
 
-/** A person confirms a suggested match. Sets the AxisCare client ID on the Waldah client and attaches its visits. */
+/** A person confirms a suggested match. Only the external link is stored; canonical client fields are untouched. */
 export async function confirmClientMatch(organizationId: string, matchId: string, decidedByUserId: string) {
   return prisma.$transaction(async tx => {
     const match = await tx.axisCareClientMatch.findFirst({ where: { id: matchId, organizationId, status: "SUGGESTED" } });
     if (!match?.clientId) return null;
-    const record = await tx.axisCareRecord.findUnique({ where: { organizationId_entity_externalId: { organizationId, entity: "client", externalId: match.axisCareClientId } }, select: { payload: true } });
-    const startDate = record ? mapClientIdentity(record.payload as Json).startDate : null;
-    const claimed = await tx.client.updateMany({ where: { id: match.clientId, organizationId, OR: [{ axisCareClientId: null }, { axisCareClientId: match.axisCareClientId }] }, data: { axisCareClientId: match.axisCareClientId, axisCareServiceStartDate: startDate ? new Date(startDate) : undefined } });
+    const [client, externalClaim] = await Promise.all([
+      tx.client.findFirst({ where: { id: match.clientId, organizationId }, select: { axisCareClientId: true } }),
+      tx.client.findFirst({ where: { organizationId, axisCareClientId: match.axisCareClientId, id: { not: match.clientId } }, select: { id: true } }),
+    ]);
+    if (!client) return null;
+    if (client.axisCareClientId && client.axisCareClientId !== match.axisCareClientId) throw new ConflictError("Waldah client is already matched to another AxisCare client", "WALDAH_CLIENT_ALREADY_MATCHED");
+    if (externalClaim) throw new ConflictError("AxisCare client is already matched to another Waldah client", "AXISCARE_CLIENT_ALREADY_MATCHED");
+    const claimed = await tx.client.updateMany({ where: { id: match.clientId, organizationId, OR: [{ axisCareClientId: null }, { axisCareClientId: match.axisCareClientId }] }, data: { axisCareClientId: match.axisCareClientId } });
     if (claimed.count !== 1) return null;
     await tx.axisCareClientMatch.update({ where: { id: match.id }, data: { status: "CONFIRMED", decidedByUserId, decidedAt: new Date() } });
-    await tx.axisCareClientMatch.updateMany({ where: { organizationId, axisCareClientId: match.axisCareClientId, status: "SUGGESTED", id: { not: match.id } }, data: { status: "REJECTED", decidedByUserId, decidedAt: new Date() } });
+    await tx.axisCareClientMatch.updateMany({ where: { organizationId, status: "SUGGESTED", id: { not: match.id }, OR: [{ axisCareClientId: match.axisCareClientId }, { clientId: match.clientId }] }, data: { status: "REJECTED", decidedByUserId, decidedAt: new Date() } });
     await tx.axisCareVisit.updateMany({ where: { organizationId, axisCareClientId: match.axisCareClientId, clientId: null }, data: { clientId: match.clientId } });
+    await tx.auditEvent.create({ data: { organizationId, actorUserId: decidedByUserId, eventType: "axiscare.client_mapped", entityType: "Client", entityId: match.clientId, metadataJson: { axisCareClientId: match.axisCareClientId } } });
     return match.clientId;
   }, { isolationLevel: "Serializable" });
 }

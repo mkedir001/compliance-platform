@@ -10,6 +10,7 @@ describe("billing screen integration", () => {
   const service = source("src/domain/billing/service.ts");
   const navigation = source("src/app/components/portal-ui.tsx");
   const styles = source("src/app/admin/billing/billing.css");
+  const axisCareStatus = source("src/domain/axiscare/status.ts");
   const ownerBackfill = source("prisma/migrations/20261016120000_backfill_organization_owner_billing_permissions/migration.sql");
 
   it("reuses the existing route, shell, organization context, and one navigation item", () => {
@@ -37,7 +38,8 @@ describe("billing screen integration", () => {
   });
 
   it("shows visits read-only with no billing mutation paths and no invented ledger totals", () => {
-    for (const text of ["EVV compliant", "Not EVV compliant", "Billing runs are not enabled yet", "Billing actions are disabled."]) expect(portal).toContain(text);
+    for (const text of ["EVV compliant", "Not EVV compliant", "Billing actions are disabled."]) expect(portal).toContain(text);
+    expect(axisCareStatus).toContain("Billing actions remain disabled.");
     for (const forbidden of ["Preview with sample data", "Confirm billing", "Bill now", "hourlyRateCents"]) expect(portal).not.toContain(forbidden);
     const fetches = portal.match(/fetch\(/g) ?? [];
     expect(fetches).toHaveLength(2);
@@ -45,6 +47,9 @@ describe("billing screen integration", () => {
     expect(portal).toContain("/axiscare/${path}");
     expect(portal).toContain("canRun ? <MatchReview");
     expect(portal).toContain("Not connected");
+    expect(axisCareStatus).toContain("Read-only synchronization is available");
+    expect(portal).toContain("It does not create Waldah clients or change client profile fields");
+    for (const status of ["Saved, not verified", "Connected and verified", "Authentication failed", "Connection unavailable"]) expect(axisCareStatus).toContain(status);
   });
 
   it("keeps accessible responsive client cards and detail navigation", () => {
