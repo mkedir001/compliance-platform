@@ -64,6 +64,12 @@ export default function ClientBillingDetail({ client, visits, canRun, organizati
         </section>
         <p className="billing-live" role="status" aria-live="polite">{notice}</p>
 
+        <section aria-label="Billing history">
+          <h2>Billing history</h2>
+          {/* WIRING: list submitted billing runs for this client (date, hours, amount, EVV/non-EVV counts) from the billing ledger. */}
+          <p className="billing-empty">No billing history yet. Past billing runs will appear here once billing is enabled.</p>
+        </section>
+
         {nonEvv.length ? (
           <section className="billing-noncompliant" aria-label="Visits that are not EVV compliant">
             <h2>Not EVV compliant <span className="billing-count danger">{nonEvv.length}</span></h2>
@@ -84,11 +90,6 @@ export default function ClientBillingDetail({ client, visits, canRun, organizati
             : shown.length === 0 ? <p className="billing-empty">Every visit is EVV compliant.</p> : <VisitTable visits={shown} />}
         </section>
 
-        <section aria-label="Billing history">
-          <h2>Billing history</h2>
-          {/* WIRING: list submitted billing runs for this client (date, hours, amount, EVV/non-EVV counts) from the billing ledger. */}
-          <p className="billing-empty">No billing history yet. Past billing runs will appear here once billing is enabled.</p>
-        </section>
       </>}
     </main>
   );

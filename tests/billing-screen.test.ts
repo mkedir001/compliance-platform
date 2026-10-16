@@ -62,6 +62,8 @@ describe("billing screen integration", () => {
 
   it("gives each client a detail page with both billing options, non-EVV reasons, visit history and billing history", () => {
     for (const text of ["Bill everything", "Bill EVV-compliant only", "Not EVV compliant", "Visit history", "Billing history", "← All clients", "REASON_LABELS"]) expect(detail).toContain(text);
+    expect(detail.indexOf("Client billing snapshot")).toBeLessThan(detail.indexOf("Billing history"));
+    expect(detail.indexOf("Billing history\"")).toBeLessThan(detail.indexOf("Visit history\""));
     expect(detailPage).toContain("getBillingVisits(user,organizationId,new Date(),clientId)");
     expect(detailPage).toContain("access.canRun&&client.axisCareLinked");
     expect(detailPage).toContain("notFound()");
