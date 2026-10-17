@@ -95,3 +95,50 @@ const internalDocumentFields=new Set(["id","organizationId","clientId","intakeId
 function flatten(value:unknown,prefix=""):Array<[string,string]>{if(value===null||value===undefined||value==="")return[];if(Array.isArray(value))return value.flatMap((item,index)=>flatten(item,`${prefix}[${index+1}]`));if(typeof value==="object")return Object.entries(value as Record<string,unknown>).filter(([key])=>!internalDocumentFields.has(key)&&!key.endsWith("Id")).flatMap(([key,item])=>flatten(item,prefix?`${prefix}.${key}`:key));return[[prefix,String(value)]]}
 function label(value:string){return value.replaceAll("."," / ").replace(/([a-z])([A-Z])/g,"$1 $2").replaceAll("_"," ")}
 function wrap(text:string,width:number){const words=text.replaceAll(/\s+/g," ").split(" "),lines:string[]=[];let current="";for(const word of words){if(`${current} ${word}`.trim().length>width){lines.push(current);current=word}else current=`${current} ${word}`.trim()}if(current)lines.push(current);return lines}
+
+const isoDay = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use a date in YYYY-MM-DD form");
+function dayToDate(value: string) { const date = new Date(`${value}T12:00:00Z`); if (Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== value) throw new ValidationError("That date is not valid"); return date; }
+export const documentDetailsInput = z.object({
+  displayName: z.string().trim().max(150, "Document names can be up to 150 characters").nullable().optional(),
+  expirationDate: isoDay.nullable().optional()
+}).refine(value => value.displayName !== undefined || value.expirationDate !== undefined, "Provide a name or an expiration date to change");
+export const markSignedInput = z.object({ signedDate: isoDay, note: z.string().trim().max(500).optional() });
+
+/** Per-document name and expiration. Metadata only: the stored PDF, hash and signature evidence are never touched. */
+export async function updateClientDocumentDetails(user: Pick<User, "id">, organizationId: string, clientId: string, documentId: string, input: z.input<typeof documentDetailsInput>) {
+  await permission(user, organizationId, "client.document.generate");
+  const data = documentDetailsInput.parse(input);
+  const document = await prisma.clientDocument.findFirst({ where: { id: documentId, organizationId, clientId }, select: { id: true, status: true, displayName: true, expirationDate: true, documentType: true } });
+  if (!document) throw new ResourceNotFoundError("Document not found");
+  if (document.status === "VOIDED") throw new AuthorizationError("A voided document cannot be edited");
+  const update: Prisma.ClientDocumentUpdateInput = {};
+  if (data.displayName !== undefined) update.displayName = data.displayName?.length ? data.displayName : null;
+  if (data.expirationDate !== undefined) update.expirationDate = data.expirationDate === null ? null : dayToDate(data.expirationDate);
+  const updated = await prisma.clientDocument.update({ where: { id: document.id }, data: update, select: { id: true, displayName: true, expirationDate: true } });
+  await event(organizationId, user.id, "client.document_details_updated", document.id, {
+    documentType: document.documentType,
+    ...(data.displayName !== undefined ? { displayName: { from: document.displayName, to: updated.displayName } } : {}),
+    ...(data.expirationDate !== undefined ? { expirationDate: { from: document.expirationDate?.toISOString().slice(0, 10) ?? null, to: updated.expirationDate?.toISOString().slice(0, 10) ?? null } } : {})
+  });
+  return updated;
+}
+
+/** For a document that arrived already signed outside the platform. Records an administrator's attestation, not platform-verified signatures. */
+export async function markImportedDocumentSigned(user: Pick<User, "id">, organizationId: string, clientId: string, documentId: string, input: z.input<typeof markSignedInput>) {
+  await permission(user, organizationId, "client.document.generate");
+  const data = markSignedInput.parse(input), signedAt = dayToDate(data.signedDate);
+  if (signedAt.getTime() > Date.now() + 86_400_000) throw new ValidationError("The signed date cannot be in the future");
+  const document = await prisma.clientDocument.findFirst({ where: { id: documentId, organizationId, clientId }, include: { envelope: { select: { id: true } } } });
+  if (!document) throw new ResourceNotFoundError("Document not found");
+  if (document.source !== "IMPORTED") throw new AuthorizationError("Only an imported document can be marked as signed; platform documents are signed through the signature workflow");
+  if (document.envelope) throw new AuthorizationError("This document has a signature workflow. Complete it, or import the signed copy as a new document");
+  if (!["DRAFT", "READY_FOR_SIGNATURE"].includes(document.status)) throw new AuthorizationError("This document is already signed or is not open for this change");
+  if (!document.renderedPdf?.length) throw new AuthorizationError("The original file is missing");
+  const now = new Date(), snapshot = (document.snapshotJson && typeof document.snapshotJson === "object" && !Array.isArray(document.snapshotJson) ? document.snapshotJson : {}) as Record<string, unknown>,
+    review = (snapshot.importReview && typeof snapshot.importReview === "object" ? snapshot.importReview : {}) as Record<string, unknown>,
+    snapshotJson = { ...snapshot, disposition: "HISTORICAL_COMPLETE", importReview: { ...review, signatureStatus: "CONFIRMED_EXTERNAL", platformVerified: false, manuallyMarkedSigned: { byUserId: user.id, at: now.toISOString(), signedDate: data.signedDate, note: data.note ?? null } } } as Prisma.InputJsonValue;
+  const result = await prisma.clientDocument.updateMany({ where: { id: document.id, organizationId, clientId, source: "IMPORTED", status: { in: ["DRAFT", "READY_FOR_SIGNATURE"] }, envelope: { is: null } }, data: { status: "COMPLETED", finalPdf: document.renderedPdf, finalizedAt: document.finalizedAt ?? now, authoritativeCompletedAt: signedAt, snapshotJson } });
+  if (result.count !== 1) throw new AuthorizationError("This document changed while you were working. Reload and try again");
+  await event(organizationId, user.id, "client.document_marked_signed", document.id, { documentType: document.documentType, signedDate: data.signedDate, previousStatus: document.status, platformVerified: false });
+  return { id: document.id, status: "COMPLETED" as const, authoritativeCompletedAt: signedAt };
+}

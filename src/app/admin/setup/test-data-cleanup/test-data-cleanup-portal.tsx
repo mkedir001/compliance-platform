@@ -1,5 +1,6 @@
 "use client";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { useShowTestData } from "@/app/components/test-data-preference";
 import {
   ActionFeedback,
   StatusChip,
@@ -160,6 +161,7 @@ export default function TestDataCleanupPortal({
       await load();
     }, "Cleanup completed. Blocked records were preserved and every completed action was audited.");
   }
+  const [showTestData, setShowTestData] = useShowTestData(organizationId);
   return (
     <main className="admin-shell">
       <header className="section-heading">
@@ -181,6 +183,26 @@ export default function TestDataCleanupPortal({
           compliance evidence is retained.
         </p>
       </div>
+      <section className="test-data-visibility-setting">
+        <div>
+          <h2>Show test data across the platform</h2>
+          <p>
+            When on, explicitly marked test clients and employees appear in the
+            Clients directory and the Employees list, each labeled “Test data”.
+            This applies to this browser only and requires organization
+            administrator access.
+          </p>
+        </div>
+        <label className="switch-row">
+          <input
+            type="checkbox"
+            role="switch"
+            checked={showTestData}
+            onChange={(event) => setShowTestData(event.target.checked)}
+          />
+          <span>{showTestData ? "Showing test data" : "Test data hidden"}</span>
+        </label>
+      </section>
       <ActionFeedback state={action.state} message={action.message} />
       <section>
         <form
