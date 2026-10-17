@@ -18,6 +18,7 @@
 .billing-group-actions{display:flex;gap:8px;margin-left:auto}
 .billing-live{margin:0;min-height:0;color:#6d4a00;font-size:.88rem}
 .billing-live:empty{display:none}
+.billing-placeholder-note{padding:9px 12px;border:1px solid #e3c56c;border-radius:8px;background:#fff8e1}
 
 /* Client rows: same list pattern as the Clients and Employees pages */
 .billing-directory{display:grid;margin:0;border:1px solid var(--portal-border);border-radius:12px;background:#fff;overflow:hidden}

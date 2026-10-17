@@ -7,8 +7,6 @@ import BillingResultDrawer from "./billing-result-drawer";
 import { REASON_LABELS, day, hoursWithAmount, isBilled, money, pretty, resultLabel, stamp, summarizeVisits, type BillingClient, type BillingVisitRow } from "./billing-shared";
 import "./billing.css";
 
-const NOT_ENABLED = "Billing sessions are not enabled yet. This button is ready to be connected.";
-
 function VisitTable({ visits, selected, onToggle, onToggleAll, selectable, onOpenResult }: { visits: BillingVisitRow[]; selected: Set<string>; onToggle: (id: string) => void; onToggleAll: () => void; selectable: boolean; onOpenResult: (id: string) => void }) {
   const open = visits.filter(visit => !isBilled(visit)), allSelected = open.length > 0 && open.every(visit => selected.has(visit.id));
   return (
@@ -39,7 +37,6 @@ function VisitTable({ visits, selected, onToggle, onToggleAll, selectable, onOpe
 }
 
 export default function ClientBillingDetail({ client, visits, canRun, organizationId }: { client: BillingClient; visits: BillingVisitRow[]; canRun: boolean; organizationId: string }) {
-  const [notice, setNotice] = useState("");
   const [filter, setFilter] = useState<"ALL" | "EVV" | "NON_EVV">("ALL");
   const [billedFilter, setBilledFilter] = useState<"BILLED" | "NOT_BILLED" | null>(null);
   const [openResultId, setOpenResultId] = useState<string | null>(null);
@@ -75,10 +72,10 @@ export default function ClientBillingDetail({ client, visits, canRun, organizati
         <section className="billing-bill-options" aria-label="Billing options">
           {/* WIRING: each button starts an individual billing session for this client. "Everything" = all unsubmitted visits;
               "EVV only" = unsubmitted visits where compliant === true. Non-EVV visits billed by choice are flagged in the session. */}
-          <button type="button" disabled={visits.length === 0} onClick={() => setNotice(NOT_ENABLED)}>Bill everything<small>{hoursWithAmount(summary.readyHours, summary.readyCents, summary.unrated)} · {visits.length} {visits.length === 1 ? "visit" : "visits"}</small></button>
-          <button type="button" className="secondary" disabled={summary.evvCount === 0} onClick={() => setNotice(NOT_ENABLED)}>Bill EVV-compliant only<small>{hoursWithAmount(summary.evv.hours, summary.evv.cents, summary.evv.unrated)} · {summary.evvCount} {summary.evvCount === 1 ? "visit" : "visits"}</small></button>
+          <button type="button" disabled title="Billing sessions are not enabled yet">Bill everything<small>{hoursWithAmount(summary.readyHours, summary.readyCents, summary.unrated)} · {visits.length} {visits.length === 1 ? "visit" : "visits"}</small></button>
+          <button type="button" className="secondary" disabled title="Billing sessions are not enabled yet">Bill EVV-compliant only<small>{hoursWithAmount(summary.evv.hours, summary.evv.cents, summary.evv.unrated)} · {summary.evvCount} {summary.evvCount === 1 ? "visit" : "visits"}</small></button>
         </section>
-        <p className="billing-live" role="status" aria-live="polite">{notice}</p>
+        <p className="billing-live billing-placeholder-note">Billing submission is not enabled yet. These controls show the planned workflow and cannot create a claim, invoice, or billing run.</p>
 
         <section aria-label="Billing history">
           <h2>Billing history</h2>
@@ -115,14 +112,14 @@ export default function ClientBillingDetail({ client, visits, canRun, organizati
                 <b>{selected.size} {selected.size === 1 ? "visit" : "visits"} selected</b>
                 <span>{hoursWithAmount(pickedSummary.readyHours, pickedSummary.readyCents, pickedSummary.unrated)}{pickedSummary.nonEvvCount ? ` · ${pickedSummary.nonEvvCount} not EVV compliant` : ""}</span>
                 {/* WIRING: start a billing session for exactly these visit ids (selected state). */}
-                <button type="button" onClick={() => setNotice(NOT_ENABLED)}>Bill selected</button>
+                <button type="button" disabled title="Billing sessions are not enabled yet">Bill selected</button>
                 <button type="button" className="secondary" onClick={() => setSelected(new Set())}>Clear</button>
               </div> : null}
               <VisitTable visits={shown} selected={selected} onToggle={toggle} onToggleAll={toggleAll} selectable onOpenResult={setOpenResultId} />
             </>}
         </section>
 
-        {openResult ? <BillingResultDrawer visit={openResult} clientName={client.name} onClose={() => setOpenResultId(null)} onRetry={() => { /* WIRING: retry billing for exactly this visit. */ setNotice(NOT_ENABLED); setOpenResultId(null); }} /> : null}
+        {openResult ? <BillingResultDrawer visit={openResult} clientName={client.name} onClose={() => setOpenResultId(null)} /> : null}
       </>}
     </main>
   );

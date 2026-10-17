@@ -5,7 +5,7 @@ import { StatusChip } from "@/app/components/portal-ui";
 import { money, stamp, type BillingVisitRow } from "./billing-shared";
 
 /** Side drawer on wide screens, bottom sheet on phones (see .billing-drawer in billing.css). */
-export default function BillingResultDrawer({ visit, clientName, onClose, onRetry }: { visit: BillingVisitRow; clientName: string; onClose: () => void; onRetry: () => void }) {
+export default function BillingResultDrawer({ visit, clientName, onClose }: { visit: BillingVisitRow; clientName: string; onClose: () => void }) {
   const result = visit.result, closeRef = useRef<HTMLButtonElement>(null), [copied, setCopied] = useState("");
   useEffect(() => {
     const opener = document.activeElement as HTMLElement | null;
@@ -45,7 +45,7 @@ export default function BillingResultDrawer({ visit, clientName, onClose, onRetr
           <p className="billing-muted" role="status">{copied}</p>
         </div>
         <footer className="billing-drawer-foot">
-          {error ? <button type="button" onClick={onRetry}>Retry this visit</button> : null}
+          {error ? <button type="button" disabled title="Billing retries are not enabled yet">Retry this visit</button> : null}
           <button type="button" className="secondary" onClick={() => void copy()}>Copy details</button>
           <button type="button" className="secondary billing-drawer-close" onClick={onClose}>Close</button>
         </footer>

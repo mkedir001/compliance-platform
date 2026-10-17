@@ -51,10 +51,14 @@ describe("billing screen integration", () => {
     expect(portal).not.toContain("billing-card");
   });
 
-  it("keeps Bill now and group billing as honest placeholders with wiring notes, and never mutates anything", () => {
+  it("keeps every unsupported billing action visibly present but disabled, with wiring notes and no mutation path", () => {
     expect(portal).toContain("WIRING:");
     expect(detail).toContain("WIRING:");
-    expect(portal).toContain("Billing sessions are not enabled yet");
+    expect(portal + detail).toContain("Billing submission is not enabled yet");
+    expect(portal).toContain('<button type="button" disabled title="Billing sessions are not enabled yet">Group billing</button>');
+    expect(portal).toContain('disabled title="Billing sessions are not enabled yet" aria-label={`Bill now for ${client.name}`}');
+    expect(detail).toContain('<button type="button" disabled title="Billing sessions are not enabled yet">Bill everything');
+    expect(detail).toContain('<button type="button" disabled title="Billing sessions are not enabled yet">Bill selected</button>');
     expect(portal).not.toContain("fetch(");
     expect(detail).not.toContain("fetch(");
     for (const forbidden of ["Preview with sample data", "Confirm billing", "hourlyRateCents"]) expect(portal + detail).not.toContain(forbidden);
@@ -110,5 +114,6 @@ describe("billing screen integration", () => {
     expect(portal).toContain("had errors");
     expect(portal).toContain("billing {errors");
     expect(detail + drawer).toContain("WIRING:");
+    expect(drawer).toContain('<button type="button" disabled title="Billing retries are not enabled yet">Retry this visit</button>');
   });
 });
