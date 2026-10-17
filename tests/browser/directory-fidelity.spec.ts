@@ -125,6 +125,10 @@ test("document actions use readable controls and accessible dropdowns", async ({
   await page.keyboard.press("Escape");
   await request.click();
   await expect(page.getByRole("dialog", { name: "Request document" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await page.locator("details.document-details-panel > summary").click();
+  await expect(page.getByLabel("Document name")).toBeVisible();
+  await expect(page.getByLabel("Expiration date")).toBeVisible();
   await page.screenshot({ path: "/tmp/compliance-client-documents-actions.png", fullPage: true });
 
   for (const viewport of [{ width: 1024, height: 900 }, { width: 768, height: 900 }, { width: 390, height: 844 }]) {

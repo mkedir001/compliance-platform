@@ -3,7 +3,7 @@ import { PDFDocument, StandardFonts } from "pdf-lib";
 
 async function enterVisualQa(page:Page){await page.goto("/dev/visual-qa");await page.getByRole("button",{name:"Enter visual QA as organization owner"}).click();await page.waitForURL(/\/admin\/compliance-operations/)}
 async function syntheticPdf(label:string){const pdf=await PDFDocument.create(),page=pdf.addPage([612,792]),font=await pdf.embedFont(StandardFonts.Helvetica);page.drawText(`Admission Form Legal first name: Synthetic Last name: ${label}`,{x:40,y:730,font,size:12});return Buffer.from(await pdf.save())}
-async function beginImport(page:Page,files:Array<{name:string;mimeType:string;buffer:Buffer}>){await page.getByRole("button",{name:/Add client/}).click();await page.getByRole("radio",{name:/Upload documents/}).click();await page.locator('input[type="file"]').setInputFiles(files);await page.getByRole("button",{name:"Upload and review"}).click();await expect(page.getByRole("heading",{name:"Review imported documents"})).toBeVisible()}
+async function beginImport(page:Page,files:Array<{name:string;mimeType:string;buffer:Buffer}>){await page.getByRole("button",{name:/Add client/}).click();await page.getByRole("radio",{name:/Upload documents/}).click();await page.locator('input[type="file"]').setInputFiles(files);await page.getByRole("button",{name:"Upload documents",exact:true}).click();await expect(page.getByRole("heading",{name:"Review imported documents"})).toBeVisible()}
 
 test("discard clears an eight-document review, blocks stale resume, and allows a fresh import",async({page})=>{
   await enterVisualQa(page);

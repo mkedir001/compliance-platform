@@ -3353,6 +3353,8 @@ model ClientDocument {
   documentType              ClientDocumentType
   status                    ClientDocumentStatus         @default(DRAFT)
   source                    ClientDocumentSource         @default(GENERATED)
+  displayName               String?
+  expirationDate            DateTime?                    @db.Date
   originalFileName          String?
   originalMimeType          String?
   originalFileSize          Int?
