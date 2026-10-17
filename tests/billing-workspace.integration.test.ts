@@ -51,7 +51,7 @@ describe.sequential("organization billing workspace", () => {
 
   it("returns only current-tenant non-test clients and authoritative service context", async () => {
     const clients = await getBillingWorkspaceClients({ id: managerId }, organizationId);
-    expect(clients).toEqual([{ id: expect.any(String), name: "Visible Client", status: "ACTIVE", serviceStart: "2026-01-01", serviceEnd: "2026-12-31", approvedHours: 50, axisCareLinked: true }]);
+    expect(clients).toEqual([{ id: expect.any(String), name: "Visible Client", status: "ACTIVE", serviceStart: "2026-01-01", serviceEnd: "2026-12-31", approvedHours: 50, axisCareLinked: true, axisCareClientId: "ax-1" }]);
     expect(clients.some(client => client.name.includes("Other Tenant"))).toBe(false);
   });
 
@@ -61,7 +61,9 @@ describe.sequential("organization billing workspace", () => {
 
   it("lets billing.view_billed see clients but not visits or run billing", async () => {
     expect(await getBillingAccess({ id: viewBilledId }, organizationId)).toEqual({ canRun: false, canViewBilled: true, canManageIntegration: false });
-    expect((await getBillingWorkspaceClients({ id: viewBilledId }, organizationId))).toHaveLength(1);
+    const viewOnly = await getBillingWorkspaceClients({ id: viewBilledId }, organizationId);
+    expect(viewOnly).toHaveLength(1);
+    expect(viewOnly[0].axisCareClientId).toBeNull();
     await expect(getBillingVisits({ id: viewBilledId }, organizationId)).rejects.toThrow(/billing.run/);
   });
 
@@ -70,6 +72,8 @@ describe.sequential("organization billing workspace", () => {
     const visits = await getBillingVisits({ id: managerId }, organizationId);
     expect(visits.map(v => [v.compliant, v.hours, v.amountCents]).sort()).toEqual([[false, null, null], [true, 2, 5000]]);
     expect(visits.every(v => v.clientId === linkedClientId)).toBe(true);
+    expect(await getBillingVisits({ id: managerId }, organizationId, new Date(), linkedClientId)).toHaveLength(visits.length);
+    expect(await getBillingVisits({ id: managerId }, organizationId, new Date(), "no-such-client")).toEqual([]);
   });
 
   it("rejects cross-tenant direct access", async () => {

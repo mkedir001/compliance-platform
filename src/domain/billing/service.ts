@@ -13,6 +13,7 @@ export type BillingWorkspaceClient = {
   serviceEnd: string | null;
   approvedHours: number | null;
   axisCareLinked: boolean;
+  axisCareClientId: string | null;
 };
 
 export async function getBillingWorkspaceClients(user: Pick<User, "id">, organizationId: string): Promise<BillingWorkspaceClient[]> {
@@ -36,6 +37,8 @@ export async function getBillingWorkspaceClients(user: Pick<User, "id">, organiz
     name: `${row.legalFirstName} ${row.legalLastName}`,
     status: row.status,
     axisCareLinked: Boolean(row.axisCareClientId),
+    // The AxisCare ID is shown on the row only to billing.run; view-only roles never receive it.
+    axisCareClientId: codes.has("billing.run") ? row.axisCareClientId : null,
     serviceStart: row.services.map(service => (service.authorizationStart ?? service.startDate)?.toISOString().slice(0, 10)).filter((value): value is string => Boolean(value)).sort()[0] ?? null,
     serviceEnd: row.services.map(service => service.authorizationEnd?.toISOString().slice(0, 10)).filter((value): value is string => Boolean(value)).sort().at(-1) ?? null,
     approvedHours: row.services.some(service => service.authorizedHours !== null) ? row.services.reduce((sum, service) => sum + Number(service.authorizedHours ?? 0), 0) : null,
@@ -59,23 +62,30 @@ export type BillingVisit = {
   id: string; clientId: string; startAt: string | null; clockInAt: string | null; clockOutAt: string | null;
   serviceCode: string | null; hours: number | null; rateCents: number | null; amountCents: number | null;
   waldahServiceType: string | null;
+  /** Staff who worked the shift: the Waldah employee when mapped, else the AxisCare caregiver name. */
+  caregiverName: string | null;
+  /** WIRING: billing outcome per visit from the billing ledger. Always null until billing runs exist. */
+  result: null;
   compliant: boolean; reasons: EvvReason[];
 };
 
 /** Visits for linked clients, newest first, last 12 months. billing.run only. */
-export async function getBillingVisits(user: Pick<User, "id">, organizationId: string, now = new Date()): Promise<BillingVisit[]> {
+export async function getBillingVisits(user: Pick<User, "id">, organizationId: string, now = new Date(), clientId?: string): Promise<BillingVisit[]> {
   const { membership } = await requireOrganizationAccess(user, organizationId);
   await requirePermission(membership.id, "billing.run");
   const since = new Date(now); since.setUTCMonth(since.getUTCMonth() - 12);
   const [rows, mappings] = await Promise.all([prisma.axisCareVisit.findMany({
-    where: { organizationId, removed: false, clientId: { not: null }, startAt: { gte: since }, client: { testDataMarkedAt: null, archivedAt: null } },
+    where: { organizationId, removed: false, clientId: clientId ?? { not: null }, startAt: { gte: since }, client: { testDataMarkedAt: null, archivedAt: null } },
     orderBy: { startAt: "desc" }, take: 5000,
-    select: { id: true, clientId: true, startAt: true, clockInAt: true, clockOutAt: true, clockInLatitude: true, clockInLongitude: true, clockOutLatitude: true, clockOutLongitude: true, clockInPhone: true, clockOutPhone: true, serviceCode: true, chargeRateCents: true, removed: true }
+    select: { id: true, clientId: true, startAt: true, clockInAt: true, clockOutAt: true, clockInLatitude: true, clockInLongitude: true, clockOutLatitude: true, clockOutLongitude: true, clockInPhone: true, clockOutPhone: true, axisCareCaregiverId: true, employee: { select: { firstName: true, lastName: true } }, serviceCode: true, chargeRateCents: true, removed: true }
   }), prisma.axisCareServiceMapping.findMany({ where: { organizationId }, select: { axisCareServiceCode: true, waldahServiceType: true } })]);
+  const caregiverIds = [...new Set(rows.flatMap(row => row.axisCareCaregiverId ? [row.axisCareCaregiverId] : []))];
+  const caregiverRecords = caregiverIds.length ? await prisma.axisCareRecord.findMany({ where: { organizationId, entity: "caregiver", externalId: { in: caregiverIds } }, select: { externalId: true, payload: true } }) : [];
+  const caregiverNames = new Map(caregiverRecords.map(record => { const p = record.payload && typeof record.payload === "object" && !Array.isArray(record.payload) ? record.payload as Record<string, unknown> : {}; return [record.externalId, [p.firstName, p.lastName].filter(part => typeof part === "string").join(" ") || null] as const; }));
   const serviceTypes = new Map(mappings.map(mapping => [mapping.axisCareServiceCode, mapping.waldahServiceType]));
   return rows.map(row => {
     const evv = classifyEvv(row), rateCents = row.chargeRateCents;
-    return { id: row.id, clientId: row.clientId!, startAt: row.startAt?.toISOString() ?? null, clockInAt: row.clockInAt?.toISOString() ?? null, clockOutAt: row.clockOutAt?.toISOString() ?? null, serviceCode: row.serviceCode, waldahServiceType: row.serviceCode ? serviceTypes.get(row.serviceCode) ?? null : null, hours: evv.hours, rateCents, amountCents: evv.hours !== null && rateCents !== null ? roundMoneyCents(evv.hours, rateCents) : null, compliant: evv.compliant, reasons: evv.reasons };
+    return { id: row.id, clientId: row.clientId!, startAt: row.startAt?.toISOString() ?? null, clockInAt: row.clockInAt?.toISOString() ?? null, clockOutAt: row.clockOutAt?.toISOString() ?? null, serviceCode: row.serviceCode, waldahServiceType: row.serviceCode ? serviceTypes.get(row.serviceCode) ?? null : null, caregiverName: row.employee ? `${row.employee.firstName} ${row.employee.lastName}` : row.axisCareCaregiverId ? caregiverNames.get(row.axisCareCaregiverId) ?? null : null, result: null, hours: evv.hours, rateCents, amountCents: evv.hours !== null && rateCents !== null ? roundMoneyCents(evv.hours, rateCents) : null, compliant: evv.compliant, reasons: evv.reasons };
   });
 }
 
