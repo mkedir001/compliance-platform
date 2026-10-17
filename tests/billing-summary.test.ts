@@ -14,3 +14,13 @@ describe("billing snapshot figures", () => {
   it("is empty and safe for a client with no visits", () => { expect(summarizeVisits([])).toMatchObject({ evvCount: 0, nonEvvCount: 0, readyHours: 0, readyCents: 0 }); });
   it("formats hours with the amount in brackets", () => { expect(hoursWithAmount(14.5, 36250)).toBe("14.50 h ($362.50)"); expect(hoursWithAmount(2, 5000, true)).toBe("2.00 h ($50.00+)"); });
 });
+
+describe("billed visits", () => {
+  it("are left out of ready-to-bill figures", async () => {
+    const { summarizeVisits } = await import("@/app/admin/billing/billing-shared");
+    const base = { compliant: true, hours: 2, rateCents: 2500, amountCents: 5000 };
+    const result = summarizeVisits([{ ...base, result: { status: "BILLED", amountCents: 5000, reference: null, at: "2026-10-17T00:00:00Z", startedBy: null } }, { ...base, result: null }]);
+    expect(result.evvCount).toBe(1);
+    expect(result.readyHours).toBe(2);
+  });
+});

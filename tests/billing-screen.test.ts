@@ -100,4 +100,15 @@ describe("billing screen integration", () => {
     expect(styles).toContain(".billing-integration-admin>summary::before");
     expect(styles).toContain(".billing-integration-admin[open]>summary::before");
   });
+
+  it("shows per-visit billing results with a drawer, result filters, and list badges", () => {
+    const drawer = source("src/app/admin/billing/billing-result-drawer.tsx");
+    for (const text of ["Billing result", "View error", "View receipt", "Billed", "Not billed", "EVV compliant", "billedFilter", "BillingResultDrawer"]) expect(detail).toContain(text);
+    for (const text of ['role="dialog"', 'aria-modal="true"', "Escape", "Retry this visit", "Copy details", "Amount that went through"]) expect(drawer).toContain(text);
+    expect(styles).toContain("@media (max-width:720px)");
+    expect(styles).toContain(".billing-drawer");
+    expect(portal).toContain("had errors");
+    expect(portal).toContain("billing {errors");
+    expect(detail + drawer).toContain("WIRING:");
+  });
 });

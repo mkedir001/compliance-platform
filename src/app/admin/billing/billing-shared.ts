@@ -9,11 +9,18 @@ export type BillingClient = {
   /** Shown under the client name. Only sent to billing.run (null for view-only roles). */
   axisCareClientId: string | null;
 };
+/** Outcome of a billing attempt for one visit. Nothing produces these yet: the billing ledger will.
+ *  Error code/message/guidance and success details are placeholders until their content is designed. */
+export type BillingResult =
+  | { status: "BILLED"; amountCents: number; reference: string | null; at: string; startedBy: string | null }
+  | { status: "ERROR"; code: string; message: string; guidance: string | null; attemptedCents: number | null; reference: string | null; at: string; startedBy: string | null };
 export type BillingVisitRow = {
   id: string; clientId: string; startAt: string | null; clockInAt: string | null; clockOutAt: string | null; serviceCode: string | null;
   hours: number | null; rateCents: number | null; amountCents: number | null; compliant: boolean; reasons: string[];
   waldahServiceType: string | null;
   caregiverName: string | null;
+  /** null = not billed yet (also the case for failed attempts that produced no result record). */
+  result: BillingResult | null;
 };
 export type PendingMatch = { id: string; axisCareClientId: string; axisCareName: string; axisCareDateOfBirth: string | null; clientId: string; clientName: string; clientDateOfBirth: string | null; reason: string; score: number };
 export type AxisCareConnectionView = { configured: boolean; baseUrl: string | null; status: string; lastTestedAt: string | null; lastConnectedAt: string | null; lastErrorCode: string | null; historyMonths: number };
@@ -38,12 +45,15 @@ export const day = (value: string | null) => value
   ? new Intl.DateTimeFormat(undefined, { year: "numeric", month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(`${value}T00:00:00Z`))
   : "Not recorded";
 
-/** Snapshot figures for a client row or detail header. All visits passed in are treated as "not yet submitted":
- *  WIRING: when the billing ledger exists, drop visits already attached to a submitted billing run before calling this. */
-export function summarizeVisits(visits: Pick<BillingVisitRow, "compliant" | "hours" | "amountCents" | "rateCents">[]) {
+/** Snapshot figures for a client row or detail header. Visits already billed (result.status === "BILLED") are left out, so "ready to bill" means not yet submitted. */
+export function summarizeVisits(allVisits: (Pick<BillingVisitRow, "compliant" | "hours" | "amountCents" | "rateCents"> & { result?: BillingResult | null })[]) {
+  const visits = allVisits.filter(visit => visit.result?.status !== "BILLED");
   const evv = visits.filter(visit => visit.compliant), nonEvv = visits.filter(visit => !visit.compliant);
   const sum = (rows: typeof visits) => ({ hours: rows.reduce((total, visit) => total + (visit.hours ?? 0), 0), cents: rows.reduce((total, visit) => total + (visit.amountCents ?? 0), 0), unrated: rows.some(visit => visit.hours !== null && visit.rateCents === null) });
   const all = sum(visits);
   return { evvCount: evv.length, nonEvvCount: nonEvv.length, readyHours: all.hours, readyCents: all.cents, unrated: all.unrated, evv: sum(evv), nonEvv: sum(nonEvv) };
 }
 export const hoursWithAmount = (hoursValue: number, cents: number, unrated = false) => `${hoursValue.toFixed(2)} h (${money(cents)}${unrated ? "+" : ""})`;
+
+export const isBilled = (visit: Pick<BillingVisitRow, "result">) => visit.result?.status === "BILLED";
+export const resultLabel = (result: BillingResult | null, formatMoney: (cents: number | null) => string) => !result ? "Not billed" : result.status === "BILLED" ? `Billed · ${formatMoney(result.amountCents)}` : `Error · ${result.code}`;

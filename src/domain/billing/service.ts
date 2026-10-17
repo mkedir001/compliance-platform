@@ -64,6 +64,8 @@ export type BillingVisit = {
   waldahServiceType: string | null;
   /** Staff who worked the shift: the Waldah employee when mapped, else the AxisCare caregiver name. */
   caregiverName: string | null;
+  /** WIRING: billing outcome per visit from the billing ledger. Always null until billing runs exist. */
+  result: null;
   compliant: boolean; reasons: EvvReason[];
 };
 
@@ -83,7 +85,7 @@ export async function getBillingVisits(user: Pick<User, "id">, organizationId: s
   const serviceTypes = new Map(mappings.map(mapping => [mapping.axisCareServiceCode, mapping.waldahServiceType]));
   return rows.map(row => {
     const evv = classifyEvv(row), rateCents = row.chargeRateCents;
-    return { id: row.id, clientId: row.clientId!, startAt: row.startAt?.toISOString() ?? null, clockInAt: row.clockInAt?.toISOString() ?? null, clockOutAt: row.clockOutAt?.toISOString() ?? null, serviceCode: row.serviceCode, waldahServiceType: row.serviceCode ? serviceTypes.get(row.serviceCode) ?? null : null, caregiverName: row.employee ? `${row.employee.firstName} ${row.employee.lastName}` : row.axisCareCaregiverId ? caregiverNames.get(row.axisCareCaregiverId) ?? null : null, hours: evv.hours, rateCents, amountCents: evv.hours !== null && rateCents !== null ? roundMoneyCents(evv.hours, rateCents) : null, compliant: evv.compliant, reasons: evv.reasons };
+    return { id: row.id, clientId: row.clientId!, startAt: row.startAt?.toISOString() ?? null, clockInAt: row.clockInAt?.toISOString() ?? null, clockOutAt: row.clockOutAt?.toISOString() ?? null, serviceCode: row.serviceCode, waldahServiceType: row.serviceCode ? serviceTypes.get(row.serviceCode) ?? null : null, caregiverName: row.employee ? `${row.employee.firstName} ${row.employee.lastName}` : row.axisCareCaregiverId ? caregiverNames.get(row.axisCareCaregiverId) ?? null : null, result: null, hours: evv.hours, rateCents, amountCents: evv.hours !== null && rateCents !== null ? roundMoneyCents(evv.hours, rateCents) : null, compliant: evv.compliant, reasons: evv.reasons };
   });
 }
 

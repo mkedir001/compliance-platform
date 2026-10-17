@@ -6,7 +6,7 @@ import { useMemo, useState } from "react";
 import { StatusChip } from "@/app/components/portal-ui";
 import IntegrationPanel from "./integration-panel";
 import MatchReview from "./match-review";
-import { hoursWithAmount, pretty, summarizeVisits, type AxisCareConnectionView, type BillingClient, type BillingVisitRow, type PendingMatch } from "./billing-shared";
+import { hoursWithAmount, money, pretty, summarizeVisits, type AxisCareConnectionView, type BillingClient, type BillingVisitRow, type PendingMatch } from "./billing-shared";
 import "./billing.css";
 
 export type { AxisCareConnectionView, BillingClient, BillingVisitRow, PendingMatch } from "./billing-shared";
@@ -22,7 +22,14 @@ export default function BillingPortal({ clients, canRun = false, canManageIntegr
   const query = `?organizationId=${encodeURIComponent(organizationId)}`;
   const rows = useMemo(() => clients
     .filter(client => client.name.toLowerCase().includes(search.trim().toLowerCase()))
-    .map(client => ({ client, summary: summarizeVisits(visits.filter(visit => visit.clientId === client.id)) })), [clients, visits, search]);
+    .map(client => {
+      const own = visits.filter(visit => visit.clientId === client.id);
+      const errors = own.filter(visit => visit.result?.status === "ERROR").length;
+      const billedCents = own.reduce((total, visit) => total + (visit.result?.status === "BILLED" ? visit.result.amountCents : 0), 0);
+      return { client, summary: summarizeVisits(own), errors, billedCents };
+    }), [clients, visits, search]);
+  // WIRING: results come from the billing ledger; until then no visit has one and the strip and badges stay hidden.
+  const errorClients = rows.filter(row => row.errors > 0), billedClients = rows.filter(row => row.errors === 0 && row.billedCents > 0);
   const billable = rows.filter(row => canRun && row.client.axisCareLinked);
   const selectedRows = billable.filter(row => picked.has(row.client.id));
   const selectedTotals = summarizeVisits(selectedRows.flatMap(row => visits.filter(visit => visit.clientId === row.client.id)));
@@ -53,6 +60,14 @@ export default function BillingPortal({ clients, canRun = false, canManageIntegr
         </> : <span className="billing-muted">Visit detail is available to billing roles.</span>}
       </section>
 
+      {errorClients.length || billedClients.length ? (
+        <section className={`billing-outcomes${errorClients.length ? " has-errors" : ""}`} aria-label="Latest billing results">
+          {errorClients.length ? <b className="billing-bad">{errorClients.length} {errorClients.length === 1 ? "client" : "clients"} had errors</b> : null}
+          {errorClients.map(row => <span key={row.client.id}>{row.client.name}: {row.errors} {row.errors === 1 ? "visit" : "visits"} not billed.</span>)}
+          {billedClients.map(row => <span key={row.client.id} className="billing-muted">{row.client.name} billed {money(row.billedCents)}.</span>)}
+        </section>
+      ) : null}
+
       <div className="billing-toolbar" aria-label="Billing client filters">
         <label className="billing-search"><span aria-hidden="true">⌕</span><input type="search" aria-label="Search clients" value={search} onChange={event => setSearch(event.target.value)} placeholder="Search by name" /></label>
       </div>
@@ -78,7 +93,7 @@ export default function BillingPortal({ clients, canRun = false, canManageIntegr
               <span>{canRun ? <input type="checkbox" aria-label="Select all billable clients" checked={allPicked} disabled={billable.length === 0} onChange={toggleAll} /> : null}</span>
               <span>Client</span><span>Not EVV compliant</span><span>EVV compliant</span><span>Ready to bill</span><span><span className="sr-only">Actions</span></span>
             </div>
-            {rows.map(({ client, summary }) => {
+            {rows.map(({ client, summary, errors, billedCents }) => {
               const linked = canRun && client.axisCareLinked;
               const detail = `/admin/billing/${client.id}${query}`;
               return (
@@ -86,7 +101,7 @@ export default function BillingPortal({ clients, canRun = false, canManageIntegr
                   <span>{canRun ? <input type="checkbox" aria-label={`Select ${client.name} for group billing`} checked={picked.has(client.id)} disabled={!linked} onChange={() => toggle(client.id)} /> : null}</span>
                   <Link href={detail} className="billing-name" aria-label={`Open billing details for ${client.name}`}>
                     <span className="directory-avatar" aria-hidden="true">{initials(client.name)}</span>
-                    <span><strong>{client.name}</strong><small>{client.axisCareClientId ? `AxisCare ID ${client.axisCareClientId}` : canRun ? "Not matched to AxisCare" : pretty(client.status)}</small></span>
+                    <span><strong>{client.name}</strong>{errors ? <StatusChip tone="danger">{errors} billing {errors === 1 ? "error" : "errors"}</StatusChip> : billedCents ? <StatusChip tone="good">Billed · {money(billedCents)}</StatusChip> : null}<small>{client.axisCareClientId ? `AxisCare ID ${client.axisCareClientId}` : canRun ? "Not matched to AxisCare" : pretty(client.status)}</small></span>
                   </Link>
                   {canRun ? (linked ? <>
                     <span data-label="Not EVV compliant" className={summary.nonEvvCount ? "billing-bad" : "billing-muted"}><b>{summary.nonEvvCount}</b> {summary.nonEvvCount === 1 ? "visit" : "visits"}</span>
