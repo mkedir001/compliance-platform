@@ -4,6 +4,7 @@ import { requireOrganizationAccess, requirePermission } from "@/domain/permissio
 import { prisma } from "@/lib/prisma";
 import { getAxisCareConnectionStatus, loadAxisCareConfig, recordAxisCareConnectionTest } from "./config";
 import { runFullSync, testConnection } from "./sync";
+import { operationalEmployeeWhere } from "@/domain/test-data/visibility";
 
 async function authorize(user: Pick<User, "id">, organizationId: string) {
   const { membership } = await requireOrganizationAccess(user, organizationId);
@@ -20,7 +21,7 @@ export async function getAxisCareAdministration(user: Pick<User, "id">, organiza
   const [connection, caregivers, employees, visits, serviceMappings, syncStates] = await Promise.all([
     getAxisCareConnectionStatus(organizationId),
     prisma.axisCareRecord.findMany({ where: { organizationId, entity: "caregiver", removedAt: null }, select: { externalId: true, payload: true }, orderBy: { externalId: "asc" }, take: 500 }),
-    prisma.employee.findMany({ where: { organizationId, employmentStatus: { in: ["PENDING", "ACTIVE", "LEAVE"] } }, select: { id: true, firstName: true, lastName: true, employeeNumber: true, axisCareCaregiverId: true }, orderBy: [{ lastName: "asc" }, { firstName: "asc" }] }),
+    prisma.employee.findMany({ where: { organizationId, ...operationalEmployeeWhere, employmentStatus: { in: ["PENDING", "ACTIVE", "LEAVE"] } }, select: { id: true, firstName: true, lastName: true, employeeNumber: true, axisCareCaregiverId: true }, orderBy: [{ lastName: "asc" }, { firstName: "asc" }] }),
     prisma.axisCareVisit.findMany({ where: { organizationId, serviceCode: { not: null } }, distinct: ["serviceCode"], select: { serviceCode: true }, orderBy: { serviceCode: "asc" }, take: 500 }),
     prisma.axisCareServiceMapping.findMany({ where: { organizationId }, select: { axisCareServiceCode: true, waldahServiceType: true }, orderBy: { axisCareServiceCode: "asc" } }),
     prisma.axisCareSyncState.findMany({ where: { organizationId }, select: { entity: true, lastStartedAt: true, lastSuccessAt: true, lastError: true, lastCount: true }, orderBy: { entity: "asc" } }),
@@ -57,7 +58,7 @@ export async function mapAxisCareCaregiver(user: Pick<User, "id">, organizationI
   await authorize(user, organizationId);
   const [record, employee, alreadyMapped] = await Promise.all([
     prisma.axisCareRecord.findUnique({ where: { organizationId_entity_externalId: { organizationId, entity: "caregiver", externalId } }, select: { id: true } }),
-    prisma.employee.findFirst({ where: { id: employeeId, organizationId }, select: { id: true, axisCareCaregiverId: true } }),
+    prisma.employee.findFirst({ where: { id: employeeId, organizationId, ...operationalEmployeeWhere }, select: { id: true, axisCareCaregiverId: true } }),
     prisma.employee.findFirst({ where: { organizationId, axisCareCaregiverId: externalId }, select: { id: true } }),
   ]);
   if (!record || !employee) throw new ResourceNotFoundError("AxisCare caregiver or employee not found");

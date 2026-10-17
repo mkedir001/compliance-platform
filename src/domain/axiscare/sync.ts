@@ -1,5 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { ConflictError } from "@/domain/auth/errors";
+import { operationalClientWhere, operationalEmployeeWhere } from "@/domain/test-data/visibility";
 import { prisma } from "@/lib/prisma";
 import { AxisCareClient } from "./client";
 import type { AxisCareConfig } from "./config";
@@ -60,8 +61,8 @@ export async function upsertVisit(organizationId: string, raw: Json, detail?: Js
   if (!mapped.externalId) return false;
   const now = new Date();
   const [link, employee] = await Promise.all([
-    mapped.axisCareClientId ? prisma.client.findFirst({ where: { organizationId, axisCareClientId: mapped.axisCareClientId }, select: { id: true } }) : null,
-    mapped.axisCareCaregiverId ? prisma.employee.findFirst({ where: { organizationId, axisCareCaregiverId: mapped.axisCareCaregiverId }, select: { id: true } }) : null,
+    mapped.axisCareClientId ? prisma.client.findFirst({ where: { organizationId, ...operationalClientWhere, axisCareClientId: mapped.axisCareClientId }, select: { id: true } }) : null,
+    mapped.axisCareCaregiverId ? prisma.employee.findFirst({ where: { organizationId, ...operationalEmployeeWhere, axisCareCaregiverId: mapped.axisCareCaregiverId }, select: { id: true } }) : null,
   ]);
   const { externalId, clockInLatitude, clockInLongitude, clockOutLatitude, clockOutLongitude, ...rest } = mapped;
   const safeClock = (value: unknown) => { const clock = obj(value), coordinates = obj(clock?.coordinates); return clock ? { ...pick(clock, ["time", "method", "telephonyPhone"]), coordinates: coordinates ? pick(coordinates, ["latitude", "longitude"]) : null } : null; };
@@ -117,7 +118,7 @@ export async function syncVisits(client: AxisCareClient, config: AxisCareConfig,
 export async function reconcileClientLinks(organizationId: string) {
   const [records, clients] = await Promise.all([
     prisma.axisCareRecord.findMany({ where: { organizationId, entity: "client", removedAt: null }, select: { payload: true } }),
-    prisma.client.findMany({ where: { organizationId, archivedAt: null }, select: { id: true, legalFirstName: true, legalLastName: true, preferredName: true, dateOfBirth: true, maPmiNumber: true, axisCareClientId: true } })
+    prisma.client.findMany({ where: { organizationId, ...operationalClientWhere, archivedAt: null }, select: { id: true, legalFirstName: true, legalLastName: true, preferredName: true, dateOfBirth: true, maPmiNumber: true, axisCareClientId: true } })
   ]);
   const decided = await prisma.axisCareClientMatch.findMany({ where: { organizationId, status: { in: ["CONFIRMED", "REJECTED"] } }, select: { axisCareClientId: true, clientId: true, status: true } });
   const rejected = new Set(decided.filter(d => d.status === "REJECTED").map(d => `${d.axisCareClientId}:${d.clientId}`));
@@ -142,13 +143,13 @@ export async function confirmClientMatch(organizationId: string, matchId: string
     const match = await tx.axisCareClientMatch.findFirst({ where: { id: matchId, organizationId, status: "SUGGESTED" } });
     if (!match?.clientId) return null;
     const [client, externalClaim] = await Promise.all([
-      tx.client.findFirst({ where: { id: match.clientId, organizationId }, select: { axisCareClientId: true } }),
+      tx.client.findFirst({ where: { id: match.clientId, organizationId, ...operationalClientWhere }, select: { axisCareClientId: true } }),
       tx.client.findFirst({ where: { organizationId, axisCareClientId: match.axisCareClientId, id: { not: match.clientId } }, select: { id: true } }),
     ]);
     if (!client) return null;
     if (client.axisCareClientId && client.axisCareClientId !== match.axisCareClientId) throw new ConflictError("Waldah client is already matched to another AxisCare client", "WALDAH_CLIENT_ALREADY_MATCHED");
     if (externalClaim) throw new ConflictError("AxisCare client is already matched to another Waldah client", "AXISCARE_CLIENT_ALREADY_MATCHED");
-    const claimed = await tx.client.updateMany({ where: { id: match.clientId, organizationId, OR: [{ axisCareClientId: null }, { axisCareClientId: match.axisCareClientId }] }, data: { axisCareClientId: match.axisCareClientId } });
+    const claimed = await tx.client.updateMany({ where: { id: match.clientId, organizationId, ...operationalClientWhere, OR: [{ axisCareClientId: null }, { axisCareClientId: match.axisCareClientId }] }, data: { axisCareClientId: match.axisCareClientId } });
     if (claimed.count !== 1) return null;
     await tx.axisCareClientMatch.update({ where: { id: match.id }, data: { status: "CONFIRMED", decidedByUserId, decidedAt: new Date() } });
     await tx.axisCareClientMatch.updateMany({ where: { organizationId, status: "SUGGESTED", id: { not: match.id }, OR: [{ axisCareClientId: match.axisCareClientId }, { clientId: match.clientId }] }, data: { status: "REJECTED", decidedByUserId, decidedAt: new Date() } });

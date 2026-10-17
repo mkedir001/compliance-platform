@@ -4,6 +4,7 @@ import { deadlineSchemaV1, legalGraceSchemaV1, recurrenceSchemaV1, triggerSchema
 import { evaluateApplicability, resolveTrigger, type WorkforceContext } from "../rules/interpreter";
 import { calculateDeadline, calculateLegalDelay, calculateStatus } from "../deadlines/calculator";
 import { assignTrainingForCompliance } from "@/domain/training/assignments/service";
+import { operationalEmployeeWhere } from "@/domain/test-data/visibility";
 
 const activeStatuses = ["REQUIRED","ASSIGNED","IN_PROGRESS","WITHIN_LEGAL_DELAY","PAST_DUE","BLOCKED"] as const;
 export async function evaluateEmployeeCompliance(organizationId:string,employeeId:string,trigger:ComplianceEvaluationTrigger="MANUAL",evaluationDate=new Date()) {
@@ -29,5 +30,5 @@ export async function evaluateEmployeeCompliance(organizationId:string,employeeI
     await prisma.complianceEvaluationRun.update({where:{id:run.id},data:{status:"COMPLETED",completedAt:new Date(),summaryJson:{generated:instances.length,unresolved} as Prisma.InputJsonValue}});return {run:{...run,status:"COMPLETED" as const},instances,unresolved};
   }catch(error){await prisma.complianceEvaluationRun.update({where:{id:run.id},data:{status:"FAILED",completedAt:new Date(),summaryJson:{error:error instanceof Error?error.message:"Unknown error"}}});throw error;}
 }
-export async function reconcileOrganizationCompliance(organizationId:string,evaluationDate=new Date()){const employees=await prisma.employee.findMany({where:{organizationId,employmentStatus:{not:"ARCHIVED"}},select:{id:true}});return Promise.all(employees.map(e=>evaluateEmployeeCompliance(organizationId,e.id,"RECONCILIATION",evaluationDate)));}
+export async function reconcileOrganizationCompliance(organizationId:string,evaluationDate=new Date()){const employees=await prisma.employee.findMany({where:{organizationId,...operationalEmployeeWhere,employmentStatus:{not:"ARCHIVED"}},select:{id:true}});return Promise.all(employees.map(e=>evaluateEmployeeCompliance(organizationId,e.id,"RECONCILIATION",evaluationDate)));}
 export async function reevaluateIfConfigured(organizationId:string,employeeId:string,trigger:ComplianceEvaluationTrigger){return evaluateEmployeeCompliance(organizationId,employeeId,trigger).catch(error=>{console.error("Compliance reevaluation failed",error);return null;});}

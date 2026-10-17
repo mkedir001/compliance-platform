@@ -4,10 +4,11 @@ import { requireOrganizationAccess, requirePermission, requireEmployeeAccess } f
 import { AuthorizationError, ResourceNotFoundError } from "@/domain/auth/errors";
 import { employeeCreateSchema, employeeDutyAssignmentSchema, employeeUpdateSchema } from "./schemas";
 import { reevaluateIfConfigured } from "@/domain/compliance/evaluation/service";
+import { operationalEmployeeWhere } from "@/domain/test-data/visibility";
 
 export async function listEmployees(user: Pick<User, "id">, organizationId: string) {
   const { membership } = await requireOrganizationAccess(user, organizationId); await requirePermission(membership.id, "employee.read");
-  return prisma.employee.findMany({ where: { organizationId }, orderBy: [{ lastName: "asc" }, { firstName: "asc" }], include: { duties: { include: { dutyDefinition: true } } } });
+  return prisma.employee.findMany({ where: { organizationId, ...operationalEmployeeWhere }, orderBy: [{ lastName: "asc" }, { firstName: "asc" }], include: { duties: { include: { dutyDefinition: true } } } });
 }
 export async function createEmployee(user: Pick<User, "id">, organizationId: string, input: unknown) {
   const { membership } = await requireOrganizationAccess(user, organizationId); await requirePermission(membership.id, "employee.manage");

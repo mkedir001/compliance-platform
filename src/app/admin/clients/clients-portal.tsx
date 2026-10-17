@@ -45,6 +45,7 @@ type ClientRow = {
   legalLastName: string;
   preferredName: string | null;
   updatedAt: string;
+  isTestData: boolean;
   intakes: { status: string; currentStep: string; progressJson:unknown }[];
   services: {id:string;serviceType:string;startDate:string|null;authorizedHours:number|null;authorizationStart:string|null;authorizationEnd:string|null;scheduleJson:Record<string,unknown>|null;status:"PROPOSED"|"ACTIVE"|"PAUSED"|"ENDED"|"CANCELLED"}[];
   _count: { documents: number; documentRequests:number; importSessions:number };
@@ -156,6 +157,7 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
     [renewalStatus, setRenewalStatus] = useState(""),
     [readiness, setReadiness] = useState("ALL"),
     [operational, setOperational] = useState(""),
+    [includeTestData,setIncludeTestData]=useState(false),
     [permissions,setPermissions]=useState<string[]>([]),
     [pendingImports,setPendingImports]=useState<ImportSummary[]>([]),
     [addClientOpen,setAddClientOpen]=useState(false),
@@ -176,7 +178,7 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
   const filterReadyRef = useRef(false);
   const headers: Record<string, string> = productionIdentity ? { "content-type": "application/json" } : { "content-type": "application/json", "x-dev-user-id": userId };
   async function request(path: string, init?: RequestInit) {
-    const response = await fetch(`/api/organizations/${organizationId}/clients${path}`, { ...init, headers: { ...headers, ...init?.headers } }),
+    const effectivePath=path.startsWith("?")?`${path}&includeTestData=${includeTestData}`:path,response = await fetch(`/api/organizations/${organizationId}/clients${effectivePath}`, { ...init, headers: { ...headers, ...init?.headers } }),
       body = response.headers.get("content-type")?.includes("json") ? await response.json() : await response.blob();
     if (!response.ok) throw new Error((body as { error?: string }).error ?? "Client operation failed");
     return body;
@@ -313,7 +315,7 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
       void (async()=>{await load();if(initialClientId){setTab(initialDocumentId||initialRequestId||["Documents","Signatures","Readiness"].includes(initialView)?"Documents":initialView==="Billing"?"Billing":initialView==="Intake"?"Intake":"Overview");await open(initialClientId)}})();
     }
   }, [productionIdentity, organizationId, initialClientId, initialDocumentId, initialRequestId, initialView]);
-  useEffect(()=>{if(!filterReadyRef.current){filterReadyRef.current=true;return}if(!selected&&organizationId){const timeout=window.setTimeout(()=>void load(),200);return()=>window.clearTimeout(timeout)}},[search,status,renewalStatus,readiness,operational]);
+  useEffect(()=>{if(!filterReadyRef.current){filterReadyRef.current=true;return}if(!selected&&organizationId){const timeout=window.setTimeout(()=>void load(),200);return()=>window.clearTimeout(timeout)}},[search,status,renewalStatus,readiness,operational,includeTestData]);
   useEffect(() => {
     if (!selected) return;
     const revalidate = () => { if (document.visibilityState === "visible") void refresh(""); };
@@ -390,6 +392,7 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
                 <option value="OUTSTANDING_REQUEST">Outstanding document request</option>
                 <option value="IMPORTED_HISTORY">Imported history</option>
               </select></label>
+            {permissions.includes("organization.manage")?<label><span>Test data</span><input type="checkbox" checked={includeTestData} onChange={event=>setIncludeTestData(event.target.checked)}/> Show test data</label>:null}
         </div>
         {directoryView === "results" ? (
           <div className="workforce-table client-directory" role="table" aria-label="Client directory">
@@ -398,7 +401,7 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
               <button key={client.id} className={`workforce-row client-directory-row renewal-${client.documentationReadiness.overallState.toLowerCase()}`} onClick={() => open(client.id)}>
                 <span>
                   <span className="directory-avatar" aria-hidden="true">{client.legalFirstName[0]}{client.legalLastName[0]}</span><span><strong>
-                    {client.legalLastName}, {client.preferredName ?? client.legalFirstName}
+                    {client.legalLastName}, {client.preferredName ?? client.legalFirstName} {client.isTestData?<StatusChip tone="warning">Test data</StatusChip>:null}
                   </strong><small>{client.intakes[0]?.status==="COMPLETED"?"Intake complete":"Intake incomplete"}</small></span>
                 </span>
                 <span><StatusChip tone={client.status==="ACTIVE"?"good":client.status==="DISCHARGED"||client.status==="ARCHIVED"?"neutral":"warning"}>{pretty(client.status)}</StatusChip></span>

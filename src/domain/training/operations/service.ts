@@ -5,13 +5,14 @@ import { getAssignment, deriveAssignmentDisplayStatus } from "@/domain/training/
 import { saveAssessmentDraftResponse, startAttempt, submitAttempt } from "@/domain/training/assessments/service";
 import { completeContent } from "@/domain/training/progress/service";
 import { prisma } from "@/lib/prisma";
+import { operationalEmployeeWhere } from "@/domain/test-data/visibility";
 
 export async function listTrainingOperations(user: Pick<User, "id">, organizationId: string, filters: { employee?: string; employeeId?: string; course?: string; status?: string; attention?: boolean } = {}) {
   const { membership } = await requireOrganizationAccess(user, organizationId);
   await requirePermission(membership.id, "compliance.operations.read");
   const owner = membership.roles.some(role => isOrganizationOwnerRole(role.roleDefinition, organizationId));
   const rows = await prisma.trainingAssignment.findMany({
-    where: { organizationId, employeeId: filters.employeeId, employee: filters.employee ? { OR: [{ firstName: { contains: filters.employee, mode: "insensitive" } }, { lastName: { contains: filters.employee, mode: "insensitive" } }, { employeeNumber: { contains: filters.employee, mode: "insensitive" } }] } : undefined, courseVersion: filters.course ? { course: { title: { contains: filters.course, mode: "insensitive" } } } : undefined, status: filters.status && filters.status !== "ALL" ? filters.status as TrainingAssignmentStatus : undefined },
+    where: { organizationId, employeeId: filters.employeeId, employee: { ...operationalEmployeeWhere, ...(filters.employee ? { OR: [{ firstName: { contains: filters.employee, mode: "insensitive" } }, { lastName: { contains: filters.employee, mode: "insensitive" } }, { employeeNumber: { contains: filters.employee, mode: "insensitive" } }] } : {}) }, courseVersion: filters.course ? { course: { title: { contains: filters.course, mode: "insensitive" } } } : undefined, status: filters.status && filters.status !== "ALL" ? filters.status as TrainingAssignmentStatus : undefined },
     include: { employee: { select: { id: true, firstName: true, lastName: true, preferredName: true, employeeNumber: true } }, courseVersion: { include: { course: true, modules: { include: { contentItems: { select: { id: true, required: true, contentType: true } }, assessments: { where: { status: "PUBLISHED" }, select: { id: true } } } } } }, contentProgress: true, acknowledgments: true, attempts: { orderBy: { attemptNumber: "desc" }, take: 1 }, completion: true },
     orderBy: [{ assignedAt: "desc" }, { id: "desc" }], take: 250,
   });
@@ -27,7 +28,7 @@ export async function listTrainingOperations(user: Pick<User, "id">, organizatio
 
 async function ownerAssignment(user: Pick<User, "id">, organizationId: string, assignmentId: string) {
   await requireOrganizationOwner(user, organizationId);
-  const assignment = await prisma.trainingAssignment.findFirst({ where: { id: assignmentId, organizationId } });
+  const assignment = await prisma.trainingAssignment.findFirst({ where: { id: assignmentId, organizationId, employee: operationalEmployeeWhere } });
   if (!assignment) throw new ResourceNotFoundError("Training assignment not found");
   return assignment;
 }
@@ -40,7 +41,7 @@ export async function getOwnerTrainingAssignment(user: Pick<User, "id">, organiz
 export async function getTrainingAssignmentDetail(user: Pick<User, "id">, organizationId: string, assignmentId: string) {
   const { membership } = await requireOrganizationAccess(user, organizationId);
   await requirePermission(membership.id, "compliance.operations.read");
-  const assignment = await prisma.trainingAssignment.findFirst({ where: { id: assignmentId, organizationId } });
+  const assignment = await prisma.trainingAssignment.findFirst({ where: { id: assignmentId, organizationId, employee: operationalEmployeeWhere } });
   if (!assignment) throw new ResourceNotFoundError("Training assignment not found");
   return getAssignment(organizationId, assignment.employeeId, assignment.id);
 }

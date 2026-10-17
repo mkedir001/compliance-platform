@@ -5,6 +5,7 @@ import { evaluateServiceEligibility } from "@/domain/compliance/operations/servi
 import { evaluateMedicationDutyEligibility } from "@/domain/medication/service";
 import { requireEmployeeAccess, requireOrganizationAccess, requirePermission } from "@/domain/permissions/authorization";
 import { prisma } from "@/lib/prisma";
+import { operationalEmployeeWhere } from "@/domain/test-data/visibility";
 
 export const ASSIGNMENT_ELIGIBILITY_ENGINE_VERSION = "phase10-v1";
 const hardMedicationReasons = new Set(["MEDICATION_TRAINING_REQUIRED", "MEDICATION_TRAINING_INCOMPLETE", "KNOWLEDGE_ASSESSMENT_REQUIRED", "CLINICAL_CURRICULUM_APPROVAL_REQUIRED", "OBSERVED_SKILL_ASSESSMENT_REQUIRED", "OBSERVED_SKILL_ASSESSMENT_FAILED", "CLINICAL_SIGNOFF_REQUIRED", "QUALIFICATION_EXPIRED", "QUALIFICATION_REVOKED", "PERSON_SPECIFIC_INSTRUCTION_REQUIRED", "AUTHORIZATION_REQUIRED", "DELEGATION_REQUIRED", "MEDICATION_DUTY_ASSIGNMENT_REQUIRED"]);
@@ -139,7 +140,7 @@ export async function getServiceAssignment(user: Pick<User, "id">, organizationI
 
 export async function listServiceAssignments(user: Pick<User, "id">, organizationId: string, filters: { status?: "ACTIVE" | "BLOCKED" | "INACTIVE" | "CANCELLED"; medicationBlocked?: boolean; personSpecificBlocked?: boolean } = {}) {
   await authorize(user, organizationId, "service_assignment.read");
-  const rows = await prisma.serviceAssignment.findMany({ where: { organizationId, status: filters.status }, include: { employee: true, duties: { include: { dutyDefinition: true } }, eligibilityEvaluations: { orderBy: { evaluatedAt: "desc" }, take: 1 } }, orderBy: { startsAt: "desc" } });
+  const rows = await prisma.serviceAssignment.findMany({ where: { organizationId, employee: operationalEmployeeWhere, status: filters.status }, include: { employee: true, duties: { include: { dutyDefinition: true } }, eligibilityEvaluations: { orderBy: { evaluatedAt: "desc" }, take: 1 } }, orderBy: { startsAt: "desc" } });
   return rows.filter(row => { const snapshot = row.eligibilityEvaluations[0]?.resultSnapshot as { reasonCodes?: string[] } | undefined, reasons = snapshot?.reasonCodes ?? []; return (!filters.medicationBlocked || reasons.some(reason => hardMedicationReasons.has(reason))) && (!filters.personSpecificBlocked || reasons.includes("PERSON_SPECIFIC_INSTRUCTION_REQUIRED")); });
 }
 

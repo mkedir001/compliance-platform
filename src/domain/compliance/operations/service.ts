@@ -6,6 +6,7 @@ import { evaluateEmployeeCompliance } from "@/domain/compliance/evaluation/servi
 import { assignTrainingForCompliance } from "@/domain/training/assignments/service";
 import { computeEmployeeWorkReadiness, evaluateEmployeeWorkReadiness, scopeAffected } from "@/domain/readiness/service";
 import { deriveTemporalStatus, getExpiringSoonDays } from "./deadlines";
+import { operationalEmployeeWhere } from "@/domain/test-data/visibility";
 
 export const COMPLIANCE_OPERATIONS_ENGINE_VERSION = "phase8-v1";
 export type OperationalStatus = "READY" | "NOT_READY" | "REQUIREMENTS_PENDING" | "ACTION_REQUIRED" | "EXPIRING_SOON" | "OVERDUE" | "BLOCKED";
@@ -127,7 +128,7 @@ export async function evaluateServiceEligibility(user: Pick<User, "id">, organiz
 
 export async function getOrganizationComplianceOperations(user: Pick<User, "id">, organizationId: string, filters: { status?: OperationalStatus; scope?: BlockingScope } = {}, evaluatedAt = new Date()) {
   const { membership } = await requireOrganizationAccess(user, organizationId); await requirePermission(membership.id, "compliance.operations.read");
-  const employees = await prisma.employee.findMany({ where: { organizationId, employmentStatus: { not: "ARCHIVED" } }, select: { id: true } });
+  const employees = await prisma.employee.findMany({ where: { organizationId, ...operationalEmployeeWhere, employmentStatus: { not: "ARCHIVED" } }, select: { id: true } });
   const profiles = await Promise.all(employees.map(employee => computeEmployeeOperationalProfile(organizationId, employee.id, evaluatedAt)));
   const filtered = profiles.filter(profile => (!filters.status || profile.overallStatus === filters.status) && (!filters.scope || profile.readiness.scopes.find(item => item.scope === filters.scope)?.state === "BLOCKED"));
   const count = (status: OperationalStatus) => profiles.filter(profile => profile.overallStatus === status).length;

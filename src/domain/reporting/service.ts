@@ -4,6 +4,7 @@ import { getEmployeeAuditRecord } from "@/domain/audit/service";
 import { deriveTemporalStatus } from "@/domain/compliance/operations/deadlines";
 import { requireEmployeeAccess, requireOrganizationAccess, requirePermission, resolvePermissionCodes } from "@/domain/permissions/authorization";
 import { prisma } from "@/lib/prisma";
+import { operationalEmployeeWhere } from "@/domain/test-data/visibility";
 
 export const REPORT_VERSION = "phase22-v1";
 export const MAX_REPORT_PAGE_SIZE = 100;
@@ -31,7 +32,7 @@ function pageResult<T>(items: T[], total: number, page: number, pageSize: number
 export async function getOrganizationComplianceReport(user: Pick<User, "id">, organizationId: string, input: { workforceStatus?: EmploymentStatus; at?: Date } = {}) {
   await authorize(user, organizationId);
   const at = input.at ?? new Date(), workforceStatus = input.workforceStatus ?? "ACTIVE";
-  const employees = await prisma.employee.findMany({ where: { organizationId, employmentStatus: workforceStatus }, select: { id: true, complianceInstances: { where: { status: { not: "SUPERSEDED" } }, select: { status: true } } }, take: 5000 });
+  const employees = await prisma.employee.findMany({ where: { organizationId, ...operationalEmployeeWhere, employmentStatus: workforceStatus }, select: { id: true, complianceInstances: { where: { status: { not: "SUPERSEDED" } }, select: { status: true } } }, take: 5000 });
   if (employees.length === 5000) throw new AuthorizationError("Organization report exceeds 5,000 employees; narrow the workforce status scope");
   const employeeIds = employees.map(item => item.id), actionStatuses = ["REQUIRED", "PAST_DUE", "BLOCKED"] as const;
   const [trainingExceptions, policyExceptions, credentialExceptions, competencyExceptions, evidenceReviewExceptions, remediation, assignmentBlockers, readiness] = await Promise.all([
@@ -59,20 +60,20 @@ export async function getEmployeeComplianceReport(user: Pick<User, "id">, organi
 
 export async function getTrainingReport(user: Pick<User, "id">, organizationId: string, input: Page & Dates & { employeeId?: string; courseId?: string; status?: string; at?: Date; exportMode?: boolean } = {}) {
   await authorize(user, organizationId); const { page, pageSize, skip } = paging(input, input.exportMode); const at = input.at ?? new Date();
-  const where: Prisma.TrainingAssignmentWhereInput = { organizationId, employeeId: input.employeeId, courseVersion: input.courseId ? { courseId: input.courseId } : undefined, status: input.status as never, assignedAt: input.from || input.to ? { gte: input.from, lte: input.to } : undefined };
+  const where: Prisma.TrainingAssignmentWhereInput = { organizationId, employee: operationalEmployeeWhere, employeeId: input.employeeId, courseVersion: input.courseId ? { courseId: input.courseId } : undefined, status: input.status as never, assignedAt: input.from || input.to ? { gte: input.from, lte: input.to } : undefined };
   const [organization, total, rows] = await Promise.all([prisma.organization.findUniqueOrThrow({ where: { id: organizationId }, select: { timezone: true } }), prisma.trainingAssignment.count({ where }), prisma.trainingAssignment.findMany({ where, include: { employee: { select: { id: true, firstName: true, lastName: true, employmentStatus: true } }, courseVersion: { include: { course: { select: { id: true, code: true, title: true } } } }, completion: true }, orderBy: [{ assignedAt: "desc" }, { id: "asc" }], skip, take: pageSize })]);
   return pageResult(rows.map(row => ({ id: row.id, employee: row.employee, course: row.courseVersion.course, courseVersionId: row.courseVersionId, courseVersion: row.courseVersion.versionNumber, status: row.status, assignedAt: row.assignedAt, dueAt: row.dueAt, deadlineState: row.dueAt ? deriveTemporalStatus({ dueAt: row.dueAt, evaluatedAt: at, timeZone: organization.timezone }) : "NO_DEADLINE", completion: row.completion ? { id: row.completion.id, completedAt: row.completion.completedAt, method: row.completion.completionMethod } : null })), total, page, pageSize);
 }
 
 export async function getPolicyReport(user: Pick<User, "id">, organizationId: string, input: Page & Dates & { employeeId?: string; policyId?: string; status?: string; exportMode?: boolean } = {}) {
   await authorize(user, organizationId); const { page, pageSize, skip } = paging(input, input.exportMode);
-  const where: Prisma.PolicyAssignmentWhereInput = { organizationId, employeeId: input.employeeId, policyVersion: input.policyId ? { policyId: input.policyId } : undefined, status: input.status as never, assignedAt: input.from || input.to ? { gte: input.from, lte: input.to } : undefined };
+  const where: Prisma.PolicyAssignmentWhereInput = { organizationId, employee: operationalEmployeeWhere, employeeId: input.employeeId, policyVersion: input.policyId ? { policyId: input.policyId } : undefined, status: input.status as never, assignedAt: input.from || input.to ? { gte: input.from, lte: input.to } : undefined };
   const [total, items] = await Promise.all([prisma.policyAssignment.count({ where }), prisma.policyAssignment.findMany({ where, include: { employee: { select: { id: true, firstName: true, lastName: true, employmentStatus: true } }, policyVersion: { include: { policy: true } }, attestation: { select: { id: true, signedAt: true, statementVersion: true, signatureHash: true } } }, orderBy: [{ assignedAt: "desc" }, { id: "asc" }], skip, take: pageSize })]);
   return pageResult(items.map(item => ({ id: item.id, employee: item.employee, policy: { id: item.policyVersion.policy.id, code: item.policyVersion.policy.code, title: item.policyVersion.policy.title }, policyVersionId: item.policyVersionId, versionNumber: item.policyVersion.versionNumber, versionStatus: item.policyVersion.status, assignedAt: item.assignedAt, dueAt: item.dueAt, status: item.status, acknowledgedAt: item.acknowledgedAt, attestation: item.attestation })), total, page, pageSize);
 }
 
 export async function getEvidenceReport(user: Pick<User, "id">, organizationId: string, input: Page & { employeeId?: string; exportMode?: boolean } = {}) {
-  await authorize(user, organizationId); const { page, pageSize, skip } = paging(input, input.exportMode), employee = input.employeeId ? { id: input.employeeId } : undefined;
+  await authorize(user, organizationId); const { page, pageSize, skip } = paging(input, input.exportMode), employee = { ...operationalEmployeeWhere, ...(input.employeeId ? { id: input.employeeId } : {}) };
   const [credentials, competency, external, corrections] = await Promise.all([
     prisma.professionalCredential.findMany({ where: { organizationId, employee }, include: { employee: { select: { id: true, firstName: true, lastName: true, employmentStatus: true } } }, orderBy: [{ createdAt: "desc" }, { id: "asc" }], skip, take: pageSize }),
     prisma.competencyAssessment.findMany({ where: { organizationId, employeeId: input.employeeId }, include: { employee: { select: { id: true, firstName: true, lastName: true } }, competencyDefinition: true, skillChecklistVersion: true }, orderBy: [{ startedAt: "desc" }, { id: "asc" }], take: pageSize }),
@@ -83,13 +84,13 @@ export async function getEvidenceReport(user: Pick<User, "id">, organizationId: 
 }
 
 export async function getRemediationReport(user: Pick<User, "id">, organizationId: string, input: Page & Dates & { employeeId?: string; status?: "OPEN" | "IN_PROGRESS" | "RESOLVED"; exportMode?: boolean } = {}) {
-  await authorize(user, organizationId); const { page, pageSize, skip } = paging(input, input.exportMode), where: Prisma.ComplianceIssueWhereInput = { organizationId, employeeId: input.employeeId, status: input.status, firstDetectedAt: input.from || input.to ? { gte: input.from, lte: input.to } : undefined };
+  await authorize(user, organizationId); const { page, pageSize, skip } = paging(input, input.exportMode), where: Prisma.ComplianceIssueWhereInput = { organizationId, employee: operationalEmployeeWhere, employeeId: input.employeeId, status: input.status, firstDetectedAt: input.from || input.to ? { gte: input.from, lte: input.to } : undefined };
   const [total, items] = await Promise.all([prisma.complianceIssue.count({ where }), prisma.complianceIssue.findMany({ where, include: { employee: { select: { id: true, firstName: true, lastName: true, employmentStatus: true } }, events: { orderBy: { createdAt: "asc" } } }, orderBy: [{ firstDetectedAt: "desc" }, { id: "asc" }], skip, take: pageSize })]);
   return pageResult(items, total, page, pageSize);
 }
 
 export async function getServiceAssignmentReadinessReport(user: Pick<User, "id">, organizationId: string, input: Page & { employeeId?: string; status?: string; exportMode?: boolean } = {}) {
-  const { permissions } = await authorize(user, organizationId); const { page, pageSize, skip } = paging(input, input.exportMode), where: Prisma.ServiceAssignmentWhereInput = { organizationId, employeeId: input.employeeId, status: input.status as never };
+  const { permissions } = await authorize(user, organizationId); const { page, pageSize, skip } = paging(input, input.exportMode), where: Prisma.ServiceAssignmentWhereInput = { organizationId, employee: operationalEmployeeWhere, employeeId: input.employeeId, status: input.status as never };
   const [total, rows] = await Promise.all([prisma.serviceAssignment.count({ where }), prisma.serviceAssignment.findMany({ where, include: { employee: { select: { id: true, firstName: true, lastName: true, employmentStatus: true } }, program: true, location: true, duties: { include: { dutyDefinition: true } }, eligibilityEvaluations: { orderBy: { evaluatedAt: "desc" }, take: 1 } }, orderBy: [{ startsAt: "desc" }, { id: "asc" }], skip, take: pageSize })]);
   const clinical = permissions.has("clinical.review");
   return pageResult(rows.map(row => { const evaluation = row.eligibilityEvaluations[0], medication = row.blockingScope === "MEDICATION_ADMINISTRATION" || row.duties.some(item => item.dutyDefinition.code === "MEDICATION_ADMINISTRATION"); return { id: row.id, employee: row.employee, program: row.program?.name ?? null, location: row.location?.name ?? null, blockingScope: medication && !clinical ? "CLINICAL_RESTRICTED" : row.blockingScope, status: row.status, readiness: evaluation?.decision ?? (row.status === "BLOCKED" ? "BLOCKED" : "NOT_EVALUATED"), reasonCodes: medication && !clinical ? ["CLINICAL_DETAIL_REDACTED"] : ((evaluation?.resultSnapshot as { reasonCodes?: string[] } | null)?.reasonCodes ?? []), evaluatedAt: evaluation?.evaluatedAt ?? null, disclaimer: "Specific assignment readiness only; not a general legal qualification claim." }; }), total, page, pageSize);

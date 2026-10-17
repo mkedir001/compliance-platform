@@ -4,6 +4,7 @@ import { resolvePermissionCodes, requireOrganizationAccess, requirePermission } 
 import { prisma } from "@/lib/prisma";
 import { getOrganizationRenewalActions } from "@/domain/clients/renewals";
 import { getOrganizationDocumentRequestActions } from "@/domain/clients/document-requests";
+import { operationalEmployeeWhere } from "@/domain/test-data/visibility";
 
 export const ACTION_CENTER_VERSION = "phase17-v1";
 export const ACTION_CENTER_DUE_SOON_DAYS = 30;
@@ -47,7 +48,7 @@ export async function getActionCenter(user: Pick<User, "id">, organizationId: st
     pageSize = Math.max(1, Math.min(Math.floor(filters.pageSize ?? 25), 100));
   const [issues, evidence, training, policies, competencies, activity] = await Promise.all([
     prisma.complianceIssue.findMany({
-      where: { organizationId, status: { in: ["OPEN", "IN_PROGRESS"] } },
+      where: { organizationId, employee: operationalEmployeeWhere, status: { in: ["OPEN", "IN_PROGRESS"] } },
       include: {
         employee: {
           select: {
@@ -63,7 +64,7 @@ export async function getActionCenter(user: Pick<User, "id">, organizationId: st
     }),
     prisma.externalTrainingRecord.findMany({
       where: {
-        organizationId,
+        organizationId, employee: operationalEmployeeWhere,
         reviewStatus: { in: ["PENDING", "NEEDS_MORE_INFORMATION"] },
       },
       include: {
@@ -86,7 +87,7 @@ export async function getActionCenter(user: Pick<User, "id">, organizationId: st
     }),
     prisma.trainingAssignment.findMany({
       where: {
-        organizationId,
+        organizationId, employee: operationalEmployeeWhere,
         status: {
           in: ["NOT_STARTED", "IN_PROGRESS", "TRAINING_COMPLETE_COMPETENCY_PENDING", "FAILED"],
         },
@@ -111,7 +112,7 @@ export async function getActionCenter(user: Pick<User, "id">, organizationId: st
       take: 2000,
     }),
     prisma.policyAssignment.findMany({
-      where: { organizationId, status: { in: ["PENDING", "OVERDUE"] } },
+      where: { organizationId, employee: operationalEmployeeWhere, status: { in: ["PENDING", "OVERDUE"] } },
       include: {
         employee: {
           select: {
@@ -128,7 +129,7 @@ export async function getActionCenter(user: Pick<User, "id">, organizationId: st
     }),
     prisma.competencyAssessment.findMany({
       where: {
-        organizationId,
+        organizationId, employee: operationalEmployeeWhere,
         OR: [
           { status: { in: ["DRAFT", "IN_PROGRESS"] } },
           {
@@ -273,8 +274,12 @@ export async function getActionCenter(user: Pick<User, "id">, organizationId: st
   const filtered = actions.filter((item) => (!filters.employeeId || item.employee.id === filters.employeeId) && (!filters.category || item.category === filters.category) && (!filters.status || item.status === filters.status) && (!filters.deadlineState || item.deadlineState === filters.deadlineState) && (!query || `${item.employee.firstName} ${item.employee.lastName} ${item.employee.employeeNumber ?? ""} ${item.reason} ${item.actionType}`.toLocaleLowerCase().includes(query)));
   const uniqueEmployees = new Set(actions.map((item) => item.employee.id));
   const count = (predicate: (item: (typeof actions)[number]) => boolean) => actions.filter(predicate).length;
-  const rawRenewals = permissions.has("client.read") ? await getOrganizationRenewalActions(user, organizationId, at) : [],
-    allDocumentRequests = permissions.has("client.read") ? await getOrganizationDocumentRequestActions(organizationId, at) : [],
+  const unfilteredRenewals = permissions.has("client.read") ? await getOrganizationRenewalActions(user, organizationId, at) : [],
+    unfilteredDocumentRequests = permissions.has("client.read") ? await getOrganizationDocumentRequestActions(organizationId, at) : [],
+    actionClientIds=[...new Set([...unfilteredRenewals.map(item=>item.client.id),...unfilteredDocumentRequests.map(item=>item.client.id)])],
+    hiddenClientIds=new Set(actionClientIds.length?(await prisma.client.findMany({where:{organizationId,id:{in:actionClientIds},testDataMarkedAt:{not:null}},select:{id:true}})).map(item=>item.id):[]),
+    rawRenewals=unfilteredRenewals.filter(item=>!hiddenClientIds.has(item.client.id)),
+    allDocumentRequests=unfilteredDocumentRequests.filter(item=>!hiddenClientIds.has(item.client.id)),
     requestByObligation = new Map<string, typeof allDocumentRequests>();
   for (const request of allDocumentRequests) if (request.obligationDocumentId) requestByObligation.set(request.obligationDocumentId, [...(requestByObligation.get(request.obligationDocumentId) ?? []), request]);
   const clientDocumentRenewals = rawRenewals.map((item) => ({

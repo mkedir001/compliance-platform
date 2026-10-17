@@ -126,7 +126,7 @@ export default function TestDataCleanupPortal({
         }),
       });
       await load();
-    }, "The selected record is explicitly marked as test data and the action was audited.");
+    }, "The selected record is explicitly marked as test data and the action was audited. It is now hidden from normal operational views unless an authorized administrator turns on Show test data.");
   }
   async function previewCleanup(event: FormEvent) {
     event.preventDefault();

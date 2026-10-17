@@ -4,23 +4,24 @@ import { requireEmployeeAccess, requireOrganizationAccess, requirePermission } f
 import { computeEmployeeWorkReadiness } from "@/domain/readiness/service";
 import { computeEmployeeOperationalProfile, getOrganizationComplianceOperations, type OperationalStatus } from "@/domain/compliance/operations/service";
 import { listMedicationQualifications } from "@/domain/medication/service";
+import { operationalEmployeeWhere } from "@/domain/test-data/visibility";
 
 export async function getComplianceOperationsSummary(user: Pick<User,"id">, organizationId: string, at = new Date(), filters: { status?: OperationalStatus; scope?: BlockingScope } = {}) {
   const { membership } = await requireOrganizationAccess(user, organizationId); await requirePermission(membership.id, "compliance.operations.read");
   const soon = new Date(at.getTime() + 30 * 86400000);
   const [onboarding, overdue, trainingDueSoon, trainingOverdue, competencyPending, policyPending, credentialsExpiring, certificateGroups, assignmentGroups, medicationBlocked, personSpecificBlocked, issueGroups] = await Promise.all([
-    prisma.employeeOnboarding.groupBy({ by: ["status"], where: { organizationId }, _count: true }),
-    prisma.complianceInstance.count({ where: { organizationId, status: { in: ["PAST_DUE", "BLOCKED"] } } }),
-    prisma.trainingAssignment.count({ where: { organizationId, status: { in: ["NOT_STARTED", "IN_PROGRESS", "TRAINING_COMPLETE_COMPETENCY_PENDING"] }, dueAt: { gte: at, lte: soon } } }),
-    prisma.trainingAssignment.count({ where: { organizationId, status: { in: ["NOT_STARTED", "IN_PROGRESS", "TRAINING_COMPLETE_COMPETENCY_PENDING"] }, dueAt: { lt: at } } }),
-    prisma.trainingAssignment.count({ where: { organizationId, status: "TRAINING_COMPLETE_COMPETENCY_PENDING" } }),
-    prisma.policyAssignment.count({ where: { organizationId, status: { in: ["PENDING", "OVERDUE"] } } }),
-    prisma.professionalCredential.count({ where: { organizationId, status: "ACTIVE", expiresAt: { gte: at, lte: soon } } }),
-    prisma.certificate.groupBy({ by: ["status"], where: { organizationId }, _count: true }),
-    prisma.serviceAssignment.groupBy({ by: ["status"], where: { organizationId }, _count: true }),
-    prisma.serviceAssignment.count({ where: { organizationId, status: "BLOCKED", duties: { some: { dutyDefinition: { code: "MEDICATION_ADMINISTRATION" } } } } }),
-    prisma.serviceAssignment.count({ where: { organizationId, status: "BLOCKED", serviceRecipientRef: { not: null } } }),
-    prisma.complianceIssue.groupBy({ by: ["status"], where: { organizationId }, _count: true }),
+    prisma.employeeOnboarding.groupBy({ by: ["status"], where: { organizationId, employee: operationalEmployeeWhere }, _count: true }),
+    prisma.complianceInstance.count({ where: { organizationId, employee: operationalEmployeeWhere, status: { in: ["PAST_DUE", "BLOCKED"] } } }),
+    prisma.trainingAssignment.count({ where: { organizationId, employee: operationalEmployeeWhere, status: { in: ["NOT_STARTED", "IN_PROGRESS", "TRAINING_COMPLETE_COMPETENCY_PENDING"] }, dueAt: { gte: at, lte: soon } } }),
+    prisma.trainingAssignment.count({ where: { organizationId, employee: operationalEmployeeWhere, status: { in: ["NOT_STARTED", "IN_PROGRESS", "TRAINING_COMPLETE_COMPETENCY_PENDING"] }, dueAt: { lt: at } } }),
+    prisma.trainingAssignment.count({ where: { organizationId, employee: operationalEmployeeWhere, status: "TRAINING_COMPLETE_COMPETENCY_PENDING" } }),
+    prisma.policyAssignment.count({ where: { organizationId, employee: operationalEmployeeWhere, status: { in: ["PENDING", "OVERDUE"] } } }),
+    prisma.professionalCredential.count({ where: { organizationId, employee: operationalEmployeeWhere, status: "ACTIVE", expiresAt: { gte: at, lte: soon } } }),
+    prisma.certificate.groupBy({ by: ["status"], where: { organizationId, employee: operationalEmployeeWhere }, _count: true }),
+    prisma.serviceAssignment.groupBy({ by: ["status"], where: { organizationId, employee: operationalEmployeeWhere }, _count: true }),
+    prisma.serviceAssignment.count({ where: { organizationId, employee: operationalEmployeeWhere, status: "BLOCKED", duties: { some: { dutyDefinition: { code: "MEDICATION_ADMINISTRATION" } } } } }),
+    prisma.serviceAssignment.count({ where: { organizationId, employee: operationalEmployeeWhere, status: "BLOCKED", serviceRecipientRef: { not: null } } }),
+    prisma.complianceIssue.groupBy({ by: ["status"], where: { organizationId, employee: operationalEmployeeWhere }, _count: true }),
   ]);
   const workforce = await getOrganizationComplianceOperations(user, organizationId, filters, at);
   const medicationStates = (await Promise.all(workforce.workers.map(row => listMedicationQualifications(user, organizationId, row.employee.id, at)))).flat();
