@@ -22,6 +22,7 @@ import { AuthorizationError, ResourceNotFoundError, ValidationError } from "@/do
 import { requireOrganizationAccess, requirePermission } from "@/domain/permissions/authorization";
 import { prisma } from "@/lib/prisma";
 import { clientIntakeChecklistDefinitions, clientInput } from "./service";
+import { isReferralFormFields, referralFormProposals } from "./referral-form-fields";
 import { classifyDocumentText, clientDocumentDefinition, clientDocumentTypeForImport } from "./document-registry";
 import { currentCareAnswers } from "./care-profile";
 import { extractChecklistProposals, extractDocumentFactProposals, CARE_ANSWERS } from "./extraction/checklist";
@@ -211,6 +212,7 @@ export async function analyzeClientImportPdf(bytes:Buffer,options:ClientImportPd
   const pageCount=pdf.getPageCount();if(!pageCount||pageCount>CLIENT_IMPORT_MAX_PAGES)throw new ValidationError(`PDFs must contain 1 to ${CLIENT_IMPORT_MAX_PAGES} pages`);
   const fields=pdf.getForm().getFields(),fieldNames=fields.map(field=>field.getName()),extracted:Extracted[]=[],rawFields:Record<string,string|boolean>={};
   for(const field of fields){const name=field.getName(),value=scalarFieldValue(field);if(value===null||value===false||value==="")continue;rawFields[name]=value;const direct=fieldMap[name]??dynamicFacePath(name)??commonFormFieldPath(name),booleanMapping=roiBooleanMap[name]??faceBooleanMap[name],sourceLocation=formFieldSourceLocation(field,pdf,name);if(direct)extracted.push({fieldPath:direct,value,sourceLocation,method:"PDF_FORM_FIELD"});else if(booleanMapping&&value===true)extracted.push({fieldPath:booleanMapping[0],value:booleanMapping[1]==="true"?true:booleanMapping[1],sourceLocation,method:"PDF_FORM_FIELD"})}
+  if(isReferralFormFields(fieldNames))for(const item of referralFormProposals(rawFields)){if(!extracted.some(existing=>existing.fieldPath===item.fieldPath&&normalize(existing.value)===normalize(item.value)))extracted.push({fieldPath:item.fieldPath,value:item.value,sourceLocation:"Referral form field",method:"PDF_FORM_FIELD"})}
   let text="",pages:string[]=[],linePages:TextLine[][]=[],pagesRequiringOcr:number[]=[],textFailed=false;const semanticMappings:SemanticMapping[]=[];try{const result=await nativeText(bytes,formFieldPageNumbers(fields,pdf));text=result.text;pages=result.pages;linePages=result.linePages;pagesRequiringOcr=result.pagesRequiringOcr}catch{textFailed=true}
   for(const item of extractMappedText(pages,"NATIVE_TEXT"))if(!extracted.some(existing=>existing.fieldPath===item.fieldPath&&normalize(existing.value)===normalize(item.value)))extracted.push(item);
   addSemanticProposals(extracted,semanticMappings,pages.map((page,index)=>linePages[index]?.length?linePages[index]:linesFromFlatText([page])[0]??[]),"NATIVE_TEXT");
