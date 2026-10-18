@@ -7,6 +7,7 @@ async function openImportedDocument(page:Page){
   await page.getByRole("link",{name:"Clients",exact:true}).click();
   await page.locator(".client-directory-row").first().click();
   await page.getByRole("button",{name:"Documents",exact:true}).click();
+  await page.getByRole("option",{name:/Synthetic Rights Acknowledgment/}).click();
   await expect(page.getByText("synthetic-historical-rights.pdf")).toBeVisible();
 }
 

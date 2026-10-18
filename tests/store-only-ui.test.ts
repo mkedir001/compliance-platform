@@ -24,9 +24,22 @@ describe("store-only and care-profile-only upload UI", () => {
 });
 
 describe("upload mode layout", () => {
+  const workflow = readFileSync("src/app/admin/clients/client-import-workflow.tsx", "utf8");
   const css = readFileSync("src/app/globals.css", "utf8");
-  it("overrides the inline-form label grid and oversized input padding for the radio options", () => {
+  it("keeps native radio semantics and synchronizes each visible selection with its submitted mode", () => {
+    for (const mode of ["STORE_ONLY", "CARE_PROFILE_ONLY", "FULL"]) {
+      expect(workflow).toContain(`value="${mode}"`);
+      expect(workflow).toContain(`className={uploadMode==="${mode}"?"selected":""}`);
+      expect(workflow).toContain(`checked={uploadMode==="${mode}"}`);
+      expect(workflow).toContain(`onChange={()=>setUploadMode("${mode}")}`);
+    }
+  });
+  it("overrides the inline-form label grid and provides selected, focus, touch, and mobile states", () => {
     expect(css).toContain(".inline-form .upload-mode label{display:flex");
     expect(css).toMatch(/\.inline-form \.upload-mode input\[type="radio"\]\{[^}]*width:18px[^}]*padding:0/);
+    expect(css).toContain(".inline-form .upload-mode label.selected");
+    expect(css).toContain(".inline-form .upload-mode label:focus-within");
+    expect(css).toContain("min-height:44px");
+    expect(css).toContain("@media(max-width:480px)");
   });
 });
