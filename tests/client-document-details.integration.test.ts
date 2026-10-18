@@ -1,7 +1,7 @@
 import { PrismaClient } from "@prisma/client";
 import { PDFDocument } from "pdf-lib";
 import { beforeAll, describe, expect, it, vi } from "vitest";
-import { importClientDocument, markImportedDocumentSigned, updateClientDocumentDetails } from "@/domain/clients/documents";
+import { getDocumentPdfDelivery, importClientDocument, markImportedDocumentSigned, updateClientDocumentDetails } from "@/domain/clients/documents";
 import { getClientRenewalSummary } from "@/domain/clients/renewals";
 
 const db = new PrismaClient();
@@ -19,7 +19,8 @@ describe.sequential("client document names, expiration, and external signature a
       db.user.create({ data: { email: `${tag}-viewer@example.test`, status: "ACTIVE" } })
     ]);
     organizationId = organization.id; otherOrganizationId = otherOrganization.id; adminId = adminUser.id; viewerId = viewerUser.id;
-    const permissions = await db.permission.findMany({ where: { code: { in: ["client.document.generate", "client.read"] } } });
+    await db.permission.upsert({where:{code:"client.document.read"},update:{},create:{code:"client.document.read"}});
+    const permissions = await db.permission.findMany({ where: { code: { in: ["client.document.generate", "client.document.read", "client.read"] } } });
     const role = await db.roleDefinition.create({ data: { organizationId, code: `DOCUMENT_MANAGER_${Date.now()}`, name: "Document manager", scope: "ORGANIZATION", permissions: { create: permissions.map(permission => ({ permissionId: permission.id })) } } });
     const [adminMembership] = await Promise.all([
       db.organizationMembership.create({ data: { organizationId, userId: adminId, status: "ACTIVE" } }),
@@ -54,6 +55,10 @@ describe.sequential("client document names, expiration, and external signature a
     await expect(updateClientDocumentDetails(admin(), otherOrganizationId, clientId, documentId, { displayName: "Cross tenant" })).rejects.toThrow();
     expect((await db.clientDocument.findUniqueOrThrow({ where: { id: documentId } })).displayName).toBe("County face sheet");
   });
+
+  it("authorizes imported PDF delivery by permission and tenant while preserving original bytes",async()=>{const stored=await db.clientDocument.findUniqueOrThrow({where:{id:documentId}}),delivery=await getDocumentPdfDelivery(admin(),organizationId,clientId,documentId,"current");expect(delivery.previewTransform).toBe("ORIGINAL");expect(delivery.bytes).toEqual(Buffer.from(stored.renderedPdf!));await expect(getDocumentPdfDelivery(viewer(),organizationId,clientId,documentId,"current")).rejects.toThrow(/client\.document\.read/);await expect(getDocumentPdfDelivery(admin(),otherOrganizationId,clientId,documentId,"current")).rejects.toThrow()});
+
+  it("fails safely when a tenant-scoped document has no stored rendition",async()=>{const template=await db.clientDocumentTemplate.findFirstOrThrow({where:{organizationId,documentType:"FACE_SHEET"}}),missing=await db.clientDocument.create({data:{organizationId,clientId,templateId:template.id,documentType:"FACE_SHEET",source:"IMPORTED",status:"DRAFT",snapshotJson:{synthetic:true},generatedByUserId:adminId}});await expect(getDocumentPdfDelivery(admin(),organizationId,clientId,missing.id,"current")).rejects.toThrow(/Rendered document not found/)});
 
   it("rejects future dates and records a non-platform-verified external signature without altering the original", async () => {
     vi.useFakeTimers(); vi.setSystemTime(new Date("2026-10-17T12:00:00Z"));
