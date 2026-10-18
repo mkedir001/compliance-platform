@@ -3624,6 +3624,7 @@ model ClientImportSession {
   confirmedAt        DateTime?
   canceledAt         DateTime?
   processingFailures Json?
+  scope              String                 @default("FULL")
   createdAt          DateTime               @default(now())
   updatedAt          DateTime               @updatedAt
   organization       Organization           @relation(fields: [organizationId], references: [id], onDelete: Restrict)
@@ -3663,6 +3664,7 @@ model ClientImportDocument {
   validityReviewStatus       ImportedValidityReviewStatus           @default(UNREVIEWED)
   reviewedExpirationDate     DateTime?                              @db.Date
   confirmedDocumentId        String?                                @unique
+  sourceClientDocumentId     String?
   createdAt                  DateTime                               @default(now())
   updatedAt                  DateTime                               @updatedAt
   organization               Organization                           @relation(fields: [organizationId], references: [id], onDelete: Restrict)
@@ -3672,6 +3674,7 @@ model ClientImportDocument {
 
   @@unique([sessionId, sha256])
   @@index([organizationId, sessionId, classification])
+  @@index([sourceClientDocumentId])
 }
 
 model ClientImportProposal {
