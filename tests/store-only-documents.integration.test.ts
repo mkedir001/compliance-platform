@@ -9,14 +9,16 @@ async function pdf(marker: string) { const value = await PDFDocument.create(); v
 const file = async (name: string, marker: string) => ({ fileName: name, mimeType: "application/pdf" as const, pdfBase64: (await pdf(marker)).toString("base64") });
 
 describe.sequential("store-only uploads and care-profile-only reviews", () => {
-  let organizationId: string, otherOrganizationId: string, userId: string, clientId: string;
+  let organizationId: string, otherOrganizationId: string, userId: string, limitedUserId: string, clientId: string;
   beforeAll(async () => {
     const tag = `store-only-${Date.now()}`;
-    const [organization, other, user] = await Promise.all([db.organization.create({ data: { legalName: tag, displayName: tag, slug: tag } }), db.organization.create({ data: { legalName: `${tag}-o`, displayName: `${tag}-o`, slug: `${tag}-o` } }), db.user.create({ data: { email: `${tag}@example.test`, status: "ACTIVE" } })]);
-    organizationId = organization.id; otherOrganizationId = other.id; userId = user.id;
-    for (const code of ["client.read", "client.update"]) await db.permission.upsert({ where: { code }, update: {}, create: { code } });
-    const role = await db.roleDefinition.create({ data: { organizationId, code: "STORE_ONLY_TESTER", name: "Tester", scope: "ORGANIZATION", permissions: { create: (await db.permission.findMany({ where: { code: { in: ["client.read", "client.update"] } } })).map(permission => ({ permissionId: permission.id })) } } });
+    const [organization, other, user, limitedUser] = await Promise.all([db.organization.create({ data: { legalName: tag, displayName: tag, slug: tag } }), db.organization.create({ data: { legalName: `${tag}-o`, displayName: `${tag}-o`, slug: `${tag}-o` } }), db.user.create({ data: { email: `${tag}@example.test`, status: "ACTIVE" } }), db.user.create({ data: { email: `${tag}-limited@example.test`, status: "ACTIVE" } })]);
+    organizationId = organization.id; otherOrganizationId = other.id; userId = user.id; limitedUserId = limitedUser.id;
+    for (const code of ["client.read", "client.update", "client.document.read", "client.document.generate"]) await db.permission.upsert({ where: { code }, update: {}, create: { code } });
+    const role = await db.roleDefinition.create({ data: { organizationId, code: "STORE_ONLY_TESTER", name: "Tester", scope: "ORGANIZATION", permissions: { create: (await db.permission.findMany({ where: { code: { in: ["client.read", "client.update", "client.document.read", "client.document.generate"] } } })).map(permission => ({ permissionId: permission.id })) } } });
     await db.organizationMembership.create({ data: { organizationId, userId, status: "ACTIVE", roles: { create: { roleDefinitionId: role.id } } } });
+    const limitedRole = await db.roleDefinition.create({ data: { organizationId, code: "STORE_ONLY_LIMITED", name: "Limited", scope: "ORGANIZATION", permissions: { create: (await db.permission.findMany({ where: { code: { in: ["client.read", "client.update"] } } })).map(permission => ({ permissionId: permission.id })) } } });
+    await db.organizationMembership.create({ data: { organizationId, userId: limitedUserId, status: "ACTIVE", roles: { create: { roleDefinitionId: limitedRole.id } } } });
     clientId = (await db.client.create({ data: { organizationId, legalFirstName: "Synthetic", legalLastName: "Client", phone: "555-0100", createdByUserId: userId } })).id;
   });
 
@@ -36,8 +38,26 @@ describe.sequential("store-only uploads and care-profile-only reviews", () => {
     expect(await db.auditEvent.count({ where: { organizationId, eventType: "client.documents_stored_without_extraction" } })).toBe(2);
   });
 
+  it("serializes concurrent duplicate uploads so only one immutable document is created", async () => {
+    const upload = await file("Concurrent.pdf", "concurrent");
+    const [first, second] = await Promise.all([
+      storeClientDocuments({ id: userId }, organizationId, clientId, { files: [upload] }),
+      storeClientDocuments({ id: userId }, organizationId, clientId, { files: [upload] }),
+    ]);
+    expect(first.documentIds.length + second.documentIds.length).toBe(1);
+    expect(first.duplicateFileNames.length + second.duplicateFileNames.length).toBe(1);
+    expect(await db.clientDocument.count({ where: { organizationId, clientId, sourceDocumentHash: (await db.clientDocument.findFirstOrThrow({ where: { id: first.documentIds[0] ?? second.documentIds[0] } })).sourceDocumentHash } })).toBe(1);
+  });
+
   it("refuses another organization's client", async () => {
     await expect(storeClientDocuments({ id: userId }, otherOrganizationId, clientId, { files: [await file("x.pdf", "x")] })).rejects.toThrow();
+  });
+
+  it("requires document permissions in addition to client update access", async () => {
+    const candidate = await file("Permission check.pdf", "permission");
+    await expect(storeClientDocuments({ id: limitedUserId }, organizationId, clientId, { files: [candidate] })).rejects.toThrow();
+    const stored = await db.clientDocument.findFirstOrThrow({ where: { organizationId, clientId, displayName: "Assessment" } });
+    await expect(startCareProfileFromStoredDocuments({ id: limitedUserId }, organizationId, clientId, { documentIds: [stored.id] })).rejects.toThrow();
   });
 
   it("reviews a stored document for the care profile only, without duplicating it or changing client records", async () => {
@@ -46,7 +66,11 @@ describe.sequential("store-only uploads and care-profile-only reviews", () => {
     const started = await startCareProfileFromStoredDocuments({ id: userId }, organizationId, clientId, { documentIds: [stored.id] });
     expect(started.scope).toBe("CARE_PROFILE_ONLY");
     await expect(startCareProfileFromStoredDocuments({ id: userId }, organizationId, clientId, { documentIds: ["c000000000000000000000000"] })).rejects.toThrow();
-    let current = await processClientImportDocument({ id: userId }, organizationId, started.id, started.documents[0].id, { analyze: async () => analysis([{ fieldPath: "care.waterSafetySkills", value: { label: "Water safety skills", answer: "YES", detail: "Staff nearby", note: "" } }, { fieldPath: "client.phone", value: "555-9999" }, { fieldPath: "health.diagnoses", value: "Should be ignored" }]) as never });
+    const originalBytes = Buffer.from(stored.renderedPdf!);
+    const current = await processClientImportDocument({ id: userId }, organizationId, started.id, started.documents[0].id, { analyze: async () => analysis([{ fieldPath: "care.waterSafetySkills", value: { label: "Water safety skills", answer: "YES", detail: "Staff nearby", note: "" } }, { fieldPath: "client.phone", value: "555-9999" }, { fieldPath: "health.diagnoses", value: "Should be ignored" }]) as never });
+    expect(current.proposals.map(item => item.fieldPath)).toEqual(["care.waterSafetySkills"]);
+    const hiddenPhone = await db.clientImportProposal.findFirstOrThrow({ where: { sessionId: started.id, fieldPath: "client.phone" } });
+    await expect(reviewClientImportProposal({ id: userId }, organizationId, started.id, { proposalId: hiddenPhone.id, state: "ACCEPTED" })).rejects.toThrow(/outside the selected import scope/);
     const care = current.proposals.find(item => item.fieldPath === "care.waterSafetySkills")!;
     await reviewClientImportProposal({ id: userId }, organizationId, started.id, { proposalId: care.id, state: "ACCEPTED" });
     // the phone and diagnosis proposals are intentionally left unreviewed: they are out of scope
@@ -54,6 +78,8 @@ describe.sequential("store-only uploads and care-profile-only reviews", () => {
     expect(result.createdDocuments).toEqual([]);
     expect(await db.clientDocument.count({ where: { organizationId, clientId } })).toBe(before);
     const updated = await db.clientDocument.findUniqueOrThrow({ where: { id: stored.id } });
+    expect(Buffer.from(updated.renderedPdf!)).toEqual(originalBytes);
+    expect(updated.sourceDocumentHash).toBe(stored.sourceDocumentHash);
     expect((updated.snapshotJson as { reviewedFacts: Array<{ fieldPath: string }> }).reviewedFacts.map(item => item.fieldPath)).toContain("care.waterSafetySkills");
     expect(await db.client.findUniqueOrThrow({ where: { id: clientId } })).toMatchObject({ phone: "555-0100" });
     expect(await db.clientHealthProfile.findUnique({ where: { clientId } })).toBeNull();

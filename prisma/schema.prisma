@@ -2976,6 +2976,11 @@ enum ClientImportTarget {
   UPDATE_EXISTING
 }
 
+enum ClientImportScope {
+  FULL
+  CARE_PROFILE_ONLY
+}
+
 enum ClientImportDocumentDisposition {
   PRESERVE_ONLY
   HISTORICAL_COMPLETE
@@ -3388,6 +3393,7 @@ model ClientDocument {
   requestObligations        ClientDocumentRequest[]      @relation("DocumentRequestObligation")
   fulfilledRequests         ClientDocumentRequest[]      @relation("DocumentRequestFulfillment")
   confirmedImportDocument   ClientImportDocument?
+  sourceImportDocuments     ClientImportDocument[]       @relation("StoredDocumentImportSource")
   questionnaire             ClientDocumentQuestionnaire? @relation("GeneratedQuestionnaireDocument")
   referralSubmission        ReferralSubmission?
 
@@ -3624,7 +3630,7 @@ model ClientImportSession {
   confirmedAt        DateTime?
   canceledAt         DateTime?
   processingFailures Json?
-  scope              String                 @default("FULL")
+  scope              ClientImportScope      @default(FULL)
   createdAt          DateTime               @default(now())
   updatedAt          DateTime               @updatedAt
   organization       Organization           @relation(fields: [organizationId], references: [id], onDelete: Restrict)
@@ -3670,6 +3676,7 @@ model ClientImportDocument {
   organization               Organization                           @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   session                    ClientImportSession                    @relation(fields: [sessionId], references: [id], onDelete: Restrict)
   confirmedDocument          ClientDocument?                        @relation(fields: [confirmedDocumentId], references: [id], onDelete: Restrict)
+  sourceClientDocument       ClientDocument?                        @relation("StoredDocumentImportSource", fields: [sourceClientDocumentId], references: [id], onDelete: Restrict)
   proposals                  ClientImportProposal[]
 
   @@unique([sessionId, sha256])
