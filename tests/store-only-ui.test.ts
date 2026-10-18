@@ -22,3 +22,11 @@ describe("store-only and care-profile-only upload UI", () => {
     expect(portal).toContain("STAGE_FROM_DOCUMENTS");
   });
 });
+
+describe("upload mode layout", () => {
+  const css = readFileSync("src/app/globals.css", "utf8");
+  it("overrides the inline-form label grid and oversized input padding for the radio options", () => {
+    expect(css).toContain(".inline-form .upload-mode label{display:flex");
+    expect(css).toMatch(/\.inline-form \.upload-mode input\[type="radio"\]\{[^}]*width:18px[^}]*padding:0/);
+  });
+});
