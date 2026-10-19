@@ -26,7 +26,30 @@ export function splitFullName(value: string) {
 export const phoneFromText = (value: string) => PHONE.exec(value)?.[0].trim() ?? null;
 export const emailFromText = (value: string) => EMAIL.exec(value)?.[0] ?? null;
 
-/** "1203 8TH ST NW Austin MN 55912" or "1203 8th St NW, Austin, MN 55912". Falls back to the whole text as the street line. */
+/** Multi-word cities that a "last word is the city" rule would split. Matched case-insensitively at the end of the street+city text, longest first. */
+const MULTI_WORD_CITIES = [
+  "Brooklyn Park", "Brooklyn Center", "Maple Grove", "Maple Plain", "Eden Prairie", "Coon Rapids", "Apple Valley", "New Brighton", "New Hope", "New Prague", "Golden Valley",
+  "Oak Park Heights", "White Bear Lake", "Lake Elmo", "Inver Grove Heights", "Cottage Grove", "Little Canada", "Mounds View", "Spring Lake Park", "Falcon Heights", "Prior Lake",
+  "Elk River", "Forest Lake", "Columbia Heights", "Mendota Heights", "Lino Lakes", "Circle Pines", "North Branch", "Big Lake", "Fort Snelling", "Mound City",
+];
+const SAINT = /^(?:st\.?|saint)$/i;
+
+/** Where the city starts in the words before the state: handles St./Saint prefixes ("St. Paul", "North St. Paul", "St. Louis Park") and known multi-word cities. */
+function cityStart(words: string[]) {
+  const text = words.join(" ").toLowerCase();
+  for (const city of [...MULTI_WORD_CITIES].sort((x, y) => y.length - x.length)) {
+    const count = city.split(" ").length;
+    if (words.length > count && text.endsWith(` ${city.toLowerCase()}`)) return words.length - count;
+  }
+  const last = words.length - 1;
+  let start = last;
+  if (last >= 1 && SAINT.test(words[last - 1])) start = last - 1;
+  else if (last >= 2 && SAINT.test(words[last - 2]) && /^park$/i.test(words[last])) start = last - 2;
+  if (start < last && start >= 1 && /^(?:north|south|west)$/i.test(words[start - 1])) start -= 1;
+  return start;
+}
+
+/** "395 Luella Street N Apt #302 St. Paul, MN 55119", "1203 8TH ST NW Austin MN 55912", "12 Oak Ave, Austin, MN 55912". Falls back to the whole text as the street line. */
 export function splitAddress(value: string) {
   const text = value.replace(/\s+/g, " ").trim();
   if (!text) return null;
@@ -35,7 +58,20 @@ export function splitAddress(value: string) {
   const head = tail[1], state = tail[2].toUpperCase(), postalCode = tail[3];
   if (head.includes(",")) { const index = head.lastIndexOf(","); const street = head.slice(0, index).trim(), city = head.slice(index + 1).trim(); return street && city ? { addressLine1: street, city, state, postalCode } : { addressLine1: text }; }
   const words = head.split(" ");
-  return words.length < 3 ? { addressLine1: text } : { addressLine1: words.slice(0, -1).join(" "), city: words.at(-1)!, state, postalCode };
+  if (words.length < 3) return { addressLine1: text };
+  const start = cityStart(words);
+  return start < 2 ? { addressLine1: text } : { addressLine1: words.slice(0, start).join(" "), city: words.slice(start).join(" "), state, postalCode };
+}
+
+const PERIODS: Record<string, string> = { day: "daily", daily: "daily", week: "weekly", weekly: "weekly", month: "monthly", monthly: "monthly", year: "yearly", yearly: "yearly", annual: "yearly", annually: "yearly" };
+
+/** "16 hours daily", "40 hrs/week", "8 hours per day", "20" -> hours plus the period the intake requires (daily, weekly, monthly, yearly). */
+export function parseRequestedHours(value: string) {
+  const text = value.toLowerCase().replace(/\s+/g, " ").trim();
+  const hours = /(\d+(?:\.\d{1,2})?)/.exec(text)?.[1];
+  if (!hours) return null;
+  const word = /\b(daily|day|weekly|week|monthly|month|yearly|year|annually|annual)\b/.exec(text)?.[1];
+  return { hours, period: word ? PERIODS[word] : null };
 }
 
 /** Service boxes → Waldah service types. Services without a Waldah equivalent become OTHER (the reviewer sees it and can correct). */
@@ -57,11 +93,23 @@ export function referralFormProposals(raw: Raw): ReferralFormProposal[] {
   const address = splitAddress(text("service_address"));
   if (address) for (const [key, value] of Object.entries(address)) add(`client.${key}`, value);
   add("client.maPmiNumber", text("medicaid_number")); add("client.waiverProgram", text("waiver_program"));
+  add("health.diagnoses", text("primary_diagnosis"));
+  const insurance = [checked("ins_medicaid") ? "Medicaid" : "", checked("ins_medicare") ? "Medicare" : "", checked("ins_other") ? text("insurance_other") || "Other" : ""].filter(Boolean);
+  add("health.healthInsurancePlan", insurance.join(", "));
 
   for (const [keys, serviceType] of SERVICE_TYPES) if (keys.some(checked)) add(`services.types.${serviceType}`, "true");
   add("services.0.startDate", text("requested_start_date"));
+  const requested = parseRequestedHours(text("requested_hours"));
+  add("services.0.authorizedHours", requested?.hours); add("services.0.authorizationPeriod", requested?.period);
 
   // "Contact for service needs" is a contact person, not necessarily a legal representative, so it lands as an emergency-contact proposal.
   if (checked("call_other")) { add("emergencyContacts.0.name", text("other_contact_name")); add("emergencyContacts.0.relationship", text("other_contact_relationship")); add("emergencyContacts.0.phone", phoneFromText(text("other_contact_phone"))); }
   return out.map(item => item.fieldPath.startsWith("services.types.") ? { fieldPath: item.fieldPath, value: true } : item);
 }
+
+/**
+ * The fillable form's own boxes are authoritative. Its printed wording (footer email, section headings, thank-you line) must never become client data,
+ * so text-derived proposals on these paths are dropped for a recognized referral form.
+ */
+export const REFERRAL_FORM_FIELD_OWNED_PREFIXES = ["client.", "caseManager.", "health.", "services.", "emergencyContacts."];
+export const referralFormOwnsPath = (fieldPath: string) => REFERRAL_FORM_FIELD_OWNED_PREFIXES.some(prefix => fieldPath.startsWith(prefix));

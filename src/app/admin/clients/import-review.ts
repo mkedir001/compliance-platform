@@ -26,6 +26,8 @@ const exactLabels: Record<string, string> = {
   "caseManager.phone": "Case manager phone",
   "caseManager.email": "Case manager email",
   "services.0.authorizationIdentifier": "Service authorization identifier",
+  "services.0.authorizedHours": "Authorized / requested hours",
+  "services.0.authorizationPeriod": "Hours period (daily, weekly, monthly, yearly)",
   "rights.writtenCopyReceivedDate": "Written copy received date",
   "rights.rightsExplainedDate": "Rights explained date",
   "rights.annualReviewDate": "Annual rights review date",
