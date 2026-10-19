@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { emailFromText, isReferralFormFields, parseRequestedHours, phoneFromText, referralFormOwnsPath, referralFormProposals, splitAddress, splitFullName } from "@/domain/clients/referral-form-fields";
+import { maskMedicareNumber, normalizeMedicareNumber } from "@/domain/clients/medicare-number";
 
 const raw = {
   client_name: "Jordan Example", client_dob: "4/16/2005", client_male: true, client_phone: "Pat-507-555-0101", client_email: "Pat Example; pat@example.com",
@@ -83,6 +84,11 @@ describe("referral form: care profile items, Medicare, overnight and the referri
     const items = referralFormProposals(full);
     expect(get(items, "client.maPmiNumber")).toBe("00504177");
     expect(get(items, "health.medicareNumber")).toBe("1EG4-TE5-MK73");
+    expect(normalizeMedicareNumber("  01A2 B3C4-D56  ")).toBe("01A2 B3C4-D56");
+    expect(normalizeMedicareNumber("not/valid")).toBeNull();
+    expect(normalizeMedicareNumber("   ")).toBeNull();
+    expect(maskMedicareNumber("01A2-B3C4-D56")).toBe("•••• 4D56");
+    expect(get(referralFormProposals({ client_name: "Jennifer Jaques", medicare_number: "not/valid" }), "health.medicareNumber")).toBeUndefined();
   });
   it("maps night supervision to overnight sleep and keeps the other services as OTHER", () => {
     const items = referralFormProposals(full);
@@ -104,8 +110,9 @@ describe("referral form: care profile items, Medicare, overnight and the referri
     expect(get(asCaseManager, "caseManager.name")).toBe("Sam Rivera"); expect(get(asCaseManager, "caseManager.agency")).toBe("Ramsey County");
     expect(get(asCaseManager, "caseManager.phone")).toBe("651-555-0100"); expect(get(asCaseManager, "caseManager.email")).toBe("sam@ramsey.example");
     expect(get(asCaseManager, "referrer.name")).toBeUndefined();
-    const separate = referralFormProposals({ ...full, case_manager_name: "Alex Reese" });
-    expect(get(separate, "referrer.name")).toBe("Sam Rivera"); expect(get(separate, "caseManager.name")).toBeUndefined();
+    const separate = referralFormProposals({ ...full, case_manager_name: "Alex Reese", case_manager_agency: "Hennepin County", case_manager_phone: "612-555-0109", case_manager_email: "alex@example.test" });
+    expect(get(separate, "referrer.name")).toBe("Sam Rivera"); expect(get(separate, "caseManager.name")).toBe("Alex Reese");
+    expect(get(separate, "caseManager.agency")).toBe("Hennepin County"); expect(get(separate, "caseManager.phone")).toBe("612-555-0109");
     const sameName = referralFormProposals({ ...full, case_manager_name: "sam rivera" });
     expect(get(sameName, "referrer.name")).toBeUndefined();
   });

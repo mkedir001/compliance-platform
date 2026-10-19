@@ -1,3 +1,5 @@
+import { normalizeMedicareNumber } from "./medicare-number";
+
 /**
  * Maps the fillable Radiant Care "Services Referral Form" (AcroForm field names such as client_name,
  * client_dob, svc_ihs_with_training) onto the client import proposal paths. Pure functions, no I/O.
@@ -97,7 +99,7 @@ export function referralFormProposals(raw: Raw): ReferralFormProposal[] {
   const address = splitAddress(text("service_address"));
   if (address) for (const [key, value] of Object.entries(address)) add(`client.${key}`, value);
   add("client.maPmiNumber", text("medicaid_number")); add("client.waiverProgram", text("waiver_program"));
-  add("health.diagnoses", text("primary_diagnosis")); add("health.medicareNumber", text("medicare_number"));
+  add("health.diagnoses", text("primary_diagnosis")); add("health.medicareNumber", normalizeMedicareNumber(text("medicare_number")));
   const insurance = [checked("ins_medicaid") ? "Medicaid" : "", checked("ins_medicare") ? "Medicare" : "", checked("ins_other") ? text("insurance_other") || "Other" : ""].filter(Boolean);
   add("health.healthInsurancePlan", insurance.join(", "));
 
@@ -110,7 +112,11 @@ export function referralFormProposals(raw: Raw): ReferralFormProposal[] {
   if (checked("call_other")) { add("emergencyContacts.0.name", text("other_contact_name")); add("emergencyContacts.0.relationship", text("other_contact_relationship")); add("emergencyContacts.0.phone", phoneFromText(text("other_contact_phone"))); }
 
   // Referring person: a professional contact. With no separate case manager block it is the case manager (the usual case); otherwise it is kept as its own contact.
-  const hasCaseManager = ["case_manager_name", "case_manager_phone", "case_manager_email"].some(key => text(key));
+  const hasCaseManager = ["case_manager_name", "case_manager_agency", "case_manager_phone", "case_manager_email"].some(key => text(key));
+  if (hasCaseManager) {
+    add("caseManager.name", text("case_manager_name")); add("caseManager.agency", text("case_manager_agency"));
+    add("caseManager.phone", phoneFromText(text("case_manager_phone"))); add("caseManager.email", emailFromText(text("case_manager_email")));
+  }
   if (text("referral_name") && !(hasCaseManager && text("referral_name").toLowerCase() === text("case_manager_name").toLowerCase())) {
     const group = hasCaseManager ? "referrer" : "caseManager";
     add(`${group}.name`, text("referral_name")); add(`${group}.agency`, text("referral_agency")); add(`${group}.phone`, phoneFromText(text("referral_phone"))); add(`${group}.email`, emailFromText(text("referral_email")));
