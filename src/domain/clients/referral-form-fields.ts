@@ -3,7 +3,8 @@
  * client_dob, svc_ihs_with_training) onto the client import proposal paths. Pure functions, no I/O.
  * The referrals module keeps its own mapping for the referral workflow; this one feeds the client import.
  */
-export type ReferralFormProposal = { fieldPath: string; value: string | boolean };
+export type CareFactValue = { label: string; answer: "YES"; detail: string; note: string };
+export type ReferralFormProposal = { fieldPath: string; value: string | boolean | CareFactValue };
 type Raw = Record<string, string | boolean>;
 
 const PHONE = /\(?\b\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b/;
@@ -78,12 +79,15 @@ export function parseRequestedHours(value: string) {
 const SERVICE_TYPES: [string[], string][] = [
   [["svc_ihs_without_training"], "IHS_WITHOUT_TRAINING"], [["svc_ihs_with_training"], "IHS_WITH_TRAINING"], [["svc_ihs_family_training"], "IHS_WITH_FAMILY_TRAINING"],
   [["svc_respite_in_home", "svc_respite_out_of_home"], "RESPITE"], [["svc_homemaker"], "HOMEMAKING"],
-  [["svc_icls", "svc_night_supervision", "svc_sils", "svc_companion", "svc_emergency", "svc_employment_exploration", "svc_other"], "OTHER"]
+  [["svc_night_supervision"], "OVERNIGHT_SLEEP"],
+  [["svc_icls", "svc_sils", "svc_companion", "svc_emergency", "svc_employment_exploration", "svc_other"], "OTHER"]
 ];
 
 export function referralFormProposals(raw: Raw): ReferralFormProposal[] {
   const out: ReferralFormProposal[] = [], text = (key: string) => typeof raw[key] === "string" ? (raw[key] as string).trim() : "", checked = (key: string) => raw[key] === true || raw[key] === "Yes";
   const add = (fieldPath: string, value: string | null | undefined) => { if (value) out.push({ fieldPath, value }); };
+  // The care profile holds each item as a reviewed answer plus detail. Free-text form entries are recorded as "Yes, provided" with the text as the detail.
+  const care = (key: string, label: string, detail: string) => { if (detail.trim()) out.push({ fieldPath: `care.${key}`, value: { label, answer: "YES", detail: detail.trim(), note: "" } }); };
 
   const name = splitFullName(text("client_name"));
   add("client.legalFirstName", name?.first); add("client.legalLastName", name?.last);
@@ -93,7 +97,7 @@ export function referralFormProposals(raw: Raw): ReferralFormProposal[] {
   const address = splitAddress(text("service_address"));
   if (address) for (const [key, value] of Object.entries(address)) add(`client.${key}`, value);
   add("client.maPmiNumber", text("medicaid_number")); add("client.waiverProgram", text("waiver_program"));
-  add("health.diagnoses", text("primary_diagnosis"));
+  add("health.diagnoses", text("primary_diagnosis")); add("health.medicareNumber", text("medicare_number"));
   const insurance = [checked("ins_medicaid") ? "Medicaid" : "", checked("ins_medicare") ? "Medicare" : "", checked("ins_other") ? text("insurance_other") || "Other" : ""].filter(Boolean);
   add("health.healthInsurancePlan", insurance.join(", "));
 
@@ -104,6 +108,25 @@ export function referralFormProposals(raw: Raw): ReferralFormProposal[] {
 
   // "Contact for service needs" is a contact person, not necessarily a legal representative, so it lands as an emergency-contact proposal.
   if (checked("call_other")) { add("emergencyContacts.0.name", text("other_contact_name")); add("emergencyContacts.0.relationship", text("other_contact_relationship")); add("emergencyContacts.0.phone", phoneFromText(text("other_contact_phone"))); }
+
+  // Referring person: a professional contact. With no separate case manager block it is the case manager (the usual case); otherwise it is kept as its own contact.
+  const hasCaseManager = ["case_manager_name", "case_manager_phone", "case_manager_email"].some(key => text(key));
+  if (text("referral_name") && !(hasCaseManager && text("referral_name").toLowerCase() === text("case_manager_name").toLowerCase())) {
+    const group = hasCaseManager ? "referrer" : "caseManager";
+    add(`${group}.name`, text("referral_name")); add(`${group}.agency`, text("referral_agency")); add(`${group}.phone`, phoneFromText(text("referral_phone"))); add(`${group}.email`, emailFromText(text("referral_email")));
+  }
+
+  // Everything else on the form lands in the care profile for the reviewer to confirm.
+  care("specialInstructions", "Special instructions", text("special_instructions"));
+  care("bestTimeToCall", "Best time to call", text("best_time_to_call"));
+  care("serviceLocation", "Service location", checked("place_home") ? "Home" : checked("place_other") ? "Other" : "");
+  care("referralDate", "Referral date", text("todays_date"));
+  const heard = [["heard_website", "Website"], ["heard_case_manager", "Case manager"], ["heard_physician", "Physician"], ["heard_hospital", "Hospital"], ["heard_previous_client", "Previous client"], ["heard_family_member", "Family member"], ["heard_brochure", "Brochure"]].filter(([key]) => checked(key)).map(([, label]) => label);
+  if (checked("heard_other")) heard.push(text("heard_other_text") || "Other");
+  care("referralSource", "How they heard about Radiant Care", heard.join(", "));
+  const otherServices = [["svc_icls", "ICLS"], ["svc_sils", "SILS"], ["svc_companion", "Companion"], ["svc_emergency", "Emergency"], ["svc_employment_exploration", "Employment exploration"]].filter(([key]) => checked(key)).map(([, label]) => label);
+  if (checked("svc_other")) otherServices.push(text("svc_other_text") || "Other");
+  care("otherServicesRequested", "Other services requested", otherServices.join(", "));
   return out.map(item => item.fieldPath.startsWith("services.types.") ? { fieldPath: item.fieldPath, value: true } : item);
 }
 

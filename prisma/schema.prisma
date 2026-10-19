@@ -3260,6 +3260,7 @@ model ClientHealthProfile {
   pharmacyPhone            String?
   healthInsurancePlan      String?
   memberId                 String?
+  medicareNumber           String?
   diagnoses                String?
   allergiesReactions       String?
   specialDietTexture       String?

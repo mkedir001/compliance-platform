@@ -68,3 +68,45 @@ describe("referral form: Saint cities, requested hours, diagnosis and insurance"
     expect(referralFormOwnsPath("care.waterSafetySkills")).toBe(false);
   });
 });
+
+describe("referral form: care profile items, Medicare, overnight and the referring person", () => {
+  const full = {
+    client_name: "Jennifer Jaques", medicaid_number: "00504177", medicare_number: "1EG4-TE5-MK73",
+    svc_night_supervision: true, svc_icls: true, svc_other: true, svc_other_text: "Transportation",
+    special_instructions: "Call before arriving; dog in the home", best_time_to_call: "Anytime", place_home: true, todays_date: "9/16/2026",
+    heard_case_manager: true, heard_other: true, heard_other_text: "Client",
+    referral_name: "Sam Rivera", referral_agency: "Ramsey County", referral_phone: "Sam 651-555-0100", referral_email: "sam@ramsey.example",
+  };
+  const careValue = (items: ReturnType<typeof referralFormProposals>, key: string) => items.find(item => item.fieldPath === `care.${key}`)?.value as { label: string; answer: string; detail: string } | undefined;
+
+  it("keeps the MA number and stores the Medicare number separately", () => {
+    const items = referralFormProposals(full);
+    expect(get(items, "client.maPmiNumber")).toBe("00504177");
+    expect(get(items, "health.medicareNumber")).toBe("1EG4-TE5-MK73");
+  });
+  it("maps night supervision to overnight sleep and keeps the other services as OTHER", () => {
+    const items = referralFormProposals(full);
+    expect(get(items, "services.types.OVERNIGHT_SLEEP")).toBe(true);
+    expect(get(items, "services.types.OTHER")).toBe(true);
+  });
+  it("records the remaining form entries as care profile items with the text as detail", () => {
+    const items = referralFormProposals(full);
+    expect(careValue(items, "specialInstructions")).toEqual({ label: "Special instructions", answer: "YES", detail: "Call before arriving; dog in the home", note: "" });
+    expect(careValue(items, "bestTimeToCall")?.detail).toBe("Anytime");
+    expect(careValue(items, "serviceLocation")?.detail).toBe("Home");
+    expect(careValue(items, "referralDate")?.detail).toBe("9/16/2026");
+    expect(careValue(items, "referralSource")?.detail).toBe("Case manager, Client");
+    expect(careValue(items, "otherServicesRequested")?.detail).toBe("ICLS, Transportation");
+    expect(referralFormProposals({ client_name: "Jennifer Jaques" }).some(item => item.fieldPath.startsWith("care."))).toBe(false);
+  });
+  it("treats the referring person as the case manager unless the form names a different case manager", () => {
+    const asCaseManager = referralFormProposals(full);
+    expect(get(asCaseManager, "caseManager.name")).toBe("Sam Rivera"); expect(get(asCaseManager, "caseManager.agency")).toBe("Ramsey County");
+    expect(get(asCaseManager, "caseManager.phone")).toBe("651-555-0100"); expect(get(asCaseManager, "caseManager.email")).toBe("sam@ramsey.example");
+    expect(get(asCaseManager, "referrer.name")).toBeUndefined();
+    const separate = referralFormProposals({ ...full, case_manager_name: "Alex Reese" });
+    expect(get(separate, "referrer.name")).toBe("Sam Rivera"); expect(get(separate, "caseManager.name")).toBeUndefined();
+    const sameName = referralFormProposals({ ...full, case_manager_name: "sam rivera" });
+    expect(get(sameName, "referrer.name")).toBeUndefined();
+  });
+});
