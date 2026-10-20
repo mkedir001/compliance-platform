@@ -22,7 +22,7 @@ export type BillingVisitRow = {
   /** null = not billed yet (also the case for failed attempts that produced no result record). */
   result: BillingResult | null;
 };
-export type PendingMatch = { axisCareClientId: string; axisCareName: string; axisCareDateOfBirth: string | null; state: "SUGGESTED"|"AMBIGUOUS"|"UNMATCHED"; candidates:{id:string;clientId:string;clientName:string;clientDateOfBirth:string|null;reason:string;score:number}[]; availableClients:{id:string;name:string;dateOfBirth:string|null}[] };
+export type PendingMatch = { axisCareClientId: string; axisCareName: string; axisCareDateOfBirth: string | null; axisCareLifecycle:"ACTIVE"|"INACTIVE"|"DISCHARGED"|"ARCHIVED"|"UNKNOWN"; axisCareStatusLabel:string|null; state: "SUGGESTED"|"AMBIGUOUS"|"UNMATCHED"|"CONFIRMED"|"IGNORED"; confirmedClientName:string|null; candidates:{id:string;clientId:string;clientName:string;clientDateOfBirth:string|null;reason:string;score:number}[]; availableClients:{id:string;name:string;dateOfBirth:string|null}[] };
 export type AxisCareConnectionView = { configured: boolean; baseUrl: string | null; status: string; lastTestedAt: string | null; lastConnectedAt: string | null; lastErrorCode: string | null; historyMonths: number };
 export type AxisCareAdministration = {
   connection: AxisCareConnectionView;

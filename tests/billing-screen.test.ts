@@ -11,6 +11,7 @@ describe("billing screen integration", () => {
   const navigation = source("src/app/components/portal-ui.tsx");
   const styles = source("src/app/admin/billing/billing.css");
   const axisCareStatus = source("src/domain/axiscare/status.ts");
+  const matchRoute = source("src/app/api/organizations/[organizationId]/axiscare/matches/route.ts");
   const ownerBackfill = source("prisma/migrations/20261016120000_backfill_organization_owner_billing_permissions/migration.sql");
 
   it("reuses the existing route, shell, organization context, and one navigation item", () => {
@@ -85,6 +86,20 @@ describe("billing screen integration", () => {
     expect(axisCareStatus).toContain("Billing actions remain disabled.");
     expect(axisCareStatus).toContain("Read-only synchronization is available");
     for (const status of ["Saved, not verified", "Connected and verified", "Authentication failed", "Connection unavailable"]) expect(axisCareStatus).toContain(status);
+  });
+
+  it("supports lifecycle-aware matching review, persistent ignore, and bounded bulk actions", () => {
+    for (const text of ["AxisCare status", "Matching status", "Needs review", "Discharged", "Archived", "Unknown", "Confirmed", "Ignored", "Ignore selected", "Select visible clients", "Restore", "PAGE_SIZE = 25"]) expect(match).toContain(text);
+    expect(match).toContain("window.confirm");
+    expect(match).toContain("visible.filter");
+    expect(match).toContain('action: "IGNORE"');
+    expect(match).toContain('setDisposition(row, "RESTORE")');
+    expect(page).toContain("getAxisCareClientMatches");
+    expect(service).toContain("mapClientLifecycle");
+    expect(service).toContain('state = record.ignoredAt ? "IGNORED"');
+    expect(matchRoute).toContain("requireOrganizationAccess(user, organizationId)");
+    expect(matchRoute).toContain('requirePermission(membership.id, "billing.run")');
+    expect(matchRoute).toContain("changeAxisCareClientDisposition");
   });
 
   it("stays responsive and accessible", () => {

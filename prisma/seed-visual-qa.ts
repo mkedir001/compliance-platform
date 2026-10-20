@@ -51,6 +51,17 @@ async function main() {
     db.client.create({data:{organizationId:organization.id,status:"INTAKE_IN_PROGRESS",legalFirstName:"Demo",legalLastName:"Client Two",dateOfBirth:at("1988-02-02"),email:"demo.client.two@example.test",city:"Maplewood",state:"MN",createdByUserId:owner.id,intakes:{create:{organizationId:organization.id,status:"IN_PROGRESS",currentStep:"CONTACTS",progressJson:{synthetic:true},checklistItems:{create:[{code:"FACE_SHEET",label:"Synthetic face sheet",status:"COMPLETED",completedAt:at("2026-10-01"),sequence:1},{code:"RIGHTS",label:"Synthetic rights acknowledgment",status:"PENDING",sequence:2}]}}}}}),
     db.client.create({data:{organizationId:organization.id,status:"PROSPECTIVE",legalFirstName:"Example",legalLastName:"Client Three",dateOfBirth:at("1995-03-03"),email:"example.client.three@example.test",city:"Roseville",state:"MN",createdByUserId:owner.id}}),
   ]);
+  await db.client.update({where:{id:clients[0].id},data:{axisCareClientId:"vqa-confirmed"}});
+  await db.axisCareRecord.createMany({data:[
+    {organizationId:organization.id,entity:"client",externalId:"vqa-confirmed",payload:{id:"vqa-confirmed",firstName:"Sample",lastName:"Client One",status:{active:true,label:"Current"}},payloadHash:digest("vqa-confirmed")},
+    {organizationId:organization.id,entity:"client",externalId:"vqa-active-suggested",payload:{id:"vqa-active-suggested",firstName:"Example",lastName:"Client Three",status:{active:true,label:"Current"}},payloadHash:digest("vqa-active-suggested")},
+    {organizationId:organization.id,entity:"client",externalId:"vqa-inactive",payload:{id:"vqa-inactive",firstName:"Historical",lastName:"Inactive",status:{active:false,label:"Inactive"}},payloadHash:digest("vqa-inactive")},
+    {organizationId:organization.id,entity:"client",externalId:"vqa-discharged",payload:{id:"vqa-discharged",firstName:"Historical",lastName:"Discharged",status:{active:false,label:"Discharged"}},payloadHash:digest("vqa-discharged")},
+    {organizationId:organization.id,entity:"client",externalId:"vqa-unknown",payload:{id:"vqa-unknown",firstName:"Status",lastName:"Unknown"},payloadHash:digest("vqa-unknown")},
+    {organizationId:organization.id,entity:"client",externalId:"vqa-ignored",payload:{id:"vqa-ignored",firstName:"Ignored",lastName:"Historical",status:{active:false,label:"Archived"}},payloadHash:digest("vqa-ignored"),ignoredAt:at("2026-10-01"),ignoredByUserId:owner.id},
+    {organizationId:organization.id,entity:"caregiver",externalId:"vqa-caregiver",payload:{id:"vqa-caregiver",firstName:"Synthetic",lastName:"Caregiver"},payloadHash:digest("vqa-caregiver")},
+  ]});
+  await db.axisCareClientMatch.create({data:{organizationId:organization.id,axisCareClientId:"vqa-active-suggested",clientId:clients[2].id,status:"SUGGESTED",reason:"Synthetic visual-QA identity suggestion",score:90}});
   const [rightsTemplate,faceTemplate] = await Promise.all([
     db.clientDocumentTemplate.create({data:{organizationId:organization.id,code:"VQA-RIGHTS",name:"Synthetic Rights Acknowledgment",documentType:"RIGHTS_ACKNOWLEDGMENT",versionNumber:1,renewalPolicy:"ANNUAL",renewalWarningDays:30,contentJson:{renderer:"BASIC",synthetic:true}}}),
     db.clientDocumentTemplate.create({data:{organizationId:organization.id,code:"VQA-FACE",name:"Synthetic Face Sheet",documentType:"FACE_SHEET",versionNumber:1,renewalPolicy:"NONE",contentJson:{renderer:"BASIC",synthetic:true,signerRoles:["CLIENT"]}}}),

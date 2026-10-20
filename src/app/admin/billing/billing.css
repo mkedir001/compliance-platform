@@ -74,6 +74,21 @@
 /* Match review */
 .billing-review{display:grid;gap:12px}
 .billing-actions{display:flex;flex-wrap:wrap;gap:10px}
+.billing-match-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:18px}
+.billing-match-heading p{margin:4px 0 0}
+.billing-match-counts{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px 16px;font-size:.82rem;color:var(--portal-muted)}
+.billing-match-counts b{color:var(--portal-ink)}
+.billing-match-filters{display:grid;grid-template-columns:minmax(220px,1fr) minmax(170px,.55fr) minmax(170px,.55fr);gap:10px}
+.billing-match-filters label{display:grid;gap:4px;color:var(--portal-muted);font-size:.74rem;font-weight:700}
+.billing-match-filters input,.billing-match-filters select,.billing-match-table select{width:100%;min-height:38px}
+.billing-match-table{min-width:900px}
+.billing-match-table th:first-child,.billing-match-table td:first-child{width:40px}
+.billing-match-table th:last-child,.billing-match-table td:last-child{min-width:210px}
+.billing-inline-feedback{display:block;margin-top:6px;font-weight:700;line-height:1.35}
+.billing-inline-feedback.good{color:#174c32}.billing-inline-feedback.danger{color:#7a2922}
+.billing-pagination{display:flex;align-items:center;justify-content:space-between;gap:12px;color:var(--portal-muted);font-size:.82rem}
+.billing-pagination>span:last-child{display:flex;gap:8px}
+.portal-app .billing-pagination button{min-height:34px;padding:0 14px}
 .billing-note{margin:0;padding:10px 12px;border-radius:8px;background:#fff0c7;color:#6d4a00;font-size:.88rem}
 .billing-feedback{margin:0;padding:10px 14px;border:1px solid;border-radius:10px;font-size:.88rem;font-weight:700}
 .billing-feedback.good{border-color:#8db9a0;background:#eaf6ee;color:#174c32}
@@ -123,6 +138,13 @@
   .billing-table tr{display:block;padding:10px 0;border-bottom:1px solid var(--portal-border)}
   .billing-table td{display:flex;justify-content:space-between;gap:12px;border:0;padding:4px 12px}
   .billing-table td::before{content:attr(data-label);color:var(--portal-muted);font-size:.74rem;font-weight:700}
+  .billing-match-heading{display:grid}
+  .billing-match-counts{justify-content:flex-start}
+  .billing-match-filters{grid-template-columns:1fr}
+  .billing-match-table{min-width:0}
+  .billing-match-table td{display:grid;grid-template-columns:minmax(105px,.4fr) minmax(0,1fr);align-items:start}
+  .billing-match-table td>*{min-width:0}
+  .billing-pagination{align-items:flex-start}
   .billing-section-title{display:flex;align-items:center;flex-wrap:wrap;gap:8px 16px}
 .billing-section-head{flex-direction:column;align-items:stretch}
 }

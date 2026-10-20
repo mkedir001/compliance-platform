@@ -3979,10 +3979,13 @@ model AxisCareRecord {
   firstSeenAt    DateTime     @default(now())
   lastSyncedAt   DateTime     @default(now())
   removedAt      DateTime?
+  ignoredAt      DateTime?
+  ignoredByUserId String?
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@unique([organizationId, entity, externalId])
   @@index([organizationId, entity, lastSyncedAt])
+  @@index([organizationId, entity, ignoredAt])
 }
 
 model AxisCareVisit {

@@ -35,4 +35,25 @@ export function mapClientIdentity(raw: Json) {
   };
 }
 
+export type AxisCareClientLifecycle = "ACTIVE" | "INACTIVE" | "DISCHARGED" | "ARCHIVED" | "UNKNOWN";
+
+/**
+ * AxisCare documents client status as an agency-configured label plus an
+ * authoritative active boolean. Preserve the label and only promote the two
+ * historical categories when the source label says so explicitly.
+ */
+export function mapClientLifecycle(raw: Json): { lifecycle: AxisCareClientLifecycle; sourceLabel: string | null; active: boolean | null } {
+  const status = obj(raw.status);
+  const active = typeof status?.active === "boolean" ? status.active : null;
+  const sourceLabel = str(status?.label) ?? (typeof raw.status === "string" ? str(raw.status) : null);
+  if (active === true) return { lifecycle: "ACTIVE", sourceLabel, active };
+  if (active === false) {
+    const label = sourceLabel?.toLowerCase() ?? "";
+    if (label.includes("discharg")) return { lifecycle: "DISCHARGED", sourceLabel, active };
+    if (label.includes("archiv")) return { lifecycle: "ARCHIVED", sourceLabel, active };
+    return { lifecycle: "INACTIVE", sourceLabel, active };
+  }
+  return { lifecycle: "UNKNOWN", sourceLabel, active };
+}
+
 export function monthsAgo(months: number, now = new Date()) { const d = new Date(now); d.setUTCMonth(d.getUTCMonth() - months); return d; }

@@ -60,10 +60,13 @@ export async function upsertVisit(organizationId: string, raw: Json, detail?: Js
   const mapped = mapVisit(raw);
   if (!mapped.externalId) return false;
   const now = new Date();
-  const [link, employee] = await Promise.all([
-    mapped.axisCareClientId ? prisma.client.findFirst({ where: { organizationId, ...operationalClientWhere, axisCareClientId: mapped.axisCareClientId }, select: { id: true } }) : null,
+  const [sourceClient, employee] = await Promise.all([
+    mapped.axisCareClientId ? prisma.axisCareRecord.findUnique({ where: { organizationId_entity_externalId: { organizationId, entity: "client", externalId: mapped.axisCareClientId } }, select: { ignoredAt: true } }) : null,
     mapped.axisCareCaregiverId ? prisma.employee.findFirst({ where: { organizationId, ...operationalEmployeeWhere, axisCareCaregiverId: mapped.axisCareCaregiverId }, select: { id: true } }) : null,
   ]);
+  const link = mapped.axisCareClientId && !sourceClient?.ignoredAt
+    ? await prisma.client.findFirst({ where: { organizationId, ...operationalClientWhere, axisCareClientId: mapped.axisCareClientId }, select: { id: true } })
+    : null;
   const { externalId, clockInLatitude, clockInLongitude, clockOutLatitude, clockOutLongitude, ...rest } = mapped;
   const safeClock = (value: unknown) => { const clock = obj(value), coordinates = obj(clock?.coordinates); return clock ? { ...pick(clock, ["time", "method", "telephonyPhone"]), coordinates: coordinates ? pick(coordinates, ["latitude", "longitude"]) : null } : null; };
   const visitPayload = { id: raw.id, client: obj(raw.client) ? pick(obj(raw.client)!, ["id"]) : null, caregiver: obj(raw.caregiver) ? pick(obj(raw.caregiver)!, ["id"]) : null, startDate: raw.startDate, endDate: raw.endDate, scheduledStartDate: raw.scheduledStartDate, scheduledEndDate: raw.scheduledEndDate, clockIn: safeClock(raw.clockIn), clockOut: safeClock(raw.clockOut), timezone: raw.timezone, service: obj(raw.service) ? pick(obj(raw.service)!, ["id", "code", "description", "procedureCode"]) : null, type: raw.type, verified: raw.verified, removed: raw.removed, chargeRate: raw.chargeRate, billableRateMode: raw.billableRateMode, modificationReason: obj(raw.modificationReason) ? pick(obj(raw.modificationReason)!, ["id", "name"]) : null };
@@ -117,7 +120,7 @@ export async function syncVisits(client: AxisCareClient, config: AxisCareConfig,
 /** Build review suggestions only. Synchronization never links or changes a canonical Waldah client. */
 export async function reconcileClientLinks(organizationId: string) {
   const [records, clients] = await Promise.all([
-    prisma.axisCareRecord.findMany({ where: { organizationId, entity: "client", removedAt: null }, select: { payload: true } }),
+    prisma.axisCareRecord.findMany({ where: { organizationId, entity: "client", removedAt: null, ignoredAt: null }, select: { payload: true } }),
     prisma.client.findMany({ where: { organizationId, ...operationalClientWhere, archivedAt: null }, select: { id: true, legalFirstName: true, legalLastName: true, preferredName: true, dateOfBirth: true, maPmiNumber: true, axisCareClientId: true } })
   ]);
   const decided = await prisma.axisCareClientMatch.findMany({ where: { organizationId, status: { in: ["CONFIRMED", "REJECTED"] } }, select: { axisCareClientId: true, clientId: true, status: true } });
@@ -143,10 +146,10 @@ export async function reconcileClientLinks(organizationId: string) {
 /** Explicit administrator selection for a source client that may have no heuristic suggestion. */
 export async function confirmExplicitClientMatch(organizationId: string, axisCareClientId: string, clientId: string, decidedByUserId: string) {
   const [source, target] = await Promise.all([
-    prisma.axisCareRecord.findUnique({ where: { organizationId_entity_externalId: { organizationId, entity: "client", externalId: axisCareClientId } }, select: { id: true, removedAt: true } }),
+    prisma.axisCareRecord.findUnique({ where: { organizationId_entity_externalId: { organizationId, entity: "client", externalId: axisCareClientId } }, select: { id: true, removedAt: true, ignoredAt: true } }),
     prisma.client.findFirst({ where: { id: clientId, organizationId, ...operationalClientWhere, archivedAt: null }, select: { id: true } }),
   ]);
-  if (!source || source.removedAt || !target) return null;
+  if (!source || source.removedAt || source.ignoredAt || !target) return null;
   const match = await prisma.axisCareClientMatch.upsert({
     where: { organizationId_axisCareClientId_clientId: { organizationId, axisCareClientId, clientId } },
     create: { organizationId, axisCareClientId, clientId, status: "SUGGESTED", score: 0, reason: "Selected explicitly by an authorized administrator" },
@@ -161,11 +164,12 @@ export async function confirmClientMatch(organizationId: string, matchId: string
   return prisma.$transaction(async tx => {
     const match = await tx.axisCareClientMatch.findFirst({ where: { id: matchId, organizationId, status: "SUGGESTED" } });
     if (!match?.clientId) return null;
-    const [client, externalClaim] = await Promise.all([
+    const [source, client, externalClaim] = await Promise.all([
+      tx.axisCareRecord.findFirst({ where: { organizationId, entity: "client", externalId: match.axisCareClientId, removedAt: null, ignoredAt: null }, select: { id: true } }),
       tx.client.findFirst({ where: { id: match.clientId, organizationId, ...operationalClientWhere }, select: { axisCareClientId: true } }),
       tx.client.findFirst({ where: { organizationId, axisCareClientId: match.axisCareClientId, id: { not: match.clientId } }, select: { id: true } }),
     ]);
-    if (!client) return null;
+    if (!source || !client) return null;
     if (client.axisCareClientId && client.axisCareClientId !== match.axisCareClientId) throw new ConflictError("Waldah client is already matched to another AxisCare client", "WALDAH_CLIENT_ALREADY_MATCHED");
     if (externalClaim) throw new ConflictError("AxisCare client is already matched to another Waldah client", "AXISCARE_CLIENT_ALREADY_MATCHED");
     const claimed = await tx.client.updateMany({ where: { id: match.clientId, organizationId, ...operationalClientWhere, OR: [{ axisCareClientId: null }, { axisCareClientId: match.axisCareClientId }] }, data: { axisCareClientId: match.axisCareClientId } });
@@ -176,6 +180,50 @@ export async function confirmClientMatch(organizationId: string, matchId: string
     await tx.auditEvent.create({ data: { organizationId, actorUserId: decidedByUserId, eventType: "axiscare.client_mapped", entityType: "Client", entityId: match.clientId, metadataJson: { axisCareClientId: match.axisCareClientId } } });
     return match.clientId;
   }, { isolationLevel: "Serializable" });
+}
+
+export type AxisCareDispositionResult = {
+  axisCareClientId: string;
+  status: "IGNORED" | "RESTORED" | "ALREADY_IGNORED" | "ALREADY_ACTIVE" | "BLOCKED_CONFIRMED" | "NOT_FOUND";
+};
+
+/** Ignore/restore operates only on the staged source mirror. It never deletes or edits either system's client record. */
+export async function changeAxisCareClientDisposition(
+  organizationId: string,
+  axisCareClientIds: string[],
+  actorUserId: string,
+  action: "IGNORE" | "RESTORE",
+): Promise<AxisCareDispositionResult[]> {
+  const ids = [...new Set(axisCareClientIds.map(value => value.trim()).filter(Boolean))].slice(0, 200);
+  const results: AxisCareDispositionResult[] = [];
+  for (const axisCareClientId of ids) {
+    results.push(await prisma.$transaction(async tx => {
+      const record = await tx.axisCareRecord.findUnique({
+        where: { organizationId_entity_externalId: { organizationId, entity: "client", externalId: axisCareClientId } },
+        select: { id: true, removedAt: true, ignoredAt: true },
+      });
+      if (!record || record.removedAt) return { axisCareClientId, status: "NOT_FOUND" as const };
+      if (action === "IGNORE") {
+        const confirmed = await tx.client.findFirst({ where: { organizationId, axisCareClientId }, select: { id: true } });
+        if (confirmed) return { axisCareClientId, status: "BLOCKED_CONFIRMED" as const };
+        if (record.ignoredAt) return { axisCareClientId, status: "ALREADY_IGNORED" as const };
+        const changed = await tx.axisCareRecord.updateMany({ where: { id: record.id, organizationId, ignoredAt: null }, data: { ignoredAt: new Date(), ignoredByUserId: actorUserId } });
+        if (changed.count !== 1) return { axisCareClientId, status: "ALREADY_IGNORED" as const };
+        await tx.auditEvent.create({ data: { organizationId, actorUserId, eventType: "axiscare.client_ignored", entityType: "AxisCareRecord", entityId: record.id, metadataJson: { source: "administrator_review" } } });
+        return { axisCareClientId, status: "IGNORED" as const };
+      }
+      if (!record.ignoredAt) return { axisCareClientId, status: "ALREADY_ACTIVE" as const };
+      const changed = await tx.axisCareRecord.updateMany({ where: { id: record.id, organizationId, ignoredAt: { not: null } }, data: { ignoredAt: null, ignoredByUserId: null } });
+      if (changed.count !== 1) return { axisCareClientId, status: "ALREADY_ACTIVE" as const };
+      await tx.auditEvent.create({ data: { organizationId, actorUserId, eventType: "axiscare.client_restored", entityType: "AxisCareRecord", entityId: record.id, metadataJson: { source: "administrator_review" } } });
+      return { axisCareClientId, status: "RESTORED" as const };
+    }, { isolationLevel: "Serializable" }));
+  }
+  if (action === "IGNORE" && ids.length > 1) {
+    const ignored = results.filter(result => result.status === "IGNORED").length;
+    await prisma.auditEvent.create({ data: { organizationId, actorUserId, eventType: "axiscare.clients_bulk_ignored", entityType: "Organization", entityId: organizationId, metadataJson: { requestedCount: ids.length, ignoredCount: ignored, failedCount: ids.length - ignored } } });
+  }
+  return results;
 }
 
 export async function runFullSync(config: AxisCareConfig) {
