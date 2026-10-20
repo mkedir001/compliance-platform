@@ -122,19 +122,38 @@ export async function reconcileClientLinks(organizationId: string) {
   ]);
   const decided = await prisma.axisCareClientMatch.findMany({ where: { organizationId, status: { in: ["CONFIRMED", "REJECTED"] } }, select: { axisCareClientId: true, clientId: true, status: true } });
   const rejected = new Set(decided.filter(d => d.status === "REJECTED").map(d => `${d.axisCareClientId}:${d.clientId}`));
-  const summary = { autoLinked: 0, suggested: 0 };
+  const summary = { axisCareClients: records.length, confirmed: clients.filter(client => client.axisCareClientId).length, suggested: 0, suggestedClients: 0, ambiguous: 0, unmatched: 0 };
   for (const { payload } of records) {
     const identity = mapClientIdentity(payload as Json);
     if (!identity.externalId) continue;
     const axisCareClientId = identity.externalId;
     if (clients.some(c => c.axisCareClientId === axisCareClientId)) continue;
     const proposals = proposeMatches(identity, clients).filter(p => !rejected.has(`${axisCareClientId}:${p.clientId}`));
+    if (!proposals.length) summary.unmatched += 1;
+    else if (proposals.length > 1) summary.ambiguous += 1;
+    else summary.suggestedClients += 1;
     for (const p of proposals) {
       await prisma.axisCareClientMatch.upsert({ where: { organizationId_axisCareClientId_clientId: { organizationId, axisCareClientId, clientId: p.clientId } }, create: { organizationId, axisCareClientId, clientId: p.clientId, status: "SUGGESTED", score: p.score, reason: p.reason }, update: { score: p.score, reason: p.reason } });
       summary.suggested += 1;
     }
   }
   return summary;
+}
+
+/** Explicit administrator selection for a source client that may have no heuristic suggestion. */
+export async function confirmExplicitClientMatch(organizationId: string, axisCareClientId: string, clientId: string, decidedByUserId: string) {
+  const [source, target] = await Promise.all([
+    prisma.axisCareRecord.findUnique({ where: { organizationId_entity_externalId: { organizationId, entity: "client", externalId: axisCareClientId } }, select: { id: true, removedAt: true } }),
+    prisma.client.findFirst({ where: { id: clientId, organizationId, ...operationalClientWhere, archivedAt: null }, select: { id: true } }),
+  ]);
+  if (!source || source.removedAt || !target) return null;
+  const match = await prisma.axisCareClientMatch.upsert({
+    where: { organizationId_axisCareClientId_clientId: { organizationId, axisCareClientId, clientId } },
+    create: { organizationId, axisCareClientId, clientId, status: "SUGGESTED", score: 0, reason: "Selected explicitly by an authorized administrator" },
+    update: { status: "SUGGESTED", score: 0, reason: "Selected explicitly by an authorized administrator", decidedAt: null, decidedByUserId: null },
+    select: { id: true },
+  });
+  return confirmClientMatch(organizationId, match.id, decidedByUserId);
 }
 
 /** A person confirms a suggested match. Only the external link is stored; canonical client fields are untouched. */
@@ -160,13 +179,18 @@ export async function confirmClientMatch(organizationId: string, matchId: string
 }
 
 export async function runFullSync(config: AxisCareConfig) {
-  const client = newClient(config), organizationId = config.AXISCARE_ORGANIZATION_ID, counts: Record<string, number> = {}, failures: string[] = [];
+  const client = newClient(config), organizationId = config.AXISCARE_ORGANIZATION_ID, counts: Record<string, number> = {}, failures: string[] = [], failureDetails: { entity: string; category: string; retryable: boolean }[] = [];
+  const failed = (entity: string, error: unknown) => {
+    const status = typeof error === "object" && error !== null && "status" in error && typeof error.status === "number" ? error.status : null;
+    const category = status === 401 ? "AUTHENTICATION_FAILURE" : status === 403 ? "PERMISSION_FAILURE" : status === 429 || status !== null && status >= 500 ? "API_RESPONSE_FAILURE" : entity === "client" ? "CLIENT_DISCOVERY_FAILURE" : status !== null ? "API_RESPONSE_FAILURE" : "STAGING_FAILURE";
+    failures.push(entity); failureDetails.push({ entity, category, retryable: status === 429 || status !== null && status >= 500 });
+  };
   for (const { entity, path } of enabledEntities(config)) {
-    try { counts[entity] = await syncSimpleEntity(client, organizationId, entity, path); } catch { failures.push(entity); }
+    try { counts[entity] = await syncSimpleEntity(client, organizationId, entity, path); } catch (error) { failed(entity, error); }
   }
-  try { counts.visit = await syncVisits(client, config); } catch { failures.push("visit"); }
+  try { counts.visit = await syncVisits(client, config); } catch (error) { failed("visit", error); }
   const links = await reconcileClientLinks(organizationId);
-  return { counts, failures, links };
+  return { counts, failures, failureDetails, links };
 }
 
 /** Webhook events are thin; re-fetch the entity from AxisCare (GET) so we store the authoritative version. */

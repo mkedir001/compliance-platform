@@ -89,20 +89,27 @@ export async function getBillingVisits(user: Pick<User, "id">, organizationId: s
   });
 }
 
-export type PendingAxisCareMatch = { id: string; axisCareClientId: string; axisCareName: string; axisCareDateOfBirth: string | null; clientId: string; clientName: string; clientDateOfBirth: string | null; reason: string; score: number };
+export type PendingAxisCareMatch = { axisCareClientId: string; axisCareName: string; axisCareDateOfBirth: string | null; state: "SUGGESTED" | "AMBIGUOUS" | "UNMATCHED"; candidates: { id: string; clientId: string; clientName: string; clientDateOfBirth: string | null; reason: string; score: number }[]; availableClients: { id: string; name: string; dateOfBirth: string | null }[] };
 
 /** One-time confirmation list: AxisCare clients not yet tied to a Waldah client. billing.run only. */
 export async function getPendingAxisCareMatches(user: Pick<User, "id">, organizationId: string): Promise<PendingAxisCareMatch[]> {
   const { membership } = await requireOrganizationAccess(user, organizationId);
   await requirePermission(membership.id, "billing.run");
-  const rows = await prisma.axisCareClientMatch.findMany({
-    where: { organizationId, status: "SUGGESTED", client: { axisCareClientId: null, archivedAt: null, testDataMarkedAt: null } },
-    orderBy: [{ axisCareClientId: "asc" }, { score: "desc" }], take: 200,
-    select: { id: true, axisCareClientId: true, reason: true, score: true, client: { select: { id: true, legalFirstName: true, legalLastName: true, dateOfBirth: true } } }
+  const [rows, records, clients] = await Promise.all([
+    prisma.axisCareClientMatch.findMany({
+      where: { organizationId, status: "SUGGESTED", client: { axisCareClientId: null, archivedAt: null, testDataMarkedAt: null } },
+      orderBy: [{ axisCareClientId: "asc" }, { score: "desc" }], take: 200,
+      select: { id: true, axisCareClientId: true, reason: true, score: true, client: { select: { id: true, legalFirstName: true, legalLastName: true, dateOfBirth: true } } },
+    }),
+    prisma.axisCareRecord.findMany({ where: { organizationId, entity: "client", removedAt: null }, select: { externalId: true, payload: true }, orderBy: { externalId: "asc" }, take: 500 }),
+    prisma.client.findMany({ where: { organizationId, axisCareClientId: null, archivedAt: null, testDataMarkedAt: null }, select: { id: true, legalFirstName: true, legalLastName: true, dateOfBirth: true }, orderBy: [{ legalLastName: "asc" }, { legalFirstName: "asc" }] }),
+  ]);
+  const linkedIds = new Set((await prisma.client.findMany({ where: { organizationId, axisCareClientId: { not: null } }, select: { axisCareClientId: true } })).flatMap(row => row.axisCareClientId ? [row.axisCareClientId] : []));
+  const availableClients = clients.map(client => ({ id: client.id, name: `${client.legalFirstName} ${client.legalLastName}`, dateOfBirth: client.dateOfBirth?.toISOString().slice(0, 10) ?? null }));
+  return records.filter(record => !linkedIds.has(record.externalId)).map(record => {
+    const identity = mapClientIdentity(record.payload as Record<string, unknown>), candidates = rows.filter(row => row.axisCareClientId === record.externalId && row.client).map(row => ({ id: row.id, clientId: row.client!.id, clientName: `${row.client!.legalFirstName} ${row.client!.legalLastName}`, clientDateOfBirth: row.client!.dateOfBirth?.toISOString().slice(0, 10) ?? null, reason: row.reason, score: row.score }));
+    return { axisCareClientId: record.externalId, axisCareName: [identity.firstName, identity.lastName].filter(Boolean).join(" ") || `AxisCare client ${record.externalId}`, axisCareDateOfBirth: identity.dateOfBirth, state: candidates.length === 0 ? "UNMATCHED" as const : candidates.length === 1 ? "SUGGESTED" as const : "AMBIGUOUS" as const, candidates, availableClients };
   });
-  const records = await prisma.axisCareRecord.findMany({ where: { organizationId, entity: "client", externalId: { in: [...new Set(rows.map(r => r.axisCareClientId))] } }, select: { externalId: true, payload: true } });
-  const identity = new Map(records.map(r => [r.externalId, mapClientIdentity(r.payload as Record<string, unknown>)]));
-  return rows.flatMap(row => row.client ? [{ id: row.id, axisCareClientId: row.axisCareClientId, axisCareName: [identity.get(row.axisCareClientId)?.firstName, identity.get(row.axisCareClientId)?.lastName].filter(Boolean).join(" ") || `AxisCare client ${row.axisCareClientId}`, axisCareDateOfBirth: identity.get(row.axisCareClientId)?.dateOfBirth ?? null, clientId: row.client.id, clientName: `${row.client.legalFirstName} ${row.client.legalLastName}`, clientDateOfBirth: row.client.dateOfBirth?.toISOString().slice(0, 10) ?? null, reason: row.reason, score: row.score }] : []);
 }
 
 /** Billed amounts per client: no billing ledger exists yet, so this reports only that fact. Wire to the ledger when it lands. */

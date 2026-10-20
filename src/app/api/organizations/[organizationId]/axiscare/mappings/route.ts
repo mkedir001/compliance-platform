@@ -2,10 +2,11 @@ import { z } from "zod";
 import { requireAuthenticatedUser } from "@/domain/auth/authentication";
 import { errorResponse } from "@/domain/auth/errors";
 import { mapAxisCareCaregiver, mapAxisCareService } from "@/domain/axiscare/administration";
+import { serviceTypeOptions } from "@/domain/clients/intake-state";
 
 const input = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("CAREGIVER"), externalId: z.string().min(1).max(200), employeeId: z.string().min(1) }).strict(),
-  z.object({ kind: z.literal("SERVICE"), axisCareServiceCode: z.string().min(1).max(200), waldahServiceType: z.string().min(1).max(200) }).strict(),
+  z.object({ kind: z.literal("SERVICE"), axisCareServiceCode: z.string().min(1).max(200), waldahServiceType: z.enum(serviceTypeOptions.map(option => option.value) as [string, ...string[]]) }).strict(),
 ]);
 
 export async function POST(request: Request, context: { params: Promise<{ organizationId: string }> }) {

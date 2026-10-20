@@ -3,7 +3,7 @@ import { PrismaClient } from "@prisma/client";
 import { AxisCareClient } from "@/domain/axiscare/client";
 import { getAxisCareAdministration, mapAxisCareCaregiver, mapAxisCareService, synchronizeAxisCare } from "@/domain/axiscare/administration";
 import { loadAxisCareConfig, recordAxisCareConnectionTest, saveAxisCareConnection } from "@/domain/axiscare/config";
-import { confirmClientMatch, reconcileClientLinks, syncSimpleEntity } from "@/domain/axiscare/sync";
+import { confirmClientMatch, confirmExplicitClientMatch, reconcileClientLinks, syncSimpleEntity } from "@/domain/axiscare/sync";
 import { POST as webhookPost } from "@/app/api/webhooks/axiscare/route";
 
 const db = new PrismaClient();
@@ -35,7 +35,7 @@ describe.sequential("AxisCare tenant integration", () => {
     const client = await db.client.create({ data: { organizationId, legalFirstName: "Mapped", legalLastName: "Client", createdByUserId: managerId, axisCareClientId: "already-linked" } });
     clientId = client.id;
     await db.axisCareRecord.create({ data: { organizationId, entity: "caregiver", externalId: "caregiver-1", payload: { id: "caregiver-1", firstName: "External", lastName: "Caregiver" }, payloadHash: "h" } });
-    await db.axisCareVisit.create({ data: { organizationId, externalId: "visit-1", axisCareCaregiverId: "caregiver-1", serviceCode: "HOMEMAKING", payload: {}, payloadHash: "h" } });
+    await db.axisCareVisit.create({ data: { organizationId, externalId: "visit-1", axisCareCaregiverId: "caregiver-1", serviceCode: "HOMEMAKING", payload: { service: { id: 17, code: "HOMEMAKING", description: "Homemaking service", procedureCode: "S5130" } }, payloadHash: "h" } });
   });
 
   afterAll(() => { if (priorKey === undefined) delete process.env.AXISCARE_CREDENTIAL_ENCRYPTION_KEY; else process.env.AXISCARE_CREDENTIAL_ENCRYPTION_KEY = priorKey; });
@@ -78,6 +78,9 @@ describe.sequential("AxisCare tenant integration", () => {
     expect(await mapAxisCareCaregiver({ id: managerId }, organizationId, "caregiver-1", employeeId)).toEqual({ externalId: "caregiver-1", employeeId });
     expect(await db.axisCareVisit.findUnique({ where: { organizationId_externalId: { organizationId, externalId: "visit-1" } } })).toMatchObject({ employeeId });
     expect(await mapAxisCareService({ id: managerId }, organizationId, "HOMEMAKING", "IHS_WITH_TRAINING")).toEqual({ axisCareServiceCode: "HOMEMAKING", waldahServiceType: "IHS_WITH_TRAINING" });
+    expect((await db.auditEvent.findFirstOrThrow({where:{organizationId,eventType:"axiscare.service_mapped"},orderBy:{occurredAt:"desc"}})).metadataJson).toMatchObject({axisCareServiceCode:"HOMEMAKING",previousWaldahServiceType:null,waldahServiceType:"IHS_WITH_TRAINING"});
+    await expect(mapAxisCareService({ id: managerId }, organizationId, "HOMEMAKING", "free text service")).rejects.toThrow(/approved Waldah service type/);
+    const overview=await getAxisCareAdministration({id:managerId},organizationId);expect(overview.services.find(service=>service.axisCareServiceCode==="HOMEMAKING")).toMatchObject({axisCareServiceId:"17",description:"Homemaking service",procedureCode:"S5130",waldahServiceType:"IHS_WITH_TRAINING",visitCount:1});expect(overview.serviceTargets.map(target=>target.value)).toContain("HOMEMAKING");
   });
 
   it("syncs pages idempotently and keeps only minimum-necessary fields", async () => {
@@ -100,7 +103,7 @@ describe.sequential("AxisCare tenant integration", () => {
   it("stages exact client candidates for explicit review without changing canonical fields", async () => {
     const client = await db.client.create({ data: { organizationId, legalFirstName: "Exact", legalLastName: "Candidate", dateOfBirth: new Date("1980-01-02T00:00:00Z"), createdByUserId: managerId } });
     await db.axisCareRecord.create({ data: { organizationId, entity: "client", externalId: "axis-exact", payload: { id: "axis-exact", firstName: "Exact", lastName: "Candidate", dateOfBirth: "1980-01-02", startDate: "2024-03-04" }, payloadHash: "exact" } });
-    expect(await reconcileClientLinks(organizationId)).toMatchObject({ autoLinked: 0, suggested: 1 });
+    expect(await reconcileClientLinks(organizationId)).toMatchObject({ confirmed: 1, suggested: 1, suggestedClients: 1 });
     const unchanged = await db.client.findUniqueOrThrow({ where: { id: client.id } });
     expect(unchanged).toMatchObject({ axisCareClientId: null, axisCareServiceStartDate: null });
     const match = await db.axisCareClientMatch.findUniqueOrThrow({ where: { organizationId_axisCareClientId_clientId: { organizationId, axisCareClientId: "axis-exact", clientId: client.id } } });
@@ -117,6 +120,8 @@ describe.sequential("AxisCare tenant integration", () => {
     await expect(confirmClientMatch(organizationId, match.id, managerId)).rejects.toMatchObject({ code: "AXISCARE_CLIENT_ALREADY_MATCHED" });
     expect((await db.client.findUniqueOrThrow({ where: { id: second.id } })).axisCareClientId).toBeNull();
   });
+
+  it("allows explicit review of an unmatched source client without changing canonical fields",async()=>{const target=await db.client.create({data:{organizationId,legalFirstName:"Manual",legalLastName:"Selection",createdByUserId:managerId}});await db.axisCareRecord.create({data:{organizationId,entity:"client",externalId:"axis-no-heuristic",payload:{id:"axis-no-heuristic",firstName:"Different",lastName:"Identity"},payloadHash:"manual"}});expect(await confirmExplicitClientMatch(otherOrganizationId,"axis-no-heuristic",target.id,managerId)).toBeNull();expect(await confirmExplicitClientMatch(organizationId,"axis-no-heuristic",target.id,managerId)).toBe(target.id);expect(await db.client.findUniqueOrThrow({where:{id:target.id}})).toMatchObject({axisCareClientId:"axis-no-heuristic",legalFirstName:"Manual",legalLastName:"Selection"});expect(await db.auditEvent.count({where:{organizationId,entityId:target.id,eventType:"axiscare.client_mapped"}})).toBe(1)});
 
   it("keeps the public webhook fail-closed because the documented header is not request authentication", async () => {
     const response = await webhookPost(new Request("http://localhost/api/webhooks/axiscare", { method: "POST", headers: { "x-webhook-id": "documented-identifier" }, body: JSON.stringify({ event: "client.updated" }) }));

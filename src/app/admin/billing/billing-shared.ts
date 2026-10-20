@@ -22,13 +22,14 @@ export type BillingVisitRow = {
   /** null = not billed yet (also the case for failed attempts that produced no result record). */
   result: BillingResult | null;
 };
-export type PendingMatch = { id: string; axisCareClientId: string; axisCareName: string; axisCareDateOfBirth: string | null; clientId: string; clientName: string; clientDateOfBirth: string | null; reason: string; score: number };
+export type PendingMatch = { axisCareClientId: string; axisCareName: string; axisCareDateOfBirth: string | null; state: "SUGGESTED"|"AMBIGUOUS"|"UNMATCHED"; candidates:{id:string;clientId:string;clientName:string;clientDateOfBirth:string|null;reason:string;score:number}[]; availableClients:{id:string;name:string;dateOfBirth:string|null}[] };
 export type AxisCareConnectionView = { configured: boolean; baseUrl: string | null; status: string; lastTestedAt: string | null; lastConnectedAt: string | null; lastErrorCode: string | null; historyMonths: number };
 export type AxisCareAdministration = {
   connection: AxisCareConnectionView;
   caregivers: { externalId: string; firstName: string | null; lastName: string | null; employeeId: string | null }[];
   employees: { id: string; firstName: string; lastName: string; employeeNumber: string | null; axisCareCaregiverId: string | null }[];
-  services: { axisCareServiceCode: string; waldahServiceType: string | null }[];
+  services: { axisCareServiceCode: string; axisCareServiceId: string | null; description: string | null; procedureCode: string | null; visitCount: number; waldahServiceType: string | null }[];
+  serviceTargets: { value: string; label: string }[];
   syncStates: { entity: string; lastSuccessAt: string | null; lastError: string | null; lastCount: number }[];
   webhook: { enabled: false; reason: string };
 };

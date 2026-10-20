@@ -1,5 +1,6 @@
 import type { User } from "@prisma/client";
-import { ConflictError, ResourceNotFoundError } from "@/domain/auth/errors";
+import { ConflictError, ResourceNotFoundError, ValidationError } from "@/domain/auth/errors";
+import { serviceTypeOptions } from "@/domain/clients/intake-state";
 import { requireOrganizationAccess, requirePermission } from "@/domain/permissions/authorization";
 import { prisma } from "@/lib/prisma";
 import { getAxisCareConnectionStatus, loadAxisCareConfig, recordAxisCareConnectionTest } from "./config";
@@ -16,21 +17,34 @@ const identity = (payload: unknown) => {
   return { firstName: typeof value.firstName === "string" ? value.firstName : null, lastName: typeof value.lastName === "string" ? value.lastName : null };
 };
 
+const object = (value: unknown) => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+const text = (value: unknown) => typeof value === "string" && value.trim() ? value.trim() : null;
+export const axisCareServiceTargets = serviceTypeOptions.map(option => ({ value: option.value, label: option.label }));
+const allowedServiceTargets = new Set<string>(axisCareServiceTargets.map(option => option.value));
+
 export async function getAxisCareAdministration(user: Pick<User, "id">, organizationId: string) {
   await authorize(user, organizationId);
   const [connection, caregivers, employees, visits, serviceMappings, syncStates] = await Promise.all([
     getAxisCareConnectionStatus(organizationId),
     prisma.axisCareRecord.findMany({ where: { organizationId, entity: "caregiver", removedAt: null }, select: { externalId: true, payload: true }, orderBy: { externalId: "asc" }, take: 500 }),
     prisma.employee.findMany({ where: { organizationId, ...operationalEmployeeWhere, employmentStatus: { in: ["PENDING", "ACTIVE", "LEAVE"] } }, select: { id: true, firstName: true, lastName: true, employeeNumber: true, axisCareCaregiverId: true }, orderBy: [{ lastName: "asc" }, { firstName: "asc" }] }),
-    prisma.axisCareVisit.findMany({ where: { organizationId, serviceCode: { not: null } }, distinct: ["serviceCode"], select: { serviceCode: true }, orderBy: { serviceCode: "asc" }, take: 500 }),
+    prisma.axisCareVisit.findMany({ where: { organizationId, serviceCode: { not: null } }, select: { serviceCode: true, payload: true }, orderBy: { startAt: "desc" }, take: 5000 }),
     prisma.axisCareServiceMapping.findMany({ where: { organizationId }, select: { axisCareServiceCode: true, waldahServiceType: true }, orderBy: { axisCareServiceCode: "asc" } }),
     prisma.axisCareSyncState.findMany({ where: { organizationId }, select: { entity: true, lastStartedAt: true, lastSuccessAt: true, lastError: true, lastCount: true }, orderBy: { entity: "asc" } }),
   ]);
+  const serviceDetails = new Map<string, { axisCareServiceCode: string; axisCareServiceId: string | null; description: string | null; procedureCode: string | null; visitCount: number; waldahServiceType: string | null }>();
+  for (const row of visits) {
+    if (!row.serviceCode) continue;
+    const existing = serviceDetails.get(row.serviceCode), service = object(object(row.payload)?.service);
+    if (existing) { existing.visitCount += 1; continue; }
+    serviceDetails.set(row.serviceCode, { axisCareServiceCode: row.serviceCode, axisCareServiceId: text(service?.id) ?? (typeof service?.id === "number" ? String(service.id) : null), description: text(service?.description), procedureCode: text(service?.procedureCode), visitCount: 1, waldahServiceType: serviceMappings.find(mapping => mapping.axisCareServiceCode === row.serviceCode)?.waldahServiceType ?? null });
+  }
   return {
     connection,
     caregivers: caregivers.map(row => ({ externalId: row.externalId, ...identity(row.payload), employeeId: employees.find(employee => employee.axisCareCaregiverId === row.externalId)?.id ?? null })),
     employees,
-    services: visits.flatMap(row => row.serviceCode ? [{ axisCareServiceCode: row.serviceCode, waldahServiceType: serviceMappings.find(mapping => mapping.axisCareServiceCode === row.serviceCode)?.waldahServiceType ?? null }] : []),
+    services: [...serviceDetails.values()].sort((a, b) => a.axisCareServiceCode.localeCompare(b.axisCareServiceCode)),
+    serviceTargets: axisCareServiceTargets,
     syncStates: syncStates.map(row => ({ ...row, lastStartedAt: row.lastStartedAt?.toISOString() ?? null, lastSuccessAt: row.lastSuccessAt?.toISOString() ?? null })),
     webhook: { enabled: false, reason: "AxisCare documents x-webhook-id as an identifier, not verified request authentication." },
   };
@@ -74,11 +88,13 @@ export async function mapAxisCareCaregiver(user: Pick<User, "id">, organizationI
 
 export async function mapAxisCareService(user: Pick<User, "id">, organizationId: string, axisCareServiceCode: string, waldahServiceType: string) {
   await authorize(user, organizationId);
+  if (!allowedServiceTargets.has(waldahServiceType)) throw new ValidationError("Select an approved Waldah service type");
   const exists = await prisma.axisCareVisit.findFirst({ where: { organizationId, serviceCode: axisCareServiceCode }, select: { id: true } });
   if (!exists) throw new ResourceNotFoundError("AxisCare service code not found");
   const mapping = await prisma.$transaction(async tx => {
+    const previous = await tx.axisCareServiceMapping.findUnique({ where: { organizationId_axisCareServiceCode: { organizationId, axisCareServiceCode } }, select: { waldahServiceType: true } });
     const row = await tx.axisCareServiceMapping.upsert({ where: { organizationId_axisCareServiceCode: { organizationId, axisCareServiceCode } }, create: { organizationId, axisCareServiceCode, waldahServiceType, createdByUserId: user.id, updatedByUserId: user.id }, update: { waldahServiceType, updatedByUserId: user.id } });
-    await tx.auditEvent.create({ data: { organizationId, actorUserId: user.id, eventType: "axiscare.service_mapped", entityType: "AxisCareServiceMapping", entityId: row.id, metadataJson: { axisCareServiceCode, waldahServiceType } } });
+    await tx.auditEvent.create({ data: { organizationId, actorUserId: user.id, eventType: "axiscare.service_mapped", entityType: "AxisCareServiceMapping", entityId: row.id, metadataJson: { axisCareServiceCode, previousWaldahServiceType: previous?.waldahServiceType ?? null, waldahServiceType } } });
     return row;
   });
   return { axisCareServiceCode: mapping.axisCareServiceCode, waldahServiceType: mapping.waldahServiceType };

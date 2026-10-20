@@ -42,6 +42,55 @@ export async function deleteClientDocumentDraft(user:Pick<User,"id">,organizatio
   await permission(user,organizationId,"client.document.generate");const document=await prisma.clientDocument.findFirst({where:{id:documentId,organizationId,clientId},include:{envelope:{select:{id:true}}}});if(!document)throw new ResourceNotFoundError("Document not found");if(document.source!=="GENERATED"||document.status!=="DRAFT"||document.envelope||document.finalizedAt||document.finalPdf||document.renewalOfDocumentId)throw new AuthorizationError("Only an unsigned, unfinalized platform draft without a retained renewal relationship can be deleted");const newer=await prisma.clientDocument.findFirst({where:{organizationId,clientId,documentType:document.documentType,source:"GENERATED",status:{not:"VOIDED"},generatedAt:{gt:document.generatedAt}},select:{id:true}});if(newer)throw new AuthorizationError("A newer document version exists; only the current draft can be deleted");const voidedAt=new Date(),updated=await prisma.clientDocument.update({where:{id:document.id},data:{status:"VOIDED",voidedAt}});await event(organizationId,user.id,"client.document_draft_deleted",document.id,{clientId,documentType:document.documentType,softDeleted:true,voidedAt:voidedAt.toISOString()});return updated
 }
 
+export const documentRemovalInput = z.object({ reason: z.string().trim().min(10, "Explain why this document should be removed").max(1000) });
+export const permanentDocumentDeletionInput = documentRemovalInput.extend({ confirmation: z.literal("PERMANENTLY DELETE FILE") });
+
+async function protectedDocumentDependencies(db: DocumentDb, organizationId: string, documentId: string) {
+  const [envelope, roi, versions, requests, importLinks, questionnaire, referral] = await Promise.all([
+    db.signatureEnvelope.count({ where: { organizationId, documentId } }),
+    db.roiAuthorization.count({ where: { organizationId, documentId } }),
+    db.clientDocument.count({ where: { organizationId, OR: [{ renewalOfDocumentId: documentId }, { supersedesDocumentId: documentId }] } }),
+    db.clientDocumentRequest.count({ where: { organizationId, OR: [{ obligationDocumentId: documentId }, { fulfilledDocumentId: documentId }] } }),
+    db.clientImportDocument.count({ where: { organizationId, OR: [{ confirmedDocumentId: documentId }, { sourceClientDocumentId: documentId }] } }),
+    db.clientDocumentQuestionnaire.count({ where: { organizationId, generatedDocumentId: documentId } }),
+    db.referralSubmission.count({ where: { clientDocumentId: documentId, referral: { organizationId } } }),
+  ]);
+  return { envelope, roi, versions, requests, importLinks, questionnaire, referral };
+}
+
+export async function removeClientDocumentFromActiveRecord(user: Pick<User, "id">, organizationId: string, clientId: string, documentId: string, input: z.input<typeof documentRemovalInput>) {
+  await permission(user, organizationId, "client.document.generate");
+  const { reason } = documentRemovalInput.parse(input), now = new Date();
+  return prisma.$transaction(async tx => {
+    const document = await tx.clientDocument.findFirst({ where: { id: documentId, organizationId, clientId } });
+    if (!document) throw new ResourceNotFoundError("Document not found");
+    if (document.status === "VOIDED") return { id: document.id, status: "VOIDED" as const, alreadyRemoved: true };
+    if (document.source !== "IMPORTED" || !["DRAFT", "READY_FOR_SIGNATURE"].includes(document.status) || document.authoritativeCompletedAt || document.finalPdf) throw new AuthorizationError("Only an incomplete imported document can be removed from the active record");
+    const dependencies = await protectedDocumentDependencies(tx, organizationId, document.id);
+    if (dependencies.envelope || dependencies.roi || dependencies.versions || dependencies.requests || dependencies.questionnaire || dependencies.referral) throw new AuthorizationError("This document is protected by a signing, renewal, request, or compliance workflow and cannot be removed");
+    const updated = await tx.clientDocument.update({ where: { id: document.id }, data: { status: "VOIDED", voidedAt: now } });
+    await tx.auditEvent.create({ data: { organizationId, actorUserId: user.id, eventType: "client.document_removed_from_active_record", entityType: "ClientDocument", entityId: document.id, metadataJson: { clientId, reason, previousStatus: document.status, fileBytesRetained: true, removedAt: now.toISOString() } } });
+    return { id: updated.id, status: updated.status, alreadyRemoved: false };
+  });
+}
+
+export async function permanentlyDeleteClientDocumentContent(user: Pick<User, "id">, organizationId: string, clientId: string, documentId: string, input: z.input<typeof permanentDocumentDeletionInput>) {
+  await permission(user, organizationId, "organization.manage");
+  const { reason } = permanentDocumentDeletionInput.parse(input);
+  return prisma.$transaction(async tx => {
+    const document = await tx.clientDocument.findFirst({ where: { id: documentId, organizationId, clientId } });
+    if (!document) throw new ResourceNotFoundError("Document not found");
+    const priorDeletion = await tx.auditEvent.findFirst({ where: { organizationId, entityId: document.id, eventType: "client.document_content_permanently_deleted" }, select: { id: true } });
+    if (priorDeletion && !document.renderedPdf && !document.finalPdf) return { id: document.id, contentDeleted: true, alreadyDeleted: true };
+    if (document.source !== "IMPORTED" || document.status !== "VOIDED" || !document.voidedAt || document.authoritativeCompletedAt || document.finalPdf) throw new AuthorizationError("Only a removed, incomplete imported document is eligible for permanent file deletion");
+    const dependencies = await protectedDocumentDependencies(tx, organizationId, document.id), blockers = Object.entries(dependencies).filter(([, count]) => count > 0).map(([name]) => name);
+    if (blockers.length) throw new AuthorizationError(`File deletion is blocked by retained ${blockers.join(", ")} records`);
+    await tx.clientDocument.update({ where: { id: document.id }, data: { renderedPdf: null, finalPdf: null } });
+    await tx.auditEvent.create({ data: { organizationId, actorUserId: user.id, eventType: "client.document_content_permanently_deleted", entityType: "ClientDocument", entityId: document.id, metadataJson: { clientId, reason, storage: "INLINE_DATABASE_BYTES", deletedFields: ["renderedPdf", "finalPdf"], deletedAt: new Date().toISOString() } } });
+    return { id: document.id, contentDeleted: true, alreadyDeleted: false };
+  });
+}
+
 const reviseDraftInput=z.object({formData:rightsInput.optional(),roi:roiInput.optional()});
 export async function reviseClientDocumentDraft(user:Pick<User,"id">,organizationId:string,clientId:string,documentId:string,input:unknown={}){
   await permission(user,organizationId,"client.document.generate");const changes=reviseDraftInput.parse(input),current=await prisma.clientDocument.findFirst({where:{id:documentId,organizationId,clientId},include:{template:true,envelope:{select:{id:true}},roiAuthorization:true}});
