@@ -79,6 +79,16 @@ export default function MatchReview({ matches, organizationId }: { matches: Pend
     } catch (error) { setMessage({ tone: "danger", text: error instanceof Error ? error.message : "Selected clients could not be ignored." }); }
     finally { setBusy(null); }
   }
+  async function createClientFrom(row: PendingMatch) {
+    if (!window.confirm(`Create a new Waldah client for ${row.axisCareName}${row.axisCareDateOfBirth ? ` (born ${day(row.axisCareDateOfBirth)})` : ""}? Only the name and date of birth are copied from AxisCare.`)) return;
+    setBusy(row.axisCareClientId);
+    try {
+      await request({ action: "CREATE_CLIENT", axisCareClientId: row.axisCareClientId });
+      setRows(current => current.map(item => item.axisCareClientId === row.axisCareClientId ? { ...item, state: "CONFIRMED", confirmedClientName: row.axisCareName, availableClients: [] } : item));
+      setFeedback(current => ({ ...current, [row.axisCareClientId]: { tone: "good", text: "Client created and matched." } }));
+    } catch (error) { setFeedback(current => ({ ...current, [row.axisCareClientId]: { tone: "danger", text: error instanceof Error ? error.message : "Client was not created." } })); }
+    finally { setBusy(null); }
+  }
   async function linkSelected(row: PendingMatch) {
     const clientId = selectedClients[row.axisCareClientId] ?? (row.candidates.length === 1 ? row.candidates[0].clientId : "");
     if (!clientId) { setFeedback(current => ({ ...current, [row.axisCareClientId]: { tone: "danger", text: "Select the Waldah client after reviewing both records." } })); return; }
@@ -134,7 +144,7 @@ export default function MatchReview({ matches, organizationId }: { matches: Pend
               <td data-label="AxisCare status"><StatusChip tone={tone(row.axisCareLifecycle)}>{pretty(row.axisCareLifecycle)}</StatusChip><small>{row.axisCareStatusLabel ?? "Status unavailable"}</small></td>
               <td data-label="Matching status"><StatusChip tone={tone(row.state)}>{pretty(row.state)}</StatusChip>{row.candidates.map(candidate => <small key={candidate.id}>{candidate.clientName} · {candidate.reason}</small>)}</td>
               <td data-label="Waldah client">{row.state === "CONFIRMED" ? <strong>{row.confirmedClientName ?? "Confirmed client"}</strong> : row.state === "IGNORED" ? <span className="billing-muted">Restore before matching</span> : <select aria-label={`Waldah client for ${row.axisCareName}`} value={selectedClient} onChange={event => setSelectedClients(current => ({ ...current, [row.axisCareClientId]: event.target.value }))}><option value="">Select after identity review</option>{row.availableClients.map(client => <option key={client.id} value={client.id}>{client.name}{client.dateOfBirth ? ` · born ${day(client.dateOfBirth)}` : ""}</option>)}</select>}</td>
-              <td data-label="Actions"><span className="billing-actions">{canReview ? <><button type="button" disabled={busy === row.axisCareClientId} onClick={() => void linkSelected(row)}>Confirm match</button><button type="button" className="secondary" disabled={busy === row.axisCareClientId} onClick={() => void setDisposition(row, "IGNORE")}>Ignore</button>{row.candidates.length === 1 ? <button type="button" className="secondary" disabled={busy === row.axisCareClientId} onClick={() => void rejectSuggestion(row)}>Reject suggestion</button> : null}</> : row.state === "IGNORED" ? <button type="button" className="secondary" disabled={busy === row.axisCareClientId} onClick={() => void setDisposition(row, "RESTORE")}>Restore</button> : null}</span>{feedback[row.axisCareClientId] ? <small className={`billing-inline-feedback ${feedback[row.axisCareClientId].tone}`} role={feedback[row.axisCareClientId].tone === "danger" ? "alert" : "status"}>{feedback[row.axisCareClientId].text}</small> : null}</td>
+              <td data-label="Actions"><span className="billing-actions">{canReview ? <><button type="button" disabled={busy === row.axisCareClientId} onClick={() => void linkSelected(row)}>Confirm match</button><button type="button" className="secondary" disabled={busy === row.axisCareClientId} onClick={() => void createClientFrom(row)}>Create client</button><button type="button" className="secondary" disabled={busy === row.axisCareClientId} onClick={() => void setDisposition(row, "IGNORE")}>Ignore</button>{row.candidates.length === 1 ? <button type="button" className="secondary" disabled={busy === row.axisCareClientId} onClick={() => void rejectSuggestion(row)}>Reject suggestion</button> : null}</> : row.state === "IGNORED" ? <button type="button" className="secondary" disabled={busy === row.axisCareClientId} onClick={() => void setDisposition(row, "RESTORE")}>Restore</button> : null}</span>{feedback[row.axisCareClientId] ? <small className={`billing-inline-feedback ${feedback[row.axisCareClientId].tone}`} role={feedback[row.axisCareClientId].tone === "danger" ? "alert" : "status"}>{feedback[row.axisCareClientId].text}</small> : null}</td>
             </tr>;
           })}</tbody>
         </table>

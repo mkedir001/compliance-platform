@@ -52,6 +52,7 @@
 .billing-bill-options small{font-weight:400;opacity:.85;font-size:.76rem}
 .billing-noncompliant{display:grid;gap:8px;padding:14px 16px;border:1px solid #dca49f;border-left:4px solid #a43c35;border-radius:10px;background:#fff7f5}
 .billing-noncompliant p{margin:0}
+.billing-noncompliant summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px}.billing-noncompliant summary::-webkit-details-marker{display:none}.billing-noncompliant summary::after{content:"Show";margin-left:auto;font-size:.8rem;font-weight:600;color:#7a2922}.billing-noncompliant[open] summary::after{content:"Hide"}.billing-noncompliant summary h2{margin:0}.billing-noncompliant ul{max-height:320px;overflow:auto}
 .billing-noncompliant ul{display:grid;gap:4px;margin:0;padding:0;list-style:none;font-size:.88rem}
 .billing-noncompliant li{display:flex;flex-wrap:wrap;gap:4px 14px}.billing-noncompliant li span{color:#7a2922}
 .billing-section-title{display:flex;align-items:center;flex-wrap:wrap;gap:8px 16px}
