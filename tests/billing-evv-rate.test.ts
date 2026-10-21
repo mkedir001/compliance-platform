@@ -16,6 +16,10 @@ describe("EVV rate periods", () => {
     expect(evvRate([], "QUARTER", now).percent).toBeNull();
     expect(percentLabel(null)).toBe("—");
   });
+  it("leaves out visits that are not yet evaluated or need review", () => {
+    const visits = [{ ...v("2026-10-02T15:00:00Z", true), evaluationState: "COMPLIANT" as const }, { ...v("2026-10-03T15:00:00Z", false), evaluationState: "NON_COMPLIANT" as const }, { ...v("2026-10-04T15:00:00Z", false), evaluationState: "REQUIRES_REVIEW" as const }, { ...v("2026-10-30T15:00:00Z", false), evaluationState: "NOT_YET_EVALUATED" as const }];
+    expect(evvRate(visits, "QUARTER", now)).toEqual({ total: 2, compliant: 1, percent: 50 });
+  });
   it("reports billed totals only once the ledger carries results", () => {
     expect(billedThisYear([{ startAt: "2026-10-02T15:00:00Z" }], now)).toBeNull();
     const billed = { status: "BILLED" as const, amountCents: 5000, reference: null, at: "x", startedBy: null };

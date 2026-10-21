@@ -72,10 +72,11 @@ export function reportingPeriods(now = new Date()) {
   return { year, quarter, quarterKey: `${year}-Q${quarter}`, label: `Q${quarter} ${year}` };
 }
 const periodOf = (iso: string) => reportingPeriods(new Date(iso));
-/** EVV compliance rate by visit count over the whole period, billed visits included. Scheduled future shifts never reach this list. */
-export function evvRate(visits: Pick<BillingVisitRow, "startAt" | "compliant">[], scope: "QUARTER" | "YEAR", now = new Date()) {
+/** EVV compliance rate by visit count over the whole period, billed visits included. */
+export function evvRate(visits: (Pick<BillingVisitRow, "startAt" | "compliant"> & { evaluationState?: BillingVisitRow["evaluationState"] })[], scope: "QUARTER" | "YEAR", now = new Date()) {
   const current = reportingPeriods(now);
-  const inScope = visits.filter(visit => { if (!visit.startAt) return false; const period = periodOf(visit.startAt); return scope === "YEAR" ? period.year === current.year : period.quarterKey === current.quarterKey; });
+  // Only decided visits count (compliant or non-compliant), the same rule as billing eligibility: scheduled-not-yet-worked and requires-review visits are left out.
+  const inScope = visits.filter(visit => { if (!visit.startAt || (visit.evaluationState && visit.evaluationState !== "COMPLIANT" && visit.evaluationState !== "NON_COMPLIANT")) return false; const period = periodOf(visit.startAt); return scope === "YEAR" ? period.year === current.year : period.quarterKey === current.quarterKey; });
   const compliant = inScope.filter(visit => visit.compliant).length;
   return { total: inScope.length, compliant, percent: inScope.length ? Math.round((compliant / inScope.length) * 1000) / 10 : null };
 }
