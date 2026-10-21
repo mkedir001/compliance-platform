@@ -13,7 +13,7 @@ export type { AxisCareConnectionView, BillingClient, BillingVisitRow, PendingMat
 
 const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]).join("").toUpperCase();
 
-export default function BillingPortal({ clients, canRun = false, canManageIntegration = false, visits = [], matches = [], organizationId = "", connection }: { clients: BillingClient[]; canRun?: boolean; canManageIntegration?: boolean; visits?: BillingVisitRow[]; matches?: PendingMatch[]; organizationId?: string; connection: AxisCareConnectionView }) {
+export default function BillingPortal({ clients, canView = false, canInitiate = false, canManageMapping = false, canManageIntegration = false, canManageSync = false, visits = [], matches = [], organizationId = "", connection }: { clients: BillingClient[]; canView?: boolean; canInitiate?: boolean; canManageMapping?: boolean; canManageIntegration?: boolean; canManageSync?: boolean; visits?: BillingVisitRow[]; matches?: PendingMatch[]; organizationId?: string; connection: AxisCareConnectionView }) {
   const router = useRouter();
   const [search, setSearch] = useState("");
   const [picked, setPicked] = useState<Set<string>>(new Set());
@@ -28,7 +28,8 @@ export default function BillingPortal({ clients, canRun = false, canManageIntegr
     }), [clients, visits, search]);
   // WIRING: results come from the billing ledger; until then no visit has one and the strip and badges stay hidden.
   const errorClients = rows.filter(row => row.errors > 0), billedClients = rows.filter(row => row.errors === 0 && row.billedCents > 0);
-  const billable = rows.filter(row => canRun && row.client.axisCareLinked);
+  const canRun = canView;
+  const billable = rows.filter(row => canInitiate && row.client.axisCareLinked);
   const selectedRows = billable.filter(row => picked.has(row.client.id));
   const selectedTotals = summarizeVisits(selectedRows.flatMap(row => visits.filter(visit => visit.clientId === row.client.id)));
   const allPicked = billable.length > 0 && billable.every(row => picked.has(row.client.id));
@@ -47,8 +48,8 @@ export default function BillingPortal({ clients, canRun = false, canManageIntegr
         </div>
       </header>
 
-      {canManageIntegration ? <IntegrationPanel organizationId={organizationId} initial={connection} /> : null}
-      {canRun ? <MatchReview matches={matches} organizationId={organizationId} /> : null}
+      {canManageIntegration || canManageMapping || canManageSync ? <IntegrationPanel organizationId={organizationId} initial={connection} canConfigure={canManageIntegration} canMap={canManageMapping} canSync={canManageSync} /> : null}
+      {canManageMapping ? <MatchReview matches={matches} organizationId={organizationId} /> : null}
 
       <section className="billing-summary" aria-label="Billing summary">
         {canRun ? <>
@@ -94,14 +95,14 @@ export default function BillingPortal({ clients, canRun = false, canManageIntegr
           </span>
         </div>
       ) : null}
-      {canRun ? <p className="billing-live billing-placeholder-note">Billing submission is not enabled yet. Review and selection controls are available, but no claim, invoice, or billing run can be created.</p> : null}
+      {canInitiate ? <p className="billing-live billing-placeholder-note">Billing submission is not enabled yet. Review and selection controls are available, but no claim, invoice, or billing run can be created.</p> : null}
 
       {clients.length === 0 ? <p className="billing-empty">There are no clients available in this organization.</p>
         : rows.length === 0 ? <p className="billing-empty">No clients match this search.</p>
         : (
           <div className="workforce-table billing-directory" role="table" aria-label="Clients">
             <div className="billing-directory-head" role="row">
-              <span role="columnheader">{canRun ? <input type="checkbox" aria-label="Select all billable clients" checked={allPicked} disabled={billable.length === 0} onChange={toggleAll} /> : null}</span>
+              <span role="columnheader">{canInitiate ? <input type="checkbox" aria-label="Select all billable clients" checked={allPicked} disabled={billable.length === 0} onChange={toggleAll} /> : null}</span>
               <span role="columnheader">Client</span><span role="columnheader">Not EVV compliant</span><span role="columnheader">EVV compliant</span><span role="columnheader">Ready to bill</span><span role="columnheader"><span className="sr-only">Actions</span></span>
             </div>
             {rows.map(({ client, summary, errors, billedCents }) => {
@@ -109,7 +110,7 @@ export default function BillingPortal({ clients, canRun = false, canManageIntegr
               const detail = `/admin/billing/${client.id}${query}`;
               return (
                 <div key={client.id} role="row" className={`billing-directory-row${picked.has(client.id) ? " selected" : ""}`} onClick={event => { if (!(event.target as HTMLElement).closest("input,button,a")) router.push(detail); }}>
-                  <span role="cell">{canRun ? <input type="checkbox" aria-label={`Select ${client.name} for group billing`} checked={picked.has(client.id)} disabled={!linked} onChange={() => toggle(client.id)} /> : null}</span>
+                  <span role="cell">{canInitiate ? <input type="checkbox" aria-label={`Select ${client.name} for group billing`} checked={picked.has(client.id)} disabled={!linked} onChange={() => toggle(client.id)} /> : null}</span>
                   <Link href={detail} role="cell" className="billing-name" aria-label={`Open billing details for ${client.name}`}>
                     <span className="directory-avatar" aria-hidden="true">{initials(client.name)}</span>
                     <span><strong>{client.name}</strong>{errors ? <StatusChip tone="danger">{errors} billing {errors === 1 ? "error" : "errors"}</StatusChip> : billedCents ? <StatusChip tone="good">Billed · {money(billedCents)}</StatusChip> : null}<small>{client.axisCareClientId ? `AxisCare ID ${client.axisCareClientId}` : canRun ? "Not matched to AxisCare" : pretty(client.status)}</small></span>
@@ -121,7 +122,7 @@ export default function BillingPortal({ clients, canRun = false, canManageIntegr
                   </> : <span role="cell" className="billing-unmatched">Confirm the AxisCare match to see visits</span>)
                     : <span role="cell" className="billing-muted">—</span>}
                   <span role="cell" className="billing-row-actions">
-                    {canRun ? <button type="button" disabled title="Billing sessions are not enabled yet" aria-label={`Bill now for ${client.name}`}>Bill now</button> : null}
+                    {canInitiate ? <button type="button" disabled title="Billing sessions are not enabled yet" aria-label={`Bill now for ${client.name}`}>Bill now</button> : null}
                     <Link href={detail} className="billing-more">More details ›</Link>
                   </span>
                 </div>

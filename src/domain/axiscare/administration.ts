@@ -1,15 +1,20 @@
 import type { User } from "@prisma/client";
 import { ConflictError, ResourceNotFoundError, ValidationError } from "@/domain/auth/errors";
 import { serviceTypeOptions } from "@/domain/clients/intake-state";
-import { requireOrganizationAccess, requirePermission } from "@/domain/permissions/authorization";
+import { requireOrganizationAccess, requirePermission, resolvePermissionCodes } from "@/domain/permissions/authorization";
 import { prisma } from "@/lib/prisma";
 import { getAxisCareConnectionStatus, loadAxisCareConfig, recordAxisCareConnectionTest } from "./config";
 import { runFullSync, testConnection } from "./sync";
 import { operationalEmployeeWhere } from "@/domain/test-data/visibility";
 
-async function authorize(user: Pick<User, "id">, organizationId: string) {
+async function authorize(user: Pick<User, "id">, organizationId: string, permission: "organization.manage" | "billing.mapping.manage" | "billing.sync.manage") {
   const { membership } = await requireOrganizationAccess(user, organizationId);
-  await requirePermission(membership.id, "organization.manage");
+  await requirePermission(membership.id, permission);
+}
+
+async function authorizeIntegrationRead(user: Pick<User, "id">, organizationId: string) {
+  const { membership } = await requireOrganizationAccess(user, organizationId), permissions = await resolvePermissionCodes(membership.id);
+  if (!["organization.manage", "billing.mapping.manage", "billing.sync.manage"].some(code => permissions.has(code))) await requirePermission(membership.id, "billing.mapping.manage");
 }
 
 const identity = (payload: unknown) => {
@@ -23,7 +28,7 @@ export const axisCareServiceTargets = serviceTypeOptions.map(option => ({ value:
 const allowedServiceTargets = new Set<string>(axisCareServiceTargets.map(option => option.value));
 
 export async function getAxisCareAdministration(user: Pick<User, "id">, organizationId: string) {
-  await authorize(user, organizationId);
+  await authorizeIntegrationRead(user, organizationId);
   const [connection, caregivers, employees, visits, serviceMappings, syncStates] = await Promise.all([
     getAxisCareConnectionStatus(organizationId),
     prisma.axisCareRecord.findMany({ where: { organizationId, entity: "caregiver", removedAt: null }, select: { externalId: true, payload: true }, orderBy: { externalId: "asc" }, take: 500 }),
@@ -51,14 +56,14 @@ export async function getAxisCareAdministration(user: Pick<User, "id">, organiza
 }
 
 export async function verifyAxisCareConnection(user: Pick<User, "id">, organizationId: string) {
-  await authorize(user, organizationId);
+  await authorize(user, organizationId, "organization.manage");
   const config = await loadAxisCareConfig(organizationId);
   if (!config) throw new ResourceNotFoundError("AxisCare connection is not configured");
   return recordAxisCareConnectionTest(organizationId, user.id, await testConnection(config));
 }
 
 export async function synchronizeAxisCare(user: Pick<User, "id">, organizationId: string) {
-  await authorize(user, organizationId);
+  await authorize(user, organizationId, "billing.sync.manage");
   const connection = await prisma.axisCareConnection.findUnique({ where: { organizationId }, select: { status: true } });
   if (connection?.status !== "CONNECTED") throw new ConflictError("Verify the AxisCare connection before synchronization", "AXISCARE_CONNECTION_NOT_VERIFIED");
   const config = await loadAxisCareConfig(organizationId);
@@ -69,7 +74,7 @@ export async function synchronizeAxisCare(user: Pick<User, "id">, organizationId
 }
 
 export async function mapAxisCareCaregiver(user: Pick<User, "id">, organizationId: string, externalId: string, employeeId: string) {
-  await authorize(user, organizationId);
+  await authorize(user, organizationId, "billing.mapping.manage");
   const [record, employee, alreadyMapped] = await Promise.all([
     prisma.axisCareRecord.findUnique({ where: { organizationId_entity_externalId: { organizationId, entity: "caregiver", externalId } }, select: { id: true } }),
     prisma.employee.findFirst({ where: { id: employeeId, organizationId, ...operationalEmployeeWhere }, select: { id: true, axisCareCaregiverId: true } }),
@@ -87,7 +92,7 @@ export async function mapAxisCareCaregiver(user: Pick<User, "id">, organizationI
 }
 
 export async function mapAxisCareService(user: Pick<User, "id">, organizationId: string, axisCareServiceCode: string, waldahServiceType: string) {
-  await authorize(user, organizationId);
+  await authorize(user, organizationId, "billing.mapping.manage");
   if (!allowedServiceTargets.has(waldahServiceType)) throw new ValidationError("Select an approved Waldah service type");
   const exists = await prisma.axisCareVisit.findFirst({ where: { organizationId, serviceCode: axisCareServiceCode }, select: { id: true } });
   if (!exists) throw new ResourceNotFoundError("AxisCare service code not found");

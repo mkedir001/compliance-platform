@@ -24,11 +24,11 @@ describe("billing screen integration", () => {
   it("enforces billing permissions server-side and tenant-scoped reads", () => {
     expect(service).toContain('codes.has("billing.run")');
     expect(service).toContain('codes.has("billing.view_billed")');
-    expect(service).toContain('requirePermission(membership.id, "billing.run")');
+    expect(service).toContain('requirePermission(membership.id, "billing.view")');
     expect(service).toContain('canManageIntegration: codes.has("organization.manage")');
     expect(service).toContain("where: { organizationId, archivedAt: null, testDataMarkedAt: null }");
     expect(service.match(/where: \{ organizationId,/g)?.length).toBeGreaterThanOrEqual(3);
-    expect(page).toContain("access.canRun?await Promise.all");
+    expect(page).toContain("access.canView?await getBillingVisits");
   });
 
   it("backfills Billing access for existing organization-scoped owners", () => {
@@ -70,7 +70,7 @@ describe("billing screen integration", () => {
     expect(detail.indexOf("Client billing snapshot")).toBeLessThan(detail.indexOf("Billing history"));
     expect(detail.indexOf("Billing history\"")).toBeLessThan(detail.indexOf("Visit history\""));
     expect(detailPage).toContain("getBillingVisits(user,organizationId,new Date(),clientId)");
-    expect(detailPage).toContain("access.canRun&&client.axisCareLinked");
+    expect(detailPage).toContain("access.canView&&client.axisCareLinked");
     expect(detailPage).toContain("notFound()");
   });
 
@@ -89,8 +89,8 @@ describe("billing screen integration", () => {
     expect(panel).toContain("Read-only.");
     expect(panel.match(/fetch\(/g)).toHaveLength(1);
     expect(match).toContain("/axiscare/matches/");
-    expect(portal).toContain("canRun ? <MatchReview");
-    expect(portal).toContain("canManageIntegration ? <IntegrationPanel");
+    expect(portal).toContain("canManageMapping ? <MatchReview");
+    expect(portal).toContain("canManageIntegration || canManageMapping || canManageSync ? <IntegrationPanel");
     expect(axisCareStatus).toContain("Billing actions remain disabled.");
     expect(axisCareStatus).toContain("Read-only synchronization is available");
     for (const status of ["Saved, not verified", "Connected and verified", "Authentication failed", "Connection unavailable"]) expect(axisCareStatus).toContain(status);
@@ -106,7 +106,7 @@ describe("billing screen integration", () => {
     expect(service).toContain("mapClientLifecycle");
     expect(service).toContain('state = record.ignoredAt ? "IGNORED"');
     expect(matchRoute).toContain("requireOrganizationAccess(user, organizationId)");
-    expect(matchRoute).toContain('requirePermission(membership.id, "billing.run")');
+    expect(matchRoute).toContain('requirePermission(membership.id, "billing.mapping.manage")');
     expect(matchRoute).toContain('requirePermission(membership.id, "client.create")');
     expect(matchRoute).toContain("changeAxisCareClientDisposition");
     expect(match).toContain("Create client");

@@ -1,14 +1,16 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 
 type NavigationItem = { label: string; href: string; group?: string; current?: boolean };
 
 export function PortalShell({ organizationId, current, children, navigation }: { organizationId: string; current: string; children: ReactNode; navigation?: NavigationItem[] }) {
+  const [access, setAccess] = useState<{billing:boolean;users:boolean;settings:boolean}|null>(null);
+  useEffect(()=>{if(!navigation&&organizationId)fetch(`/api/organizations/${organizationId}/navigation`).then(response=>response.ok?response.json():null).then(value=>{if(value)setAccess(value)}).catch(()=>setAccess({billing:false,users:false,settings:false}))},[navigation,organizationId]);
   const query = organizationId ? `?organizationId=${encodeURIComponent(organizationId)}` : "";
-  const items = navigation ?? [
+  const defaultItems: NavigationItem[] = [
     { label: "Home", href: `/admin/home${query}`, group: "Workspace" },
     { label: "Employees", href: `/admin/employees${query}`, group: "People" },
     { label: "Clients", href: `/admin/clients${query}`, group: "People" },
@@ -22,6 +24,7 @@ export function PortalShell({ organizationId, current, children, navigation }: {
     { label: "Reports and audit", href: `/admin/reporting${query}`, group: "Records" },
     { label: "Settings", href: `/admin/setup${query}`, group: "Administration" },
   ];
+  const items = navigation ?? defaultItems.filter(item => item.label === "Billing" ? access?.billing : item.label === "Settings" ? access?.settings : true);
   let lastGroup = "";
   return (
     <div className="portal-app">

@@ -46,18 +46,14 @@ describe.sequential("organization-owner Billing permission backfill", () => {
   });
 
   it("reproduces the production denial before the backfill", async () => {
-    await expect(getBillingAccess({ id: ownerUserId }, organizationId)).rejects.toThrow(/billing\.view_billed/);
+    await expect(getBillingAccess({ id: ownerUserId }, organizationId)).rejects.toThrow(/billing\.view/);
   });
 
   it("grants both Billing permissions to an existing organization-scoped owner idempotently", async () => {
     await db.$executeRawUnsafe(migration);
     await db.$executeRawUnsafe(migration);
 
-    await expect(getBillingAccess({ id: ownerUserId }, organizationId)).resolves.toEqual({
-      canRun: true,
-      canViewBilled: true,
-      canManageIntegration: true,
-    });
+    await expect(getBillingAccess({ id: ownerUserId }, organizationId)).resolves.toMatchObject({ canView: true, canInitiate: true, canRun: true, canManageIntegration: true });
     await expect(getBillingWorkspaceClients({ id: ownerUserId }, organizationId)).resolves.toEqual([]);
     const permissions = await db.rolePermission.findMany({
       where: { roleDefinitionId: ownerRoleId, permission: { code: { in: ["billing.run", "billing.view_billed"] } } },

@@ -49,6 +49,17 @@ enum MembershipStatus {
   ENDED
 }
 
+enum PermissionEffect {
+  GRANT
+  DENY
+}
+
+enum OrganizationInvitationStatus {
+  PENDING
+  ACCEPTED
+  REVOKED
+}
+
 enum RoleScope {
   ORGANIZATION
   PLATFORM
@@ -737,6 +748,7 @@ model Organization {
   auditPackages             AuditPackage[]
   auditEvents               AuditEvent[]
   employeePortalInvitations EmployeePortalInvitation[]
+  organizationInvitations   OrganizationUserInvitation[]
   workforceReadinessIntakes EmployeeWorkforceReadiness[]
   notifications             Notification[]
   notificationDeliveries    NotificationDelivery[]
@@ -825,107 +837,113 @@ model Location {
 }
 
 model User {
-  id                             String                                   @id @default(cuid())
-  authProviderUserId             String?                                  @unique
-  email                          String?                                  @unique
-  phone                          String?
-  status                         UserStatus                               @default(INVITED)
-  lastLoginAt                    DateTime?
-  createdAt                      DateTime                                 @default(now())
-  updatedAt                      DateTime                                 @updatedAt
-  memberships                    OrganizationMembership[]
-  employees                      Employee[]
-  recordedEvents                 EmployeeServiceEvent[]                   @relation("RecordedBy")
-  verifiedRegulationVersions     RegulationVersion[]                      @relation("RegulationVerifiedBy")
-  assignedTraining               TrainingAssignment[]                     @relation("TrainingAssignedBy")
-  cancelledTraining              TrainingAssignment[]                     @relation("TrainingCancelledBy")
-  trainingAssignmentEvents       TrainingAssignmentEvent[]
-  trainingAcknowledgments        TrainingAcknowledgment[]                 @relation("TrainingAcknowledgedBy")
-  competencyAssessments          CompetencyAssessment[]                   @relation("CompetencyAssessorUser")
-  credentials                    ProfessionalCredential[]                 @relation("CredentialUser")
-  verifiedCredentials            ProfessionalCredential[]                 @relation("CredentialVerifiedBy")
-  reviewedExternalTraining       ExternalTrainingRecord[]                 @relation("ExternalTrainingReviewedBy")
-  equivalencyDecisions           RequirementEquivalencyDecision[]         @relation("EquivalencyReviewer")
-  attestations                   Attestation[]                            @relation("AttestationSigner")
-  evidenceCorrections            EvidenceCorrection[]                     @relation("EvidenceCorrectedBy")
-  issuedCertificates             Certificate[]                            @relation("CertificateIssuedBy")
-  createdOnboardings             EmployeeOnboarding[]                     @relation("OnboardingCreatedBy")
-  completedOnboardingSteps       EmployeeOnboardingStep[]                 @relation("OnboardingStepCompletedBy")
-  createdPolicyVersions          PolicyVersion[]                          @relation("PolicyVersionCreatedBy")
-  publishedPolicyVersions        PolicyVersion[]                          @relation("PolicyVersionPublishedBy")
-  assignedPolicies               PolicyAssignment[]                       @relation("PolicyAssignedBy")
-  clinicalApprovals              ClinicalCurriculumApproval[]             @relation("ClinicalCurriculumReviewer")
-  medicationQualifications       MedicationQualification[]                @relation("MedicationQualificationReviewer")
-  medicationInstructions         PersonSpecificMedicationInstruction[]    @relation("MedicationInstructionReviewer")
-  medicationAuthorizations       MedicationAuthorizationEvidence[]        @relation("MedicationAuthorizationRecorder")
-  clinicalEvents                 ClinicalGovernanceEvent[]                @relation("ClinicalGovernanceActor")
-  createdServiceAssignments      ServiceAssignment[]                      @relation("ServiceAssignmentCreator")
-  cancelledServiceAssignments    ServiceAssignment[]                      @relation("ServiceAssignmentCanceller")
-  assignmentEvaluations          ServiceAssignmentEligibilityEvaluation[] @relation("AssignmentEvaluationActor")
-  assignmentEvents               ServiceAssignmentEvent[]                 @relation("AssignmentEventActor")
-  managedComplianceIssues        ComplianceIssue[]                        @relation("ComplianceIssueWorkflowActor")
-  complianceIssueEvents          ComplianceIssueEvent[]                   @relation("ComplianceIssueEventActor")
-  requestedAuditPackages         AuditPackage[]                           @relation("AuditPackageRequester")
-  auditEvents                    AuditEvent[]                             @relation("AuditEventActor")
-  sentEmployeeInvitations        EmployeePortalInvitation[]               @relation("EmployeePortalInvitationSender")
-  acceptedEmployeeInvitations    EmployeePortalInvitation[]               @relation("EmployeePortalInvitationAccepter")
-  notifications                  Notification[]                           @relation("NotificationRecipient")
-  notificationPreferences        NotificationPreference[]
-  createdClients                 Client[]                                 @relation("ClientCreatedBy")
-  completedClientIntakes         ClientIntake[]                           @relation("ClientIntakeCompletedBy")
-  generatedClientDocuments       ClientDocument[]                         @relation("ClientDocumentGeneratedBy")
-  createdClientDocumentRequests  ClientDocumentRequest[]                  @relation("ClientDocumentRequestCreator")
-  inspectorAuditSessions         AuditAccessSession[]                     @relation("AuditAccessInspector")
-  createdAuditAccessSessions     AuditAccessSession[]                     @relation("AuditAccessCreator")
-  revokedAuditAccessSessions     AuditAccessSession[]                     @relation("AuditAccessRevoker")
-  uploadedClientImports          ClientImportSession[]                    @relation("ClientImportUploader")
-  reviewedClientImportProposals  ClientImportProposal[]                   @relation("ClientImportProposalReviewer")
-  createdReferrals               Referral[]                               @relation("ReferralCreator")
-  reviewedReferrals              Referral[]                               @relation("ReferralReviewer")
-  referralEvents                 ReferralEvent[]                          @relation("ReferralEventActor")
-  createdDocumentQuestionnaires  ClientDocumentQuestionnaire[]            @relation("DocumentQuestionnaireCreator")
-  reviewedDocumentQuestionnaires ClientDocumentQuestionnaire[]            @relation("DocumentQuestionnaireReviewer")
+  id                              String                                   @id @default(cuid())
+  authProviderUserId              String?                                  @unique
+  email                           String?                                  @unique
+  phone                           String?
+  status                          UserStatus                               @default(INVITED)
+  lastLoginAt                     DateTime?
+  createdAt                       DateTime                                 @default(now())
+  updatedAt                       DateTime                                 @updatedAt
+  memberships                     OrganizationMembership[]
+  employees                       Employee[]
+  recordedEvents                  EmployeeServiceEvent[]                   @relation("RecordedBy")
+  verifiedRegulationVersions      RegulationVersion[]                      @relation("RegulationVerifiedBy")
+  assignedTraining                TrainingAssignment[]                     @relation("TrainingAssignedBy")
+  cancelledTraining               TrainingAssignment[]                     @relation("TrainingCancelledBy")
+  trainingAssignmentEvents        TrainingAssignmentEvent[]
+  trainingAcknowledgments         TrainingAcknowledgment[]                 @relation("TrainingAcknowledgedBy")
+  competencyAssessments           CompetencyAssessment[]                   @relation("CompetencyAssessorUser")
+  credentials                     ProfessionalCredential[]                 @relation("CredentialUser")
+  verifiedCredentials             ProfessionalCredential[]                 @relation("CredentialVerifiedBy")
+  reviewedExternalTraining        ExternalTrainingRecord[]                 @relation("ExternalTrainingReviewedBy")
+  equivalencyDecisions            RequirementEquivalencyDecision[]         @relation("EquivalencyReviewer")
+  attestations                    Attestation[]                            @relation("AttestationSigner")
+  evidenceCorrections             EvidenceCorrection[]                     @relation("EvidenceCorrectedBy")
+  issuedCertificates              Certificate[]                            @relation("CertificateIssuedBy")
+  createdOnboardings              EmployeeOnboarding[]                     @relation("OnboardingCreatedBy")
+  completedOnboardingSteps        EmployeeOnboardingStep[]                 @relation("OnboardingStepCompletedBy")
+  createdPolicyVersions           PolicyVersion[]                          @relation("PolicyVersionCreatedBy")
+  publishedPolicyVersions         PolicyVersion[]                          @relation("PolicyVersionPublishedBy")
+  assignedPolicies                PolicyAssignment[]                       @relation("PolicyAssignedBy")
+  clinicalApprovals               ClinicalCurriculumApproval[]             @relation("ClinicalCurriculumReviewer")
+  medicationQualifications        MedicationQualification[]                @relation("MedicationQualificationReviewer")
+  medicationInstructions          PersonSpecificMedicationInstruction[]    @relation("MedicationInstructionReviewer")
+  medicationAuthorizations        MedicationAuthorizationEvidence[]        @relation("MedicationAuthorizationRecorder")
+  clinicalEvents                  ClinicalGovernanceEvent[]                @relation("ClinicalGovernanceActor")
+  createdServiceAssignments       ServiceAssignment[]                      @relation("ServiceAssignmentCreator")
+  cancelledServiceAssignments     ServiceAssignment[]                      @relation("ServiceAssignmentCanceller")
+  assignmentEvaluations           ServiceAssignmentEligibilityEvaluation[] @relation("AssignmentEvaluationActor")
+  assignmentEvents                ServiceAssignmentEvent[]                 @relation("AssignmentEventActor")
+  managedComplianceIssues         ComplianceIssue[]                        @relation("ComplianceIssueWorkflowActor")
+  complianceIssueEvents           ComplianceIssueEvent[]                   @relation("ComplianceIssueEventActor")
+  requestedAuditPackages          AuditPackage[]                           @relation("AuditPackageRequester")
+  auditEvents                     AuditEvent[]                             @relation("AuditEventActor")
+  sentEmployeeInvitations         EmployeePortalInvitation[]               @relation("EmployeePortalInvitationSender")
+  acceptedEmployeeInvitations     EmployeePortalInvitation[]               @relation("EmployeePortalInvitationAccepter")
+  sentOrganizationInvitations     OrganizationUserInvitation[]             @relation("OrganizationInvitationSender")
+  acceptedOrganizationInvitations OrganizationUserInvitation[]             @relation("OrganizationInvitationAccepter")
+  permissionOverridesGranted      MembershipPermission[]                   @relation("MembershipPermissionGrantor")
+  notifications                   Notification[]                           @relation("NotificationRecipient")
+  notificationPreferences         NotificationPreference[]
+  createdClients                  Client[]                                 @relation("ClientCreatedBy")
+  completedClientIntakes          ClientIntake[]                           @relation("ClientIntakeCompletedBy")
+  generatedClientDocuments        ClientDocument[]                         @relation("ClientDocumentGeneratedBy")
+  createdClientDocumentRequests   ClientDocumentRequest[]                  @relation("ClientDocumentRequestCreator")
+  inspectorAuditSessions          AuditAccessSession[]                     @relation("AuditAccessInspector")
+  createdAuditAccessSessions      AuditAccessSession[]                     @relation("AuditAccessCreator")
+  revokedAuditAccessSessions      AuditAccessSession[]                     @relation("AuditAccessRevoker")
+  uploadedClientImports           ClientImportSession[]                    @relation("ClientImportUploader")
+  reviewedClientImportProposals   ClientImportProposal[]                   @relation("ClientImportProposalReviewer")
+  createdReferrals                Referral[]                               @relation("ReferralCreator")
+  reviewedReferrals               Referral[]                               @relation("ReferralReviewer")
+  referralEvents                  ReferralEvent[]                          @relation("ReferralEventActor")
+  createdDocumentQuestionnaires   ClientDocumentQuestionnaire[]            @relation("DocumentQuestionnaireCreator")
+  reviewedDocumentQuestionnaires  ClientDocumentQuestionnaire[]            @relation("DocumentQuestionnaireReviewer")
 }
 
 model OrganizationMembership {
-  id             String           @id @default(cuid())
-  organizationId String
-  userId         String
-  status         MembershipStatus @default(INVITED)
-  joinedAt       DateTime?
-  endedAt        DateTime?
-  createdAt      DateTime         @default(now())
-  updatedAt      DateTime         @updatedAt
-  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  user           User             @relation(fields: [userId], references: [id], onDelete: Restrict)
-  roles          MembershipRole[]
+  id                  String                 @id @default(cuid())
+  organizationId      String
+  userId              String
+  status              MembershipStatus       @default(INVITED)
+  joinedAt            DateTime?
+  endedAt             DateTime?
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
+  organization        Organization           @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  user                User                   @relation(fields: [userId], references: [id], onDelete: Restrict)
+  roles               MembershipRole[]
+  permissionOverrides MembershipPermission[]
 
   @@unique([organizationId, userId])
   @@index([userId, status])
 }
 
 model Permission {
-  id          String           @id @default(cuid())
-  code        String           @unique
-  description String?
-  createdAt   DateTime         @default(now())
-  roles       RolePermission[]
+  id                  String                 @id @default(cuid())
+  code                String                 @unique
+  description         String?
+  createdAt           DateTime               @default(now())
+  roles               RolePermission[]
+  membershipOverrides MembershipPermission[]
 }
 
 model RoleDefinition {
-  id                 String           @id @default(cuid())
-  organizationId     String?
-  code               String
-  name               String
-  description        String?
-  scope              RoleScope
-  isPlatformStandard Boolean          @default(false)
-  createdAt          DateTime         @default(now())
-  updatedAt          DateTime         @updatedAt
-  organization       Organization?    @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  permissions        RolePermission[]
-  memberships        MembershipRole[]
-  employeeRoles      EmployeeRole[]
+  id                      String                       @id @default(cuid())
+  organizationId          String?
+  code                    String
+  name                    String
+  description             String?
+  scope                   RoleScope
+  isPlatformStandard      Boolean                      @default(false)
+  createdAt               DateTime                     @default(now())
+  updatedAt               DateTime                     @updatedAt
+  organization            Organization?                @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  permissions             RolePermission[]
+  memberships             MembershipRole[]
+  employeeRoles           EmployeeRole[]
+  organizationInvitations OrganizationUserInvitation[]
 
   @@unique([organizationId, code])
   @@index([code, isPlatformStandard])
@@ -951,6 +969,48 @@ model MembershipRole {
   roleDefinition   RoleDefinition         @relation(fields: [roleDefinitionId], references: [id], onDelete: Restrict)
 
   @@unique([membershipId, roleDefinitionId])
+}
+
+model MembershipPermission {
+  id              String                 @id @default(cuid())
+  membershipId    String
+  permissionId    String
+  effect          PermissionEffect
+  grantedByUserId String
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+  membership      OrganizationMembership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  permission      Permission             @relation(fields: [permissionId], references: [id], onDelete: Restrict)
+  grantedBy       User                   @relation("MembershipPermissionGrantor", fields: [grantedByUserId], references: [id], onDelete: Restrict)
+
+  @@unique([membershipId, permissionId])
+  @@index([permissionId, effect])
+}
+
+model OrganizationUserInvitation {
+  id               String                       @id @default(cuid())
+  organizationId   String
+  invitedEmail     String
+  displayName      String?
+  tokenHash        String                       @unique
+  status           OrganizationInvitationStatus @default(PENDING)
+  roleDefinitionId String?
+  permissionCodes  Json?
+  employeeId       String?
+  invitedByUserId  String
+  acceptedByUserId String?
+  invitedAt        DateTime                     @default(now())
+  expiresAt        DateTime
+  acceptedAt       DateTime?
+  revokedAt        DateTime?
+  organization     Organization                 @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  roleDefinition   RoleDefinition?              @relation(fields: [roleDefinitionId], references: [id], onDelete: Restrict)
+  employee         Employee?                    @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  invitedBy        User                         @relation("OrganizationInvitationSender", fields: [invitedByUserId], references: [id], onDelete: Restrict)
+  acceptedBy       User?                        @relation("OrganizationInvitationAccepter", fields: [acceptedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, status, invitedAt])
+  @@index([organizationId, invitedEmail, status])
 }
 
 model Employee {
@@ -1001,6 +1061,7 @@ model Employee {
   assignmentEvaluations    ServiceAssignmentEligibilityEvaluation[]
   complianceIssues         ComplianceIssue[]
   portalInvitations        EmployeePortalInvitation[]
+  organizationInvitations  OrganizationUserInvitation[]
   workforceReadiness       EmployeeWorkforceReadiness?
   auditAccessScopes        AuditAccessEmployee[]
   axisCareVisits           AxisCareVisit[]
@@ -3970,18 +4031,18 @@ model AxisCareWebhookEvent {
 }
 
 model AxisCareRecord {
-  id             String       @id @default(cuid())
-  organizationId String
-  entity         String
-  externalId     String
-  payload        Json
-  payloadHash    String
-  firstSeenAt    DateTime     @default(now())
-  lastSyncedAt   DateTime     @default(now())
-  removedAt      DateTime?
-  ignoredAt      DateTime?
+  id              String       @id @default(cuid())
+  organizationId  String
+  entity          String
+  externalId      String
+  payload         Json
+  payloadHash     String
+  firstSeenAt     DateTime     @default(now())
+  lastSyncedAt    DateTime     @default(now())
+  removedAt       DateTime?
+  ignoredAt       DateTime?
   ignoredByUserId String?
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@unique([organizationId, entity, externalId])
   @@index([organizationId, entity, lastSyncedAt])

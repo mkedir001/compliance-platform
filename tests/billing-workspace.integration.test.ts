@@ -56,15 +56,15 @@ describe.sequential("organization billing workspace", () => {
   });
 
   it("rejects a member without organization management permission", async () => {
-    await expect(getBillingWorkspaceClients({ id: viewerId }, organizationId)).rejects.toThrow(/billing.view_billed/);
+    await expect(getBillingWorkspaceClients({ id: viewerId }, organizationId)).rejects.toThrow(/billing.view/);
   });
 
   it("lets billing.view_billed see clients but not visits or run billing", async () => {
-    expect(await getBillingAccess({ id: viewBilledId }, organizationId)).toEqual({ canRun: false, canViewBilled: true, canManageIntegration: false });
+    expect(await getBillingAccess({ id: viewBilledId }, organizationId)).toMatchObject({ canView: true, canInitiate: false, canRun: false, canManageMapping: false, canManageSync: false, canManageIntegration: false });
     const viewOnly = await getBillingWorkspaceClients({ id: viewBilledId }, organizationId);
     expect(viewOnly).toHaveLength(1);
     expect(viewOnly[0].axisCareClientId).toBeNull();
-    await expect(getBillingVisits({ id: viewBilledId }, organizationId)).rejects.toThrow(/billing.run/);
+    expect((await getBillingVisits({ id: viewBilledId }, organizationId)).length).toBeGreaterThan(0);
   });
 
   it("returns EVV-classified visits for billing.run, current tenant, excluding removed visits", async () => {

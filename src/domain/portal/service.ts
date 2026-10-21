@@ -2,7 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { Prisma, type User } from "@prisma/client";
 import { AuthorizationError, ConflictError, ResourceNotFoundError } from "@/domain/auth/errors";
 import { computeEmployeeOperationalProfile } from "@/domain/compliance/operations/service";
-import { requireEmployeeAccess, requireEmployeeSelfAccess, requireOrganizationAccess, requireOrganizationMembership, requirePermission } from "@/domain/permissions/authorization";
+import { requireEmployeeAccess, requireEmployeeSelfAccess, requireOrganizationAccess, requireOrganizationMembership, requirePermission, resolvePermissionCodes } from "@/domain/permissions/authorization";
 import { deriveAssignmentDisplayStatus } from "@/domain/training/assignments/service";
 import { configuredEmailProviderForPurpose, EmailDeliveryError, type EmailProvider } from "@/domain/notifications/email";
 import { prisma } from "@/lib/prisma";
@@ -170,9 +170,34 @@ function actionOwner(stepType: string) {
 
 const employeeIssueTypes = new Set(["TRAINING_REQUIRED", "TRAINING_OVERDUE", "POLICY_ACKNOWLEDGMENT_REQUIRED"]);
 
+export async function getAssignedClientCareViews(user: Pick<User, "id">, organizationId: string, at = new Date()) {
+  const membership = await requireOrganizationMembership(user.id, organizationId), employee = await prisma.employee.findFirst({ where: { organizationId, userId: user.id, employmentStatus: "ACTIVE" }, select: { id: true } });
+  if (!employee) throw new AuthorizationError("Employee self-access denied");
+  const permissions = await resolvePermissionCodes(membership.id);
+  if (!permissions.has("client.assigned.read") || !permissions.has("client.caregiver.read")) return [];
+  const advanceAccess = new Date(at.getTime() + 24 * 60 * 60 * 1000);
+  const assignments = await prisma.serviceAssignment.findMany({ where: { organizationId, employeeId: employee.id, status: "ACTIVE", startsAt: { lte: advanceAccess }, OR: [{ endsAt: null }, { endsAt: { gt: at } }], serviceRecipientRef: { not: null } }, select: { id: true, serviceRecipientRef: true, blockingScope: true, startsAt: true, endsAt: true, program: { select: { name: true } }, location: { select: { name: true, addressLine1: true, addressLine2: true, city: true, state: true, postalCode: true } }, duties: { select: { dutyDefinition: { select: { code: true, name: true } } } } } });
+  const clientIds = [...new Set(assignments.flatMap(item => item.serviceRecipientRef ? [item.serviceRecipientRef] : []))];
+  if (!clientIds.length) return [];
+  const includeMedication = permissions.has("medication.assigned.read");
+  const [clients, instructions] = await Promise.all([
+    prisma.client.findMany({ where: { organizationId, id: { in: clientIds }, archivedAt: null, dischargedAt: null }, select: { id: true, legalFirstName: true, legalLastName: true, preferredName: true, addressLine1: true, addressLine2: true, city: true, state: true, postalCode: true, supportNeeds: true, preferredCommunication: true, primaryLanguage: true, interpreterNeeded: true, emergencyContacts: { where: { informationSharingAllowed: true }, select: { name: true, relationship: true, phone: true } }, services: { where: { status: "ACTIVE" }, select: { serviceType: true, scheduleJson: true } }, healthProfile: { select: { allergiesReactions: true, specialDietTexture: true, chokingSwallowingRisk: true, seizureProtocol: true, mobilityEquipment: true, medicationResponsibility: true } }, medications: includeMedication ? { select: { medication: true, dose: true, times: true, reason: true } } : false } }),
+    includeMedication ? prisma.personSpecificMedicationInstruction.findMany({ where: { organizationId, employeeId: employee.id, serviceRecipientRef: { in: clientIds }, status: "ACTIVE", effectiveFrom: { lte: at }, OR: [{ effectiveUntil: null }, { effectiveUntil: { gte: at } }] }, select: { serviceRecipientRef: true, procedureReference: true, procedureVersion: true, effectiveUntil: true } }) : Promise.resolve([]),
+  ]);
+  return clients.map(client => ({
+    id: client.id, name: client.preferredName || `${client.legalFirstName} ${client.legalLastName}`,
+    location: { addressLine1: client.addressLine1, addressLine2: client.addressLine2, city: client.city, state: client.state, postalCode: client.postalCode },
+    supportNeeds: client.supportNeeds, communication: { preferred: client.preferredCommunication, primaryLanguage: client.primaryLanguage, interpreterNeeded: client.interpreterNeeded },
+    safety: client.healthProfile ? { allergies: client.healthProfile.allergiesReactions, diet: client.healthProfile.specialDietTexture, chokingRisk: client.healthProfile.chokingSwallowingRisk, seizureProtocol: client.healthProfile.seizureProtocol, mobilityEquipment: client.healthProfile.mobilityEquipment, medicationResponsibility: client.healthProfile.medicationResponsibility } : null,
+    emergencyContacts: client.emergencyContacts, services: client.services,
+    assignments: assignments.filter(item => item.serviceRecipientRef === client.id).map(item => ({ id: item.id, blockingScope: item.blockingScope, startsAt: item.startsAt, endsAt: item.endsAt, program: item.program, location: item.location, duties: item.duties })),
+    medication: includeMedication ? { medications: client.medications, instructions: instructions.filter(item => item.serviceRecipientRef === client.id).map(item => ({ procedureReference: item.procedureReference, procedureVersion: item.procedureVersion, effectiveUntil: item.effectiveUntil })), administrationAuthorized: false, disclaimer: "Viewing medication instructions does not authorize medication administration." } : null,
+  }));
+}
+
 export async function getEmployeePortal(user: Pick<User, "id">, organizationId: string) {
   const employee = await resolveSelf(user, organizationId);
-  const [onboardings, assignments, policies, issues, certificates, profile, qualifications, instructions, authorizations, invitation] = await Promise.all([
+  const [onboardings, assignments, policies, issues, certificates, profile, qualifications, instructions, authorizations, invitation, assignedClients] = await Promise.all([
     prisma.employeeOnboarding.findMany({ where: { organizationId, employeeId: employee.id }, include: { templateVersion: { include: { onboardingTemplate: true } }, steps: { include: { stepDefinition: true }, orderBy: { stepDefinition: { sequence: "asc" } } } } }),
     prisma.trainingAssignment.findMany({ where: { organizationId, employeeId: employee.id }, include: { courseVersion: { include: { course: true, modules: { select: { id: true, _count: { select: { contentItems: true } } } } } }, completion: true, contentProgress: true, acknowledgments: true, moduleProgress: true }, orderBy: { assignedAt: "desc" } }),
     prisma.policyAssignment.findMany({ where: { organizationId, employeeId: employee.id }, include: { policyVersion: { omit:{originalDocument:true},include: { policy: true } }, attestation: true }, orderBy: { assignedAt: "desc" } }),
@@ -183,6 +208,7 @@ export async function getEmployeePortal(user: Pick<User, "id">, organizationId: 
     prisma.personSpecificMedicationInstruction.findMany({ where: { organizationId, employeeId: employee.id }, select: { id: true, serviceRecipientRef: true, instructedAt: true, effectiveFrom: true, effectiveUntil: true, status: true } }),
     prisma.medicationAuthorizationEvidence.findMany({ where: { organizationId, employeeId: employee.id }, select: { id: true, serviceRecipientRef: true, authorizationType: true, effectiveFrom: true, effectiveUntil: true, status: true } }),
     prisma.employeePortalInvitation.findFirst({ where: { organizationId, employeeId: employee.id }, orderBy: { invitedAt: "desc" }, select: { status: true, invitedAt: true, acceptedAt: true } }),
+    getAssignedClientCareViews(user, organizationId),
   ]);
   const training = assignments.map(assignment => {
     const totalContent = assignment.courseVersion.modules.reduce((total, module) => total + module._count.contentItems, 0);
@@ -195,7 +221,7 @@ export async function getEmployeePortal(user: Pick<User, "id">, organizationId: 
     training, policies: policies.map(item => ({ id: item.id, status: item.status, assignedAt: item.assignedAt, dueAt: item.dueAt, acknowledgedAt: item.acknowledgedAt, policy: { id: item.policyVersion.policy.id, code: item.policyVersion.policy.code, title: item.policyVersion.policy.title, category:item.policyVersion.policy.category, description: item.policyVersion.policy.description, version: item.policyVersion.versionNumber, versionLabel:item.policyVersion.versionLabel, body: item.policyVersion.body, contentHash: item.policyVersion.contentHash, hasDocument:Boolean(item.policyVersion.originalFileName), publishedAt:item.policyVersion.publishedAt } })),
     compliance: { requirements: profile.requirements, issues: issues.map(issue => ({ id: issue.id, issueType: issue.issueType, priority: issue.priority, status: issue.status, dueAt: issue.dueAt, reasons: issue.reasonCodesJson, visibility: employeeIssueTypes.has(issue.issueType) ? "EMPLOYEE_ACTION" : "WAITING_ON_ORGANIZATION", permittedActions: employeeIssueTypes.has(issue.issueType) ? issue.remediationActionsJson : [] })) },
     medicationGovernance: { qualifications, personSpecificInstructions: instructions.map(item => ({ ...item, serviceRecipientRef: item.serviceRecipientRef.slice(0, 12) })), administrationAuthorizations: authorizations.map(item => ({ ...item, serviceRecipientRef: item.serviceRecipientRef?.slice(0, 12) ?? null })), disclaimer: "Training completion alone is not medication qualification or administration authorization." },
-    certificates,
+    certificates, assignedClients,
     nextActions: [...training.filter(item => !["COMPLETED", "TRAINING_COMPLETE_COMPETENCY_PENDING", "CANCELLED", "SUPERSEDED"].includes(item.status)).map(item => ({ type: "TRAINING", resourceId: item.id, label: `Continue ${item.title}`, dueAt: item.dueAt })), ...policies.filter(item => ["PENDING", "OVERDUE"].includes(item.status)).map(item => ({ type: "POLICY", resourceId: item.id, label: `Acknowledge ${item.policyVersion.policy.title}`, dueAt: item.dueAt }))],
   };
 }

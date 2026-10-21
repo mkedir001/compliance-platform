@@ -11,7 +11,7 @@ const retryable = (error: unknown) => error instanceof Prisma.PrismaClientKnownR
 /** Creates an intake-in-progress client and claims its AxisCare identity atomically. */
 export async function createClientFromAxisCare(user: Pick<User, "id">, organizationId: string, axisCareClientId: string) {
   const { membership } = await requireOrganizationAccess(user, organizationId);
-  await requirePermission(membership.id, "billing.run");
+  await requirePermission(membership.id, "billing.mapping.manage");
   await requirePermission(membership.id, "client.create");
 
   for (let attempt = 0; attempt < 3; attempt += 1) {

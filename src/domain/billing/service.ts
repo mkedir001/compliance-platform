@@ -19,7 +19,7 @@ export type BillingWorkspaceClient = {
 export async function getBillingWorkspaceClients(user: Pick<User, "id">, organizationId: string): Promise<BillingWorkspaceClient[]> {
   const { membership } = await requireOrganizationAccess(user, organizationId);
   const codes = await resolvePermissionCodes(membership.id);
-  if (!codes.has("billing.run") && !codes.has("billing.view_billed")) throw new AuthorizationError("Missing permission: billing.view_billed");
+  if (!codes.has("billing.view") && !codes.has("billing.run") && !codes.has("billing.view_billed")) throw new AuthorizationError("Missing permission: billing.view");
   const rows = await prisma.client.findMany({
     where: { organizationId, archivedAt: null, testDataMarkedAt: null },
     select: {
@@ -38,7 +38,7 @@ export async function getBillingWorkspaceClients(user: Pick<User, "id">, organiz
     status: row.status,
     axisCareLinked: Boolean(row.axisCareClientId),
     // The AxisCare ID is shown on the row only to billing.run; view-only roles never receive it.
-    axisCareClientId: codes.has("billing.run") ? row.axisCareClientId : null,
+    axisCareClientId: codes.has("billing.mapping.manage") || codes.has("billing.run") ? row.axisCareClientId : null,
     serviceStart: row.services.map(service => (service.authorizationStart ?? service.startDate)?.toISOString().slice(0, 10)).filter((value): value is string => Boolean(value)).sort()[0] ?? null,
     serviceEnd: row.services.map(service => service.authorizationEnd?.toISOString().slice(0, 10)).filter((value): value is string => Boolean(value)).sort().at(-1) ?? null,
     approvedHours: row.services.some(service => service.authorizedHours !== null) ? row.services.reduce((sum, service) => sum + Number(service.authorizedHours ?? 0), 0) : null,
@@ -47,15 +47,14 @@ export async function getBillingWorkspaceClients(user: Pick<User, "id">, organiz
 
 // ---- AxisCare-backed billing data -------------------------------------------------------------------------
 // billing.run: sees everything (visits, rates, clock data) and may bill. billing.view_billed: billed amounts only.
-export type BillingAccess = { canRun: boolean; canViewBilled: boolean; canManageIntegration: boolean };
+export type BillingAccess = { canView: boolean; canInitiate: boolean; canRun: boolean; canManageMapping: boolean; canManageSync: boolean; canManageIntegration: boolean };
 
 export async function getBillingAccess(user: Pick<User, "id">, organizationId: string): Promise<BillingAccess> {
   const { membership } = await requireOrganizationAccess(user, organizationId);
   const codes = await resolvePermissionCodes(membership.id);
-  const canRun = codes.has("billing.run");
-  const canViewBilled = canRun || codes.has("billing.view_billed");
-  if (!canViewBilled) throw new AuthorizationError("Missing permission: billing.view_billed");
-  return { canRun, canViewBilled, canManageIntegration: codes.has("organization.manage") };
+  const legacyRun = codes.has("billing.run"), canView = codes.has("billing.view") || legacyRun || codes.has("billing.view_billed"), canInitiate = codes.has("billing.initiate") || legacyRun;
+  if (!canView) throw new AuthorizationError("Missing permission: billing.view");
+  return { canView, canInitiate, canRun: canInitiate, canManageMapping: codes.has("billing.mapping.manage") || legacyRun, canManageSync: codes.has("billing.sync.manage") || legacyRun, canManageIntegration: codes.has("organization.manage") };
 }
 
 export type BillingVisit = {
@@ -72,7 +71,7 @@ export type BillingVisit = {
 /** Visits for linked clients, newest first, last 12 months. billing.run only. */
 export async function getBillingVisits(user: Pick<User, "id">, organizationId: string, now = new Date(), clientId?: string): Promise<BillingVisit[]> {
   const { membership } = await requireOrganizationAccess(user, organizationId);
-  await requirePermission(membership.id, "billing.run");
+  await requirePermission(membership.id, "billing.view");
   const since = new Date(now); since.setUTCMonth(since.getUTCMonth() - 12);
   const [rows, mappings] = await Promise.all([prisma.axisCareVisit.findMany({
     where: { organizationId, removed: false, clientId: clientId ?? { not: null }, startAt: { gte: since }, client: { testDataMarkedAt: null, archivedAt: null } },
@@ -104,7 +103,7 @@ export type AxisCareClientMatchRow = {
 /** Tenant-scoped AxisCare client review, including confirmed and ignored decisions. billing.run only. */
 export async function getAxisCareClientMatches(user: Pick<User, "id">, organizationId: string): Promise<AxisCareClientMatchRow[]> {
   const { membership } = await requireOrganizationAccess(user, organizationId);
-  await requirePermission(membership.id, "billing.run");
+  await requirePermission(membership.id, "billing.mapping.manage");
   const [rows, records, clients] = await Promise.all([
     prisma.axisCareClientMatch.findMany({
       where: { organizationId, status: "SUGGESTED", client: { axisCareClientId: null, archivedAt: null, testDataMarkedAt: null } },

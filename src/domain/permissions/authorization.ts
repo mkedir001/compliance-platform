@@ -21,19 +21,24 @@ export async function requireOrganizationAccess(user: Pick<User, "id">, organiza
 }
 
 export async function resolvePermissionCodes(membershipId: string): Promise<Set<string>> {
-  const rows = await prisma.permission.findMany({
-    where: { roles: { some: { roleDefinition: { memberships: { some: { membershipId } } } } } },
-    select: { code: true },
-  });
-  return new Set(rows.map((row) => row.code));
+  const [rows, overrides] = await Promise.all([
+    prisma.permission.findMany({ where: { roles: { some: { roleDefinition: { memberships: { some: { membershipId } } } } } }, select: { code: true } }),
+    prisma.membershipPermission.findMany({ where: { membershipId }, select: { effect: true, permission: { select: { code: true } } } }),
+  ]);
+  const effective = new Set(rows.map((row) => row.code));
+  for (const override of overrides) if (override.effect === "GRANT") effective.add(override.permission.code);
+  // Compatibility aliases preserve the authority of pre-split billing roles during rollout.
+  if (effective.has("billing.view_billed")) effective.add("billing.view");
+  if (effective.has("billing.run")) for (const code of ["billing.view", "billing.initiate", "billing.mapping.manage", "billing.sync.manage"]) effective.add(code);
+  // Explicit restrictions always win over role defaults and explicit grants.
+  for (const override of overrides) if (override.effect === "DENY") effective.delete(override.permission.code);
+  return effective;
 }
 
 export async function requirePermission(membershipId: string, permissionCode: string) {
-  const permission = await prisma.permission.findFirst({
-    where: { code: permissionCode, roles: { some: { roleDefinition: { memberships: { some: { membershipId } } } } } },
-  });
-  if (!permission) throw new AuthorizationError(`Missing permission: ${permissionCode}`);
-  return permission;
+  const effective = await resolvePermissionCodes(membershipId);
+  if (!effective.has(permissionCode)) throw new AuthorizationError(`Missing permission: ${permissionCode}`);
+  return prisma.permission.findUniqueOrThrow({ where: { code: permissionCode } });
 }
 
 export async function requireEmployeeAccess(user: Pick<User, "id">, organizationId: string, employeeId: string, permission = "employee.read") {

@@ -65,7 +65,7 @@ describe.sequential("AxisCare tenant integration", () => {
     const overview = await getAxisCareAdministration({ id: managerId }, organizationId);
     expect(overview.connection).toMatchObject({ configured: true, baseUrl: "https://10461.axiscare.com", status: "CONFIGURATION_INCOMPLETE" });
     expect(JSON.stringify(overview)).not.toContain("tenant-a-secret-token");
-    await expect(getAxisCareAdministration({ id: viewerId }, organizationId)).rejects.toThrow(/organization.manage/);
+    await expect(getAxisCareAdministration({ id: viewerId }, organizationId)).rejects.toThrow(/billing.mapping.manage/);
     await expect(getAxisCareAdministration({ id: managerId }, otherOrganizationId)).rejects.toThrow(/Organization access denied/);
   });
 

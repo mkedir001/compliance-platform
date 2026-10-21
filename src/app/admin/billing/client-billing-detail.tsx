@@ -36,7 +36,7 @@ function VisitTable({ visits, selected, onToggle, onToggleAll, selectable, onOpe
   );
 }
 
-export default function ClientBillingDetail({ client, visits, canRun, organizationId }: { client: BillingClient; visits: BillingVisitRow[]; canRun: boolean; organizationId: string }) {
+export default function ClientBillingDetail({ client, visits, canView, canInitiate, organizationId }: { client: BillingClient; visits: BillingVisitRow[]; canView: boolean; canInitiate: boolean; organizationId: string }) {
   const [filter, setFilter] = useState<"ALL" | "EVV" | "NON_EVV">("ALL");
   const [billedFilter, setBilledFilter] = useState<"BILLED" | "NOT_BILLED" | null>(null);
   const [openResultId, setOpenResultId] = useState<string | null>(null);
@@ -46,7 +46,7 @@ export default function ClientBillingDetail({ client, visits, canRun, organizati
   const nonEvv = visits.filter(visit => visit.evaluationState === "NON_COMPLIANT");
   const shown = visits.filter(visit => (filter === "ALL" || (filter === "EVV" ? visit.evaluationState === "COMPLIANT" : visit.evaluationState === "NON_COMPLIANT")) && (billedFilter === null || (billedFilter === "BILLED") === isBilled(visit)));
   const openResult = visits.find(visit => visit.id === openResultId && visit.result) ?? null;
-  const linked = canRun && client.axisCareLinked;
+  const linked = canView && client.axisCareLinked;
   const picked = visits.filter(visit => selected.has(visit.id)), pickedSummary = summarizeVisits(picked);
   const toggle = (id: string) => setSelected(current => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; });
   const toggleAll = () => { const open = shown.filter(visit => !isBilled(visit) && isBillingEligible(visit)); setSelected(current => open.every(visit => current.has(visit.id)) ? new Set([...current].filter(id => !open.some(visit => visit.id === id))) : new Set([...current, ...open.map(visit => visit.id)])); };
@@ -61,7 +61,7 @@ export default function ClientBillingDetail({ client, visits, canRun, organizati
         <StatusChip tone={client.status === "ACTIVE" ? "good" : "neutral"}>{pretty(client.status)}</StatusChip>
       </header>
 
-      {!canRun ? <p className="billing-empty">Visit detail and billing are available to billing roles. Billed amounts will appear here once billing runs are enabled.</p>
+      {!canView ? <p className="billing-empty">Visit detail and billing are available to billing roles. Billed amounts will appear here once billing runs are enabled.</p>
         : !linked ? <p className="billing-empty">This client is not matched to an AxisCare client yet. Confirm the match on the Billing page to see visits.</p> : <>
         <section className="billing-summary" aria-label="Client billing snapshot">
           <div className="billing-summary-row">
@@ -79,13 +79,13 @@ export default function ClientBillingDetail({ client, visits, canRun, organizati
           <p className="billing-ytd">YTD {period.year} · {percentLabel(yearRate.percent)} EVV compliant ({yearRate.compliant} of {yearRate.total} visits) · {billedYtd === null ? "billed: not tracked yet" : `${money(billedYtd)} billed`}</p>
         </section>
 
-        <section className="billing-bill-options" aria-label="Billing options">
+        {canInitiate ? <section className="billing-bill-options" aria-label="Billing options">
           {/* WIRING: each button starts an individual billing session for this client. "Everything" = all unsubmitted visits;
               "EVV only" = unsubmitted visits where compliant === true. Non-EVV visits billed by choice are flagged in the session. */}
           <button type="button" disabled title="Billing sessions are not enabled yet">Bill everything<small>{hoursWithAmount(summary.readyHours, summary.readyCents, summary.unrated)} · {summary.evvCount + summary.nonEvvCount} eligible {summary.evvCount + summary.nonEvvCount === 1 ? "visit" : "visits"}</small></button>
           <button type="button" className="secondary" disabled title="Billing sessions are not enabled yet">Bill EVV-compliant only<small>{hoursWithAmount(summary.evv.hours, summary.evv.cents, summary.evv.unrated)} · {summary.evvCount} {summary.evvCount === 1 ? "visit" : "visits"}</small></button>
-        </section>
-        <p className="billing-live billing-placeholder-note">Billing submission is not enabled yet. These controls show the planned workflow and cannot create a claim, invoice, or billing run.</p>
+        </section> : null}
+        {canInitiate ? <p className="billing-live billing-placeholder-note">Billing submission is not enabled yet. These controls show the planned workflow and cannot create a claim, invoice, or billing run.</p> : null}
 
         <section aria-label="Billing history">
           <h2>Billing history</h2>
@@ -125,7 +125,7 @@ export default function ClientBillingDetail({ client, visits, canRun, organizati
                 <button type="button" disabled title="Billing sessions are not enabled yet">Bill selected</button>
                 <button type="button" className="secondary" onClick={() => setSelected(new Set())}>Clear</button>
               </div> : null}
-              <VisitTable visits={shown} selected={selected} onToggle={toggle} onToggleAll={toggleAll} selectable onOpenResult={setOpenResultId} />
+              <VisitTable visits={shown} selected={selected} onToggle={toggle} onToggleAll={toggleAll} selectable={canInitiate} onOpenResult={setOpenResultId} />
             </>}
         </section>
 

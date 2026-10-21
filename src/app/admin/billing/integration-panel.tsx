@@ -5,7 +5,7 @@ import { StatusChip } from "@/app/components/portal-ui";
 import { axisCareConnectionDisplay } from "@/domain/axiscare/status";
 import { stamp, type AxisCareAdministration, type AxisCareConnectionView } from "./billing-shared";
 
-export default function AxisCareAdministrationPanel({ organizationId, initial }: { organizationId: string; initial: AxisCareConnectionView }) {
+export default function AxisCareAdministrationPanel({ organizationId, initial, canConfigure, canMap, canSync }: { organizationId: string; initial: AxisCareConnectionView; canConfigure: boolean; canMap: boolean; canSync: boolean }) {
   const [admin, setAdmin] = useState<AxisCareAdministration | null>(null), [connection, setConnection] = useState(initial), [busy, setBusy] = useState(false), [message, setMessage] = useState(""), [messageTone, setMessageTone] = useState<"good" | "warning" | "danger">("warning");
   const [mappingBusy, setMappingBusy] = useState<string | null>(null), [mappingFeedback, setMappingFeedback] = useState<Record<string, { tone: "good" | "danger"; text: string }>>({});
   async function request(path: string, init?: RequestInit) { const response = await fetch(`/api/organizations/${organizationId}/axiscare/${path}`, { ...init, headers: { "content-type": "application/json", ...(init?.headers ?? {}) } }), body = await response.json(); if (!response.ok) throw new Error(body.error ?? "AxisCare request failed"); return body; }
@@ -49,20 +49,20 @@ export default function AxisCareAdministrationPanel({ organizationId, initial }:
       <small>{connection.lastConnectedAt ? `Last verified ${stamp(connection.lastConnectedAt)}` : display.detail}</small>
     </summary>
     <div className="billing-integration-body">
-      <form className="billing-integration-form" onSubmit={save}><label>AxisCare site URL<input name="baseUrl" type="url" required defaultValue={connection.baseUrl ?? "https://10461.axiscare.com"} /></label><label>API bearer token<input name="apiToken" type="password" autoComplete="new-password" placeholder={connection.configured ? "Leave blank to keep current token" : "Required"} required={!connection.configured} /></label><label>Visit history months<input name="historyMonths" type="number" min="1" max="60" defaultValue={connection.historyMonths} required /></label><button disabled={busy}>Save</button></form>
+      {canConfigure ? <form className="billing-integration-form" onSubmit={save}><label>AxisCare site URL<input name="baseUrl" type="url" required defaultValue={connection.baseUrl ?? "https://10461.axiscare.com"} /></label><label>API bearer token<input name="apiToken" type="password" autoComplete="new-password" placeholder={connection.configured ? "Leave blank to keep current token" : "Required"} required={!connection.configured} /></label><label>Visit history months<input name="historyMonths" type="number" min="1" max="60" defaultValue={connection.historyMonths} required /></label><button disabled={busy}>Save</button></form> : null}
       <div className="billing-integration-actions">
-        <button type="button" className="secondary" disabled={busy || !connection.configured} onClick={() => void action("TEST")}>Test connection</button>
-        <button type="button" disabled={busy || connection.status !== "CONNECTED"} onClick={() => void action("SYNC")}>Synchronize now</button>
+        {canConfigure ? <button type="button" className="secondary" disabled={busy || !connection.configured} onClick={() => void action("TEST")}>Test connection</button> : null}
+        {canSync ? <button type="button" disabled={busy || connection.status !== "CONNECTED"} onClick={() => void action("SYNC")}>Synchronize now</button> : null}
         <small className="billing-muted">Read-only. The token is encrypted and never shown again.</small>
       </div>
       {message ? <p role={messageTone === "danger" ? "alert" : "status"} className={`billing-feedback ${messageTone}`}>{message}</p> : null}
       {admin ? <>
-        <details className="billing-subpanel"><summary>Caregiver mappings{unmapped ? ` · ${unmapped} to map` : ""}</summary>
+        {canMap ? <><details className="billing-subpanel"><summary>Caregiver mappings{unmapped ? ` · ${unmapped} to map` : ""}</summary>
           <div className="billing-mapping-list">{admin.caregivers.map(caregiver => <form key={caregiver.externalId} onSubmit={event => mapCaregiver(event, caregiver.externalId)}><span><strong>{[caregiver.firstName, caregiver.lastName].filter(Boolean).join(" ") || `AxisCare caregiver ${caregiver.externalId}`}</strong><small>AxisCare ID {caregiver.externalId}</small></span><select name="employeeId" defaultValue={caregiver.employeeId ?? ""} required disabled={Boolean(caregiver.employeeId)}><option value="">Select Waldah employee</option>{admin.employees.map(employee => <option key={employee.id} value={employee.id}>{employee.lastName}, {employee.firstName}{employee.employeeNumber ? ` · ${employee.employeeNumber}` : ""}</option>)}</select><button disabled={busy || Boolean(caregiver.employeeId)}>{caregiver.employeeId ? "Mapped" : "Map"}</button></form>)}</div>
         </details>
         <details className="billing-subpanel"><summary>Service mappings{admin.services.length ? ` · ${admin.services.length}` : ""}</summary>
           <div className="billing-mapping-list">{admin.services.map(service => <form key={`${service.axisCareServiceCode}:${service.waldahServiceType??"unmapped"}`} onSubmit={event => mapService(event, service.axisCareServiceCode)}><span><strong>{service.description??service.axisCareServiceCode}</strong><small>AxisCare code {service.axisCareServiceCode}{service.axisCareServiceId?` · ID ${service.axisCareServiceId}`:""}{service.procedureCode?` · procedure ${service.procedureCode}`:""} · {service.visitCount} visit{service.visitCount===1?"":"s"}</small></span><select name="waldahServiceType" defaultValue={service.waldahServiceType ?? ""} required><option value="">Select Waldah service type</option>{admin.serviceTargets.map(target=><option key={target.value} value={target.value}>{target.label}</option>)}</select><button disabled={mappingBusy===service.axisCareServiceCode}>{mappingBusy===service.axisCareServiceCode?"Saving…":service.waldahServiceType?"Update mapping":"Save mapping"}</button>{mappingFeedback[service.axisCareServiceCode]?<small role={mappingFeedback[service.axisCareServiceCode].tone==="danger"?"alert":"status"} className={`billing-feedback ${mappingFeedback[service.axisCareServiceCode].tone}`}>{mappingFeedback[service.axisCareServiceCode].text}</small>:null}</form>)}</div>
-        </details>
+        </details></> : null}
         <p className="billing-muted">Webhooks off: {admin.webhook.reason}</p>
       </> : null}
     </div>
