@@ -160,8 +160,7 @@ export async function assignMedicationTraining(user: Pick<User, "id">, organizat
   return assignment;
 }
 
-export async function evaluateMedicationDutyEligibility(user: Pick<User, "id">, organizationId: string, employeeId: string, pathwayId: string, serviceRecipientRef?: string, at = new Date()) {
-  await requireEmployeeAccess(user, organizationId, employeeId, "compliance.operations.read");
+export async function computeMedicationDutyEligibility(organizationId: string, employeeId: string, pathwayId: string, serviceRecipientRef?: string, at = new Date()) {
   const result = await computeMedicationQualification(organizationId, employeeId, pathwayId, at), reasons = [...result.reasons];
   const [instruction, authorizations, medicationDuty] = await Promise.all([
     serviceRecipientRef ? prisma.personSpecificMedicationInstruction.findFirst({ where: { organizationId, employeeId, serviceRecipientRef, status: "ACTIVE", effectiveFrom: { lte: at }, OR: [{ effectiveUntil: null }, { effectiveUntil: { gte: at } }] } }) : null,
@@ -174,6 +173,12 @@ export async function evaluateMedicationDutyEligibility(user: Pick<User, "id">, 
   if (result.pathway.requiresMedicationDuty && !medicationDuty) reasons.push("MEDICATION_DUTY_ASSIGNMENT_REQUIRED");
   const remediationByReason: Record<string, string> = { PERSON_SPECIFIC_INSTRUCTION_REQUIRED: "RECORD_PERSON_SPECIFIC_INSTRUCTION", AUTHORIZATION_REQUIRED: "RECORD_AUTHORIZATION_EVIDENCE", DELEGATION_REQUIRED: "RECORD_DELEGATION_EVIDENCE", MEDICATION_DUTY_ASSIGNMENT_REQUIRED: "ASSIGN_MEDICATION_DUTY" };
   const decision = { eligible: result.state === "QUALIFIED" && reasons.length === 0, evaluatedAt: at.toISOString(), worker: employeeId, serviceRecipientRef: serviceRecipientRef ?? null, trainingQualificationState: result.state, applicableRequirements: [result.pathway.requirementVersionId], satisfiedRequirements: result.state === "QUALIFIED" ? [result.pathway.requirementVersionId] : [], blockingRequirements: result.state === "QUALIFIED" ? [] : [result.pathway.requirementVersionId], missingPersonSpecificInstruction: result.pathway.requiresPersonInstruction && !instruction, missingAuthorization: result.pathway.requiresAuthorization && !authorizations.some(item => item.authorizationType === "AUTHORIZATION" || item.authorizationType === "CLINICAL_DIRECTION"), reasonCodes: [...new Set(reasons)], remediations: [...result.remediations, ...reasons.map(reason => ({ type: remediationByReason[reason], reason })).filter(item => item.type)], evidenceBasis: { qualificationId: result.qualification?.id ?? null, instructionId: instruction?.id ?? null, authorizationIds: authorizations.map(item => item.id), medicationDutyId: medicationDuty?.id ?? null }, disclaimer: "Platform-derived medication readiness based on configured requirements and recorded evidence; not a legal opinion." };
+  return decision;
+}
+
+export async function evaluateMedicationDutyEligibility(user: Pick<User, "id">, organizationId: string, employeeId: string, pathwayId: string, serviceRecipientRef?: string, at = new Date()) {
+  await requireEmployeeAccess(user, organizationId, employeeId, "compliance.operations.read");
+  const decision = await computeMedicationDutyEligibility(organizationId, employeeId, pathwayId, serviceRecipientRef, at);
   await prisma.clinicalGovernanceEvent.create({ data: { organizationId, actorUserId: user.id, action: "medication_eligibility.evaluated", entityType: "Employee", entityId: employeeId, metadata: decision as unknown as Prisma.InputJsonValue } });
   return decision;
 }

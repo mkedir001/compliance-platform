@@ -768,6 +768,10 @@ model Organization {
   documentQuestionnaires    ClientDocumentQuestionnaire[]
   testDataCleanupPreviews   TestDataCleanupPreview[]
   axisCareConnection        AxisCareConnection?
+  medicationStaffSignatures MedicationStaffSignature[]
+  clientMedicationDoses     ClientMedicationDose[]
+  clientMedicationSignoffs  ClientMedicationWeekSignoff[]
+  clientMedicationHistory   ClientMedicationHistory[]
   axisCareWebhookEvents     AxisCareWebhookEvent[]
   axisCareRecords           AxisCareRecord[]
   axisCareVisits            AxisCareVisit[]
@@ -898,6 +902,11 @@ model User {
   createdReferrals                Referral[]                               @relation("ReferralCreator")
   reviewedReferrals               Referral[]                               @relation("ReferralReviewer")
   referralEvents                  ReferralEvent[]                          @relation("ReferralEventActor")
+  medicationStaffSignatures       MedicationStaffSignature[]               @relation("MedicationSignatureUser")
+  medicationDoses                 ClientMedicationDose[]                   @relation("MedicationDoseActor")
+  medicationWeekSignoffs          ClientMedicationWeekSignoff[]            @relation("MedicationWeekSigner")
+  medicationHistoryChanges        ClientMedicationHistory[]                @relation("MedicationHistoryActor")
+  approvedClientMedications       ClientMedication[]                       @relation("ClientMedicationApprovedBy")
   createdDocumentQuestionnaires   ClientDocumentQuestionnaire[]            @relation("DocumentQuestionnaireCreator")
   reviewedDocumentQuestionnaires  ClientDocumentQuestionnaire[]            @relation("DocumentQuestionnaireReviewer")
 }
@@ -3212,6 +3221,9 @@ model Client {
   documentQuestionnaires   ClientDocumentQuestionnaire[]
   axisCareMatches          AxisCareClientMatch[]
   axisCareVisits           AxisCareVisit[]
+  medicationDoses          ClientMedicationDose[]
+  medicationWeekSignoffs   ClientMedicationWeekSignoff[]
+  medicationHistory        ClientMedicationHistory[]
 
   @@unique([organizationId, creationRequestId])
   @@unique([organizationId, axisCareClientId])
@@ -3338,19 +3350,122 @@ model ClientHealthProfile {
 }
 
 model ClientMedication {
-  id             String   @id @default(cuid())
-  organizationId String
-  clientId       String
-  medication     String
-  dose           String?
-  times          String?
-  reason         String?
-  prescriber     String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-  client         Client   @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  id                  String                 @id @default(cuid())
+  organizationId      String
+  clientId            String
+  medication          String
+  dose                String?
+  times               String?
+  reason              String?
+  prescriber          String?
+  route               String?
+  startDate           DateTime?              @db.Date
+  stopDate            DateTime?              @db.Date
+  marApprovedAt       DateTime?
+  marApprovedByUserId String?
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
+  client              Client                 @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  marApprovedBy       User?                  @relation("ClientMedicationApprovedBy", fields: [marApprovedByUserId], references: [id], onDelete: Restrict)
+  doses               ClientMedicationDose[]
 
   @@index([organizationId, clientId])
+}
+
+enum MedicationDoseStatus {
+  GIVEN
+  REFUSED
+  HELD
+  NOT_GIVEN
+}
+
+/// A staff member's adopted typed signature, stored once and reused on every MAR entry and weekly sign-off.
+model MedicationStaffSignature {
+  id             String       @id @default(cuid())
+  organizationId String
+  userId         String
+  typedName      String
+  initials       String
+  consentVersion String
+  consentedAt    DateTime
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  user           User         @relation("MedicationSignatureUser", fields: [userId], references: [id], onDelete: Restrict)
+
+  @@unique([organizationId, userId])
+  @@unique([organizationId, initials])
+}
+
+/// One MAR entry keyed by the day and time the dose was due. The system-recorded timestamps, authenticated actor,
+/// and immutable before/after history distinguish timely entries, late entries, and corrections.
+model ClientMedicationDose {
+  id                   String               @id @default(cuid())
+  organizationId       String
+  clientId             String
+  medicationId         String
+  doseDate             DateTime             @db.Date
+  scheduledTime        String
+  status               MedicationDoseStatus
+  timeGiven            String?
+  note                 String?
+  signerUserId         String?
+  signerName           String?
+  signerInitials       String?
+  appliedByUserId      String
+  attestedInPerson     Boolean              @default(false)
+  transferredFromPaper Boolean              @default(false)
+  signedAt             DateTime             @default(now())
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+  correctionReason     String?
+  organization         Organization         @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  client               Client               @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  actor                User                 @relation("MedicationDoseActor", fields: [appliedByUserId], references: [id], onDelete: Restrict)
+  medication           ClientMedication     @relation(fields: [medicationId], references: [id], onDelete: Restrict)
+
+  @@unique([medicationId, doseDate, scheduledTime])
+  @@index([organizationId, clientId, doseDate])
+}
+
+/// Weekly reviewer attestation for a client's MAR. `weekStart` is the Monday of the week.
+model ClientMedicationWeekSignoff {
+  id               String       @id @default(cuid())
+  organizationId   String
+  clientId         String
+  weekStart        DateTime     @db.Date
+  signerUserId     String
+  signerName       String
+  appliedByUserId  String
+  attestedInPerson Boolean      @default(false)
+  signedAt         DateTime     @default(now())
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  client           Client       @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  signer           User         @relation("MedicationWeekSigner", fields: [signerUserId], references: [id], onDelete: Restrict)
+
+  @@unique([clientId, weekStart])
+  @@index([organizationId, clientId])
+}
+
+/// Medication-review record containing immutable before/after snapshots for schedule changes and MAR corrections.
+model ClientMedicationHistory {
+  id              String       @id @default(cuid())
+  organizationId  String
+  clientId        String
+  entityType      String
+  entityId        String
+  action          String
+  snapshotJson    Json
+  changedByUserId String
+  changedAt       DateTime     @default(now())
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  client          Client       @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  changedBy       User         @relation("MedicationHistoryActor", fields: [changedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId, clientId, changedAt])
+  @@index([entityType, entityId])
 }
 
 model ClientIntake {
