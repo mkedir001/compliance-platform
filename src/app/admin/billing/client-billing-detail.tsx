@@ -84,11 +84,11 @@ export default function ClientBillingDetail({ client, visits, canRun, organizati
         </section>
 
         {nonEvv.length ? (
-          <section className="billing-noncompliant" aria-label="Visits that are not EVV compliant">
-            <h2>Not EVV compliant <span className="billing-count danger">{nonEvv.length}</span></h2>
+          <details className="billing-noncompliant" aria-label="Visits that are not EVV compliant">
+            <summary><h2>Not EVV compliant <span className="billing-count danger">{nonEvv.length}</span></h2></summary>
             <p className="billing-muted">These visits are missing something required for EVV. Fix them in AxisCare, or choose “Bill everything” to include them.</p>
             <ul>{nonEvv.map(visit => <li key={visit.id}><b>{stamp(visit.startAt)}</b><span>{visit.reasons.map(reason => REASON_LABELS[reason] ?? reason).join(" · ")}</span></li>)}</ul>
-          </section>
+          </details>
         ) : null}
 
         <section aria-label="Visit history">
