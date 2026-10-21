@@ -6,7 +6,7 @@ import { useMemo, useState } from "react";
 import { StatusChip } from "@/app/components/portal-ui";
 import IntegrationPanel from "./integration-panel";
 import MatchReview from "./match-review";
-import { hoursWithAmount, money, pretty, summarizeVisits, type AxisCareConnectionView, type BillingClient, type BillingVisitRow, type PendingMatch } from "./billing-shared";
+import { billedThisYear, evvRate, hoursWithAmount, money, percentLabel, reportingPeriods, pretty, summarizeVisits, type AxisCareConnectionView, type BillingClient, type BillingVisitRow, type PendingMatch } from "./billing-shared";
 import "./billing.css";
 
 export type { AxisCareConnectionView, BillingClient, BillingVisitRow, PendingMatch } from "./billing-shared";
@@ -35,6 +35,7 @@ export default function BillingPortal({ clients, canRun = false, canManageIntegr
   const toggle = (id: string) => setPicked(current => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; });
   const toggleAll = () => setPicked(allPicked ? new Set() : new Set(billable.map(row => row.client.id)));
   const totals = summarizeVisits(visits);
+  const period = reportingPeriods(), quarterRate = evvRate(visits, "QUARTER"), yearRate = evvRate(visits, "YEAR"), billedYtd = billedThisYear(visits);
 
   return (
     <main className="admin-shell billing-shell" aria-label="Organization billing workspace">
@@ -50,12 +51,24 @@ export default function BillingPortal({ clients, canRun = false, canManageIntegr
       {canRun ? <MatchReview matches={matches} organizationId={organizationId} /> : null}
 
       <section className="billing-summary" aria-label="Billing summary">
-        <span><b>{clients.length}</b> {clients.length === 1 ? "client" : "clients"}</span>
         {canRun ? <>
-          <span className="billing-bad"><b>{totals.nonEvvCount}</b> not EVV compliant</span>
-          <span className="billing-good"><b>{totals.evvCount}</b> EVV compliant</span>
-          <span><b>{hoursWithAmount(totals.readyHours, totals.readyCents, totals.unrated)}</b> ready to bill</span>
-        </> : <span className="billing-muted">Visit detail is available to billing roles.</span>}
+          <div className="billing-rate">
+            <span className="billing-rate-pill" title="Share of this quarter's visits that are EVV compliant, billed visits included"><b>{percentLabel(quarterRate.percent)}</b> quarterly EVV rate · {period.label}</span>
+            <span className="billing-muted">{quarterRate.compliant} of {quarterRate.total} visits</span>
+            {quarterRate.percent !== null ? <div className="billing-rate-bar" role="img" aria-label={`${percentLabel(quarterRate.percent)} of ${period.label} visits are EVV compliant`}><i style={{ width: `${quarterRate.percent}%` }} /></div> : null}
+          </div>
+          <div className="billing-summary-row">
+            <span><b>{clients.length}</b> {clients.length === 1 ? "client" : "clients"}</span>
+            <span className="billing-bad"><b>{totals.nonEvvCount}</b> not EVV compliant <small>since last billing</small></span>
+            <span className="billing-good"><b>{totals.evvCount}</b> EVV compliant <small>since last billing</small></span>
+          </div>
+          <div className="billing-money">
+            <div><small>Total ready to bill</small><strong>{money(totals.readyCents)}{totals.unrated ? "+" : ""}</strong><span>{totals.readyHours.toFixed(2)} h · {totals.evvCount + totals.nonEvvCount} visits</span></div>
+            <div className="good"><small>EVV-compliant only</small><strong className="billing-good">{money(totals.evv.cents)}{totals.evv.unrated ? "+" : ""}</strong><span>{totals.evv.hours.toFixed(2)} h · {totals.evvCount} visits</span></div>
+            <div className="lost"><small>Held back by non-EVV</small><strong className="billing-bad">{money(totals.nonEvv.cents)}</strong><span>{totals.readyCents ? `${((totals.nonEvv.cents / totals.readyCents) * 100).toFixed(1)}% of total` : "0% of total"} · {totals.nonEvvCount} visits</span></div>
+          </div>
+          <p className="billing-ytd">YTD {period.year} · {percentLabel(yearRate.percent)} EVV compliant · {billedYtd === null ? "billed: not tracked yet" : `${money(billedYtd)} billed`}</p>
+        </> : <><span><b>{clients.length}</b> {clients.length === 1 ? "client" : "clients"}</span><span className="billing-muted">Visit detail is available to billing roles.</span></>}
       </section>
 
       {errorClients.length || billedClients.length ? (
