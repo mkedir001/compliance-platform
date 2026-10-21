@@ -69,13 +69,14 @@ export type BillingVisit = {
   compliant: boolean; reasons: EvvReason[];
 };
 
-/** Visits for linked clients, newest first, last 12 months. billing.run only. */
+/** Visits for linked clients, newest first, last 12 months. billing.run only.
+ * Shifts that are still scheduled (no clock-in and a start time after `now`) are not visits yet: AxisCare sync pulls ~31 days of schedule ahead, and counting them made EVV look non-compliant. */
 export async function getBillingVisits(user: Pick<User, "id">, organizationId: string, now = new Date(), clientId?: string): Promise<BillingVisit[]> {
   const { membership } = await requireOrganizationAccess(user, organizationId);
   await requirePermission(membership.id, "billing.run");
   const since = new Date(now); since.setUTCMonth(since.getUTCMonth() - 12);
   const [rows, mappings] = await Promise.all([prisma.axisCareVisit.findMany({
-    where: { organizationId, removed: false, clientId: clientId ?? { not: null }, startAt: { gte: since }, client: { testDataMarkedAt: null, archivedAt: null } },
+    where: { organizationId, removed: false, clientId: clientId ?? { not: null }, startAt: { gte: since }, NOT: { clockInAt: null, startAt: { gt: now } }, client: { testDataMarkedAt: null, archivedAt: null } },
     orderBy: { startAt: "desc" }, take: 5000,
     select: { id: true, clientId: true, startAt: true, clockInAt: true, clockOutAt: true, clockInLatitude: true, clockInLongitude: true, clockOutLatitude: true, clockOutLongitude: true, clockInPhone: true, clockOutPhone: true, axisCareCaregiverId: true, employee: { select: { firstName: true, lastName: true } }, serviceCode: true, chargeRateCents: true, removed: true }
   }), prisma.axisCareServiceMapping.findMany({ where: { organizationId }, select: { axisCareServiceCode: true, waldahServiceType: true } })]);
