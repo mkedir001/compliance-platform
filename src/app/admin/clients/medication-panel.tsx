@@ -3,13 +3,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { marRows, medicationActiveOn, timeLabel, UNSCHEDULED_TIME, type DoseStatus } from "@/domain/clients/mar";
 import "./medication.css";
 
-type Medication = { id: string; medication: string; dose: string | null; route: string | null; times: string | null; reason: string | null; prescriber: string | null; startDate: string | null; stopDate: string | null };
-type Dose = { id: string; medicationId: string; doseDate: string; scheduledTime: string; status: DoseStatus; timeGiven: string | null; note: string | null; signerUserId: string | null; signerName: string | null; signerInitials: string | null; transferredFromPaper: boolean };
+type Medication = { id: string; medication: string; dose: string | null; route: string | null; times: string | null; reason: string | null; prescriber: string | null; startDate: string | null; stopDate: string | null; marApproved: boolean };
+type Dose = { id: string; medicationId: string; doseDate: string; scheduledTime: string; status: DoseStatus; timeGiven: string | null; note: string | null; signerUserId: string | null; signerName: string | null; signerInitials: string | null; signedAt: string; updatedAt: string; correctionReason: string | null };
 type Week = { weekStart: string; weekEnd: string; firstDay: string; lastDay: string; signoff: { signerName: string } | null };
 type Staff = { userId: string; typedName: string; initials: string };
 type MarData = {
   month: string; today: string;
-  me: { userId: string; hasSignature: boolean; canRecord: boolean; canSignWeek: boolean; isManager: boolean; canEditMedications: boolean };
+  me: { userId: string; hasSignature: boolean; canRecord: boolean; canSignWeek: boolean; isManager: boolean; canEditMedications: boolean; administrationBlockers: string[] };
   consent: { version: string; text: string };
   medications: Medication[]; doses: Dose[]; weeks: Week[]; staff: Staff[];
   admin: null | { summary: { given: number; refused: number; held: number; notGiven: number; notDocumented: number }; entries: { [id: string]: { enteredAt: string; signedAt: string; appliedBy: string | null; attestedInPerson: boolean } }; history: { id: string; entityType: string; action: string; changedAt: string; changedBy: string; label: string }[] };
@@ -78,7 +78,8 @@ export function MedicationPanel({ organizationId, clientId, allergies, headers }
     <div className="med-sub med-noprint"><button type="button" className={view === "MAR" ? "on" : ""} onClick={() => setView("MAR")}>MAR</button><button type="button" className={view === "MEDICATIONS" ? "on" : ""} onClick={() => setView("MEDICATIONS")}>Medications</button></div>
     {error ? <p className="med-error" role="alert">{error}</p> : null}
 
-    {me.canRecord && !me.hasSignature ? <SignatureSetup consent={data.consent.text} busy={busy} onSave={name => act({ action: "SETUP_SIGNATURE", typedName: name, consent: true })} /> : null}
+    {(me.canRecord || me.canSignWeek) && !me.hasSignature ? <SignatureSetup consent={data.consent.text} busy={busy} onSave={name => act({ action: "SETUP_SIGNATURE", typedName: name, consent: true })} /> : null}
+    {!me.canRecord && me.administrationBlockers.length ? <p className="med-note med-noprint">Administration documentation is unavailable until the assigned employee&apos;s current medication qualification, person-specific instruction, authorization, and active client assignment are all satisfied.</p> : null}
 
     {view === "MEDICATIONS" ? <MedicationList data={data} editing={editing} setEditing={setEditing} busy={busy} onSave={async value => { if (await act({ action: "SAVE_MEDICATION", ...value })) setEditing(null); }} /> : <>
       <h4 style={{ margin: 0 }}>{monthLabel(month)}</h4>
@@ -93,14 +94,14 @@ export function MedicationPanel({ organizationId, clientId, allergies, headers }
               const dose = doseAt(row.medicationId, day, row.time), future = day > data.today, inactive = !dose && !medicationActiveOn(medication, day);
               if (inactive) return <td key={day} style={{ background: "#efede6" }} />;
               const info = dose ? CELL[dose.status] : null, text = dose ? (dose.status === "GIVEN" ? dose.signerInitials ?? "✓" : info!.text) : "";
-              return <td key={day}><button type="button" disabled={future || !me.canRecord} className={`med-cell ${info?.css ?? ""} ${future ? "future" : ""} ${day === data.today ? "today" : ""}`} aria-label={`${medication.medication} ${timeLabel(row.time)} ${longDay(day)}${dose ? `, ${info!.name}${dose.signerName ? ` by ${dose.signerName}` : ""}` : ", no entry"}`} title={dose ? `${info!.name}${dose.signerName ? ` · ${dose.signerName}` : ""}${dose.timeGiven ? ` · ${timeLabel(dose.timeGiven)}` : ""}${dose.note ? ` · ${dose.note}` : ""}` : ""} onClick={() => setTarget({ medication, time: row.time, day, existing: dose })}>{text}</button></td>;
+              return <td key={day}><button type="button" disabled={future || !me.canRecord || !medication.marApproved || row.time === UNSCHEDULED_TIME} className={`med-cell ${info?.css ?? ""} ${future ? "future" : ""} ${day === data.today ? "today" : ""}`} aria-label={`${medication.medication} ${timeLabel(row.time)} ${longDay(day)}${dose ? `, ${info!.name}${dose.signerName ? ` by ${dose.signerName}` : ""}` : ", no entry"}`} title={!medication.marApproved ? "This medication has not been explicitly approved for MAR documentation" : row.time === UNSCHEDULED_TIME ? "PRN or unstructured schedules require a governed workflow and cannot be recorded here" : dose ? `${info!.name}${dose.signerName ? ` · ${dose.signerName}` : ""}${dose.timeGiven ? ` · ${timeLabel(dose.timeGiven)}` : ""}${dose.note ? ` · ${dose.note}` : ""}` : ""} onClick={() => setTarget({ medication, time: row.time, day, existing: dose })}>{text}</button></td>;
             })}
           </tr>;
         })}</tbody></table></div> : <p className="empty-state">No medications are recorded for this client. Add them on the Medications tab.</p>}
-      <div className="med-legend"><span><i className="med-cell given">AB</i>Given (staff initials)</span><span><i className="med-cell refused">R</i>Refused</span><span><i className="med-cell held">H</i>Held</span><span><i className="med-cell notgiven">N</i>Not given</span>{me.canRecord ? <span className="med-noprint">Click any day, past or present, to record or change a dose.</span> : null}</div>
+      <div className="med-legend"><span><i className="med-cell given">AB</i>Given (staff initials)</span><span><i className="med-cell refused">R</i>Refused</span><span><i className="med-cell held">H</i>Held</span><span><i className="med-cell notgiven">N</i>Not given</span>{me.canRecord ? <span className="med-noprint">Authorized staff may record today or a reasoned late entry from the prior seven days. Existing entries require a signed correction.</span> : null}</div>
 
       <h4 style={{ margin: "6px 0 0" }}>Weekly sign-off</h4>
-      <div className="med-weeks">{data.weeks.map(week => <WeekBox key={week.weekStart} week={week} data={data} busy={busy} onSign={body => act({ action: "SIGN_WEEK", weekStart: week.weekStart, ...body })} />)}</div>
+      <div className="med-weeks">{data.weeks.map(week => <WeekBox key={week.weekStart} week={week} data={data} busy={busy} onSign={() => act({ action: "SIGN_WEEK", weekStart: week.weekStart })} />)}</div>
 
       <h4 style={{ margin: "6px 0 0" }}>Staff key</h4>
       {data.staff.length ? <div className="med-staff">{data.staff.map(s => <div key={s.userId}><b>{s.initials}</b>{s.typedName} · <span className="med-sig">{s.typedName}</span></div>)}</div> : <p className="med-note">No staff have set up a signature yet.</p>}
@@ -111,7 +112,7 @@ export function MedicationPanel({ organizationId, clientId, allergies, headers }
       </details> : null}
     </>}
 
-    {target ? <DosePanel target={target} data={data} busy={busy} onClose={() => setTarget(null)} onSave={async body => { if (await act({ action: "SAVE_DOSE", medicationId: target.medication.id, doseDate: target.day, scheduledTime: target.time, ...body })) setTarget(null); }} onClear={async () => { if (await act({ action: "CLEAR_DOSE", medicationId: target.medication.id, doseDate: target.day, scheduledTime: target.time })) setTarget(null); }} /> : null}
+    {target ? <DosePanel target={target} data={data} busy={busy} onClose={() => setTarget(null)} onSave={async body => { if (await act({ action: "SAVE_DOSE", medicationId: target.medication.id, doseDate: target.day, scheduledTime: target.time, ...body })) setTarget(null); }} /> : null}
   </section>;
 }
 
@@ -124,38 +125,33 @@ function SignatureSetup({ consent, busy, onSave }: { consent: string; busy: bool
     <div><button type="button" disabled={busy || name.trim().length < 2 || !agree} onClick={() => onSave(name.trim())}>Adopt signature</button></div></div>;
 }
 
-function WeekBox({ week, data, busy, onSign }: { week: Week; data: MarData; busy: boolean; onSign: (body: { signerUserId?: string; attestedInPerson?: boolean }) => void }) {
-  const [signer, setSigner] = useState(data.me.userId), [attested, setAttested] = useState(false), onBehalf = signer !== data.me.userId;
+function WeekBox({ week, data, busy, onSign }: { week: Week; data: MarData; busy: boolean; onSign: () => void }) {
   return <div className={week.signoff ? "signed" : ""}>
     <b>{shortDay(week.firstDay)} – {shortDay(week.lastDay)}</b>
     {week.signoff ? <><span className="med-sig">{week.signoff.signerName}</span><small>Reviewed</small></> : <small>Not signed off</small>}
-    {data.me.canSignWeek ? <div className="med-noprint" style={{ display: "grid", gap: 4 }}>
-      {data.me.isManager && data.staff.length > 1 ? <select aria-label="Sign as" value={signer} onChange={e => setSigner(e.target.value)}>{data.staff.map(s => <option key={s.userId} value={s.userId}>{s.userId === data.me.userId ? `Me (${s.typedName})` : s.typedName}</option>)}</select> : null}
-      {onBehalf ? <label className="check" style={{ display: "flex", gap: 6, fontSize: ".76rem" }}><input type="checkbox" checked={attested} onChange={e => setAttested(e.target.checked)} />Attested in person</label> : null}
-      <button type="button" disabled={busy || (onBehalf && !attested) || (!onBehalf && !data.me.hasSignature)} onClick={() => onSign({ signerUserId: signer, attestedInPerson: attested })}>{onBehalf ? "Signed" : week.signoff ? "Re-sign" : "Sign off week"}</button>
+    {data.me.canSignWeek && !week.signoff ? <div className="med-noprint" style={{ display: "grid", gap: 4 }}>
+      <button type="button" disabled={busy || !data.me.hasSignature} onClick={onSign}>Sign off week</button>
     </div> : null}
   </div>;
 }
 
-function DosePanel({ target, data, busy, onClose, onSave, onClear }: { target: Target; data: MarData; busy: boolean; onClose: () => void; onSave: (body: { [key: string]: unknown }) => void; onClear: () => void }) {
+function DosePanel({ target, data, busy, onClose, onSave }: { target: Target; data: MarData; busy: boolean; onClose: () => void; onSave: (body: { [key: string]: unknown }) => void }) {
   const { existing } = target, [status, setStatus] = useState<DoseStatus>(existing?.status ?? "GIVEN"), [timeGiven, setTimeGiven] = useState(existing?.timeGiven ?? (target.time === UNSCHEDULED_TIME ? "" : target.time)), [note, setNote] = useState(existing?.note ?? "");
-  const [signer, setSigner] = useState(existing?.signerUserId ?? data.me.userId), [paper, setPaper] = useState(existing?.transferredFromPaper ?? false), [attested, setAttested] = useState(false);
-  const onBehalf = signer !== data.me.userId, signable = data.staff.filter(s => data.me.isManager || s.userId === data.me.userId);
-  const signerName = data.staff.find(s => s.userId === signer)?.typedName ?? "";
+  const [lateEntryReason, setLateEntryReason] = useState(""), [correctionReason, setCorrectionReason] = useState("");
+  const signerName = data.staff.find(s => s.userId === data.me.userId)?.typedName ?? "";
   return <div className="med-dialog" role="dialog" aria-modal="true" aria-label="MarData dose" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
     <div className="med-panel">
       <h4>{target.medication.medication}{target.medication.dose ? ` ${target.medication.dose}` : ""} · {timeLabel(target.time)}</h4>
       <div className="row"><b>Dose date</b><span>{longDay(target.day)}{target.day < data.today ? " (past date)" : ""}</span></div>
       <label className="row"><b>Status</b><select value={status} onChange={e => setStatus(e.target.value as DoseStatus)}>{(Object.keys(CELL) as DoseStatus[]).map(key => <option key={key} value={key}>{CELL[key].name}</option>)}</select></label>
       {status === "GIVEN" ? <label className="row"><b>Time given</b><input type="time" value={timeGiven} onChange={e => setTimeGiven(e.target.value)} /></label> : null}
-      <label className="row"><b>Given by</b><select value={signer} onChange={e => setSigner(e.target.value)}>{signable.length ? signable.map(s => <option key={s.userId} value={s.userId}>{s.userId === data.me.userId ? `Me (${s.typedName})` : s.typedName}</option>) : <option value={data.me.userId}>Set up your signature first</option>}</select></label>
-      {data.me.isManager ? <label className="row"><b>Source</b><span style={{ display: "flex", gap: 6, alignItems: "center" }}><input type="checkbox" checked={paper} onChange={e => setPaper(e.target.checked)} />Transferred from paper MAR</span></label> : null}
-      {onBehalf ? <label className="row"><b>Attestation</b><span style={{ display: "flex", gap: 6, alignItems: "center" }}><input type="checkbox" checked={attested} onChange={e => setAttested(e.target.checked)} />Staff member attested in person</span></label> : null}
+      <div className="row"><b>Recorded by</b><span>{signerName || "Set up your signature first"}</span></div>
       <label className="row"><b>Note</b><textarea rows={2} value={note} onChange={e => setNote(e.target.value)} /></label>
+      {target.day < data.today && !existing ? <label className="row"><b>Late-entry reason</b><textarea required minLength={10} rows={2} value={lateEntryReason} onChange={e => setLateEntryReason(e.target.value)} /></label> : null}
+      {existing ? <label className="row"><b>Correction reason</b><textarea required minLength={10} rows={2} value={correctionReason} onChange={e => setCorrectionReason(e.target.value)} /></label> : null}
       <div className="row"><b>Signature</b><span><span className="med-sig">{signerName || "—"}</span> <small className="med-note">stored signature</small></span></div>
       <div className="actions">
-        <button type="button" disabled={busy || !signerName || (onBehalf && !attested && !paper) || (status === "GIVEN" && !timeGiven && target.time === UNSCHEDULED_TIME)} onClick={() => onSave({ status, timeGiven: status === "GIVEN" ? timeGiven || null : null, note: note.trim() || null, signerUserId: signer, transferredFromPaper: paper, attestedInPerson: attested })}>Sign &amp; save</button>
-        {existing ? <button type="button" className="secondary" disabled={busy} onClick={onClear}>Clear entry</button> : null}
+        <button type="button" disabled={busy || !signerName || (status === "GIVEN" && !timeGiven) || (status !== "GIVEN" && !note.trim()) || (target.day < data.today && !existing && lateEntryReason.trim().length < 10) || Boolean(existing && correctionReason.trim().length < 10)} onClick={() => onSave({ status, timeGiven: status === "GIVEN" ? timeGiven || null : null, note: note.trim() || null, lateEntryReason: lateEntryReason.trim() || null, correctionReason: correctionReason.trim() || null, expectedUpdatedAt: existing?.updatedAt })}>{existing ? "Sign correction" : "Sign & save"}</button>
         <button type="button" className="secondary" onClick={onClose}>Cancel</button>
       </div>
       <p className="med-note" style={{ margin: 0 }}>The entry is dated {longDay(target.day)} on the MAR no matter when it is entered or signed.</p>
@@ -181,9 +177,7 @@ function MedicationList({ data, editing, setEditing, busy, onSave }: { data: Mar
       <label>Stop date<input type="date" value={form.stopDate} onChange={set("stopDate")} /></label>
       <div style={{ display: "flex", gap: 8, alignItems: "end" }}><button disabled={busy}>Save medication</button><button type="button" className="secondary" onClick={() => setEditing(null)}>Cancel</button></div>
     </form> : null}
-    {data.medications.length ? <table className="med-list"><thead><tr><th>Medication</th><th>Dose · route</th><th>Times</th><th>Reason</th><th>Prescriber</th><th>Ordered</th><th /></tr></thead><tbody>{data.medications.map(m => <tr key={m.id}><td><strong>{m.medication}</strong></td><td>{[m.dose, m.route].filter(Boolean).join(" · ") || "—"}</td><td>{m.times ?? "—"}</td><td>{m.reason ?? "—"}</td><td>{m.prescriber ?? "—"}</td><td>{m.startDate ? shortDay(m.startDate) : "—"}{m.stopDate ? ` → ${shortDay(m.stopDate)}` : ""}</td><td>{data.me.canEditMedications ? <button type="button" className="secondary med-noprint" onClick={() => setEditing(m)}>Edit</button> : null}</td></tr>)}</tbody></table> : <p className="empty-state">No medications recorded.</p>}
+    {data.medications.length ? <table className="med-list"><thead><tr><th>Medication</th><th>Dose · route</th><th>Times</th><th>Reason</th><th>Prescriber</th><th>Ordered</th><th>MAR status</th><th /></tr></thead><tbody>{data.medications.map(m => <tr key={m.id}><td><strong>{m.medication}</strong></td><td>{[m.dose, m.route].filter(Boolean).join(" · ") || "—"}</td><td>{m.times ?? "—"}</td><td>{m.reason ?? "—"}</td><td>{m.prescriber ?? "—"}</td><td>{m.startDate ? shortDay(m.startDate) : "—"}{m.stopDate ? ` → ${shortDay(m.stopDate)}` : ""}</td><td>{m.marApproved ? "Approved" : "Needs medication approval"}</td><td>{data.me.canEditMedications ? <button type="button" className="secondary med-noprint" onClick={() => setEditing(m)}>Edit / approve</button> : null}</td></tr>)}</tbody></table> : <p className="empty-state">No medications recorded.</p>}
     <p className="med-note">Set a start date for each medication so the MAR knows which days it applies to. Times such as &ldquo;8 AM, 8 PM&rdquo; become the rows of the MAR.</p>
   </div>;
 }
-
-

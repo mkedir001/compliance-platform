@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { initialsFor, isDayKey, marRows, marSummary, monthDays, monthWeeks, parseScheduleTimes, timeLabel, todayKey, UNSCHEDULED_TIME, weekStartKey } from "@/domain/clients/mar";
+import { currentTimeKey, initialsFor, isDayKey, marRows, marSummary, monthDays, monthWeeks, parseScheduleTimes, timeLabel, todayKey, UNSCHEDULED_TIME, weekStartKey } from "@/domain/clients/mar";
 
 const med = (over: Partial<Parameters<typeof marRows>[0][number]> = {}) => ({ id: "m1", medication: "Lamotrigine", dose: "100 mg", times: "8 AM, 8 PM", route: null, startDate: "2026-10-01", stopDate: null, ...over });
 
@@ -35,6 +35,7 @@ describe("MAR dates", () => {
   });
   it("computes today in Central time", () => {
     expect(todayKey(new Date("2026-10-22T03:30:00Z"))).toBe("2026-10-21");
+    expect(currentTimeKey(new Date("2026-10-22T03:30:00Z"))).toBe("22:30");
   });
 });
 

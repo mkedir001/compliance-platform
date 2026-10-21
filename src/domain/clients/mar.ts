@@ -25,6 +25,11 @@ export function todayKey(now = new Date(), timeZone = "America/Chicago") {
   const parts = new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
   return parts;
 }
+export function currentTimeKey(now = new Date(), timeZone = "America/Chicago") {
+  const parts = new Intl.DateTimeFormat("en-US", { timeZone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(now);
+  const value = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  return `${value.hour}:${value.minute}`;
+}
 
 /** Monday of the week containing `key`. */
 export function weekStartKey(key: string) {
