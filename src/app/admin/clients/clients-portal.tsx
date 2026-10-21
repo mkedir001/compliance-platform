@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import GuidedIntake from "./guided-intake";
 import { CareProfilePanel as CarePanel } from "./care-profile-panel";
+import { MedicationPanel } from "./medication-panel";
 import ClientImportWorkflow from "./client-import-workflow";
 import AddClientDrawer from "./add-client-drawer";
 import { DocumentPdfViewer } from "./document-pdf-viewer";
@@ -369,7 +370,7 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
   useEffect(() => {
     if (selected && initialRequestId && tab === "Documents") document.getElementById(`request-${initialRequestId}`)?.scrollIntoView({ block: "center" });
   }, [selected, initialRequestId, tab]);
-  const tabs = ["Overview", "Intake", "Services", "Documents", "Care profile", "Contacts",...(permissions.includes("organization.manage")?["Billing"]:[]),"History"];
+  const tabs = ["Overview", "Intake", "Services", "Documents", "Care profile", "Contacts", "Medication",...(permissions.includes("organization.manage")?["Billing"]:[]),"History"];
   const directoryView = clientDirectoryView(directoryStatus, clients.length);
   const availableDocuments=selected?.documents.filter(item=>item.status!=="VOIDED"&&!item.isHistoricalDuplicate)??[],historicalVersions=selected?.documents.filter(item=>item.isHistoricalDuplicate||item.status==="VOIDED")??[];
   const filteredDocuments=availableDocuments.filter(item=>(documentStatus==="ALL"||item.status===documentStatus)&&(!documentSearch.trim()||`${item.template.name} ${item.documentType} ${item.originalFileName??""}`.toLowerCase().includes(documentSearch.trim().toLowerCase())));
@@ -799,6 +800,7 @@ export default function ClientsPortal({ initialOrganizationId = "", initialClien
               </article>;
             })}
           </section> : null}
+          {tab === "Medication" ? <MedicationPanel key={selected.id} organizationId={organizationId} clientId={selected.id} allergies={selected.healthProfile?.allergiesReactions} headers={headers}/> : null}
           {tab === "Care profile" ? <CarePanel client={selected} documents={selected.documents}/> : null}
           {tab === "Billing" && permissions.includes("organization.manage") ? <section><h3>Billing</h3><p>Client billing tools will be available here in a future release.</p></section> : null}
           {tab === "Contacts" ? <section><h3>Contacts and representatives</h3><p>Only people associated with this client in the current tenant are shown.</p>{selected.contacts.map(item=><article key={`${item.professionalContact.id}:${item.role}`}><p className="eyebrow">{pretty(item.role)} · reusable professional contact</p><h4>{item.professionalContact.name}</h4><p>{item.professionalContact.agency??"No agency"} · {item.professionalContact.email??"No email"} · {item.professionalContact.phone??"No phone"}</p></article>)}{selected.representatives.map(item=><article key={item.id}><p className="eyebrow">{pretty(item.representativeType)}</p><h4>{item.name}</h4><p>{item.relationship??"Relationship not recorded"} · {item.email??"No email"}</p></article>)}{selected.emergencyContacts.map(item=><article key={item.id}><p className="eyebrow">Emergency contact</p><h4>{item.name}</h4><p>{item.relationship} · {item.phone}{item.informationSharingAllowed?" · information sharing authorized":" · no information-sharing authorization recorded"}</p></article>)}{!selected.contacts.length&&!selected.representatives.length&&!selected.emergencyContacts.length?<div className="empty-state">No contacts or representatives are recorded.</div>:null}{permissions.includes("client.intake.manage")?<button onClick={()=>selected.intakes[0]?.status==="COMPLETED"?editCompletedIntake("REPRESENTATIVE"):setTab("Intake")}>Manage through guided intake</button>:null}</section>:null}

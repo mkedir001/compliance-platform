@@ -3346,11 +3346,100 @@ model ClientMedication {
   times          String?
   reason         String?
   prescriber     String?
+  route          String?
+  startDate      DateTime? @db.Date
+  stopDate       DateTime? @db.Date
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
   client         Client   @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  doses          ClientMedicationDose[]
 
   @@index([organizationId, clientId])
+}
+
+enum MedicationDoseStatus {
+  GIVEN
+  REFUSED
+  HELD
+  NOT_GIVEN
+}
+
+/// A staff member's adopted typed signature, stored once and reused on every MAR entry and weekly sign-off.
+model MedicationStaffSignature {
+  id             String   @id @default(cuid())
+  organizationId String
+  userId         String
+  typedName      String
+  initials       String
+  consentVersion String
+  consentedAt    DateTime
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([organizationId, userId])
+  @@unique([organizationId, initials])
+}
+
+/// One MAR entry. It is keyed by the day and time the dose was due, never by when it was entered, so transferred
+/// paper MARs keep their original dates. `createdAt`, `appliedByUserId` and the edit history are administrator-only.
+model ClientMedicationDose {
+  id                    String               @id @default(cuid())
+  organizationId        String
+  clientId              String
+  medicationId          String
+  doseDate              DateTime             @db.Date
+  scheduledTime         String
+  status                MedicationDoseStatus
+  timeGiven             String?
+  note                  String?
+  signerUserId          String?
+  signerName            String?
+  signerInitials        String?
+  appliedByUserId       String
+  attestedInPerson      Boolean              @default(false)
+  transferredFromPaper  Boolean              @default(false)
+  signedAt              DateTime             @default(now())
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+  medication            ClientMedication     @relation(fields: [medicationId], references: [id], onDelete: Restrict)
+
+  @@unique([medicationId, doseDate, scheduledTime])
+  @@index([organizationId, clientId, doseDate])
+}
+
+/// Weekly reviewer attestation for a client's MAR. `weekStart` is the Monday of the week.
+model ClientMedicationWeekSignoff {
+  id               String   @id @default(cuid())
+  organizationId   String
+  clientId         String
+  weekStart        DateTime @db.Date
+  signerUserId     String
+  signerName       String
+  appliedByUserId  String
+  attestedInPerson Boolean  @default(false)
+  signedAt         DateTime @default(now())
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([clientId, weekStart])
+  @@index([organizationId, clientId])
+}
+
+/// Administrator-only record of what an entry looked like before it was replaced or cleared. No foreign key, so
+/// it survives deletion of the entry. Never shown on the MAR or its print-out.
+model ClientMedicationHistory {
+  id             String   @id @default(cuid())
+  organizationId String
+  clientId       String
+  entityType     String
+  entityId       String
+  action         String
+  snapshotJson   Json
+  changedByUserId String
+  changedAt      DateTime @default(now())
+
+  @@index([organizationId, clientId, changedAt])
+  @@index([entityType, entityId])
 }
 
 model ClientIntake {
