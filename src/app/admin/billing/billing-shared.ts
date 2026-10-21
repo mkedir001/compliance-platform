@@ -16,7 +16,8 @@ export type BillingResult =
   | { status: "ERROR"; code: string; message: string; guidance: string | null; attemptedCents: number | null; reference: string | null; at: string; startedBy: string | null };
 export type BillingVisitRow = {
   id: string; clientId: string; startAt: string | null; clockInAt: string | null; clockOutAt: string | null; serviceCode: string | null;
-  hours: number | null; rateCents: number | null; amountCents: number | null; compliant: boolean; reasons: string[];
+  hours: number | null; rateCents: number | null; amountCents: number | null; compliant: boolean;
+  evaluationState: "NOT_YET_EVALUATED" | "COMPLIANT" | "NON_COMPLIANT" | "REQUIRES_REVIEW"; reasons: string[];
   waldahServiceType: string | null;
   caregiverName: string | null;
   /** null = not billed yet (also the case for failed attempts that produced no result record). */
@@ -47,14 +48,18 @@ export const day = (value: string | null) => value
   : "Not recorded";
 
 /** Snapshot figures for a client row or detail header. Visits already billed (result.status === "BILLED") are left out, so "ready to bill" means not yet submitted. */
-export function summarizeVisits(allVisits: (Pick<BillingVisitRow, "compliant" | "hours" | "amountCents" | "rateCents"> & { result?: BillingResult | null })[]) {
+export function summarizeVisits(allVisits: (Pick<BillingVisitRow, "compliant" | "hours" | "amountCents" | "rateCents"> & { evaluationState?: BillingVisitRow["evaluationState"]; result?: BillingResult | null })[]) {
   const visits = allVisits.filter(visit => visit.result?.status !== "BILLED");
-  const evv = visits.filter(visit => visit.compliant), nonEvv = visits.filter(visit => !visit.compliant);
+  const state = (visit: typeof visits[number]) => visit.evaluationState ?? (visit.compliant ? "COMPLIANT" : "NON_COMPLIANT");
+  const evv = visits.filter(visit => state(visit) === "COMPLIANT"), nonEvv = visits.filter(visit => state(visit) === "NON_COMPLIANT");
+  const review = visits.filter(visit => state(visit) === "REQUIRES_REVIEW"), notYet = visits.filter(visit => state(visit) === "NOT_YET_EVALUATED");
+  const eligible = [...evv, ...nonEvv];
   const sum = (rows: typeof visits) => ({ hours: rows.reduce((total, visit) => total + (visit.hours ?? 0), 0), cents: rows.reduce((total, visit) => total + (visit.amountCents ?? 0), 0), unrated: rows.some(visit => visit.hours !== null && visit.rateCents === null) });
-  const all = sum(visits);
-  return { evvCount: evv.length, nonEvvCount: nonEvv.length, readyHours: all.hours, readyCents: all.cents, unrated: all.unrated, evv: sum(evv), nonEvv: sum(nonEvv) };
+  const ready = sum(eligible);
+  return { evvCount: evv.length, nonEvvCount: nonEvv.length, reviewCount: review.length, notYetCount: notYet.length, readyHours: ready.hours, readyCents: ready.cents, unrated: ready.unrated, evv: sum(evv), nonEvv: sum(nonEvv) };
 }
 export const hoursWithAmount = (hoursValue: number, cents: number, unrated = false) => `${hoursValue.toFixed(2)} h (${money(cents)}${unrated ? "+" : ""})`;
 
 export const isBilled = (visit: Pick<BillingVisitRow, "result">) => visit.result?.status === "BILLED";
+export const isBillingEligible = (visit: Pick<BillingVisitRow, "evaluationState">) => visit.evaluationState === "COMPLIANT" || visit.evaluationState === "NON_COMPLIANT";
 export const resultLabel = (result: BillingResult | null, formatMoney: (cents: number | null) => string) => !result ? "Not billed" : result.status === "BILLED" ? `Billed · ${formatMoney(result.amountCents)}` : `Error · ${result.code}`;

@@ -18,6 +18,7 @@ export async function POST(request: Request, context: { params: Promise<{ organi
     const { membership } = await requireOrganizationAccess(user, organizationId);
     await requirePermission(membership.id, "billing.run");
     if ("action" in body && body.action === "CREATE_CLIENT") {
+      await requirePermission(membership.id, "client.create");
       const clientId = await createClientFromAxisCare(user, organizationId, body.axisCareClientId);
       return Response.json({ status: "CREATED", clientId });
     }

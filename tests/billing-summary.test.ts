@@ -12,6 +12,10 @@ describe("billing snapshot figures", () => {
   });
   it("flags visits that have hours but no rate", () => { expect(summarizeVisits([visit(true, 2, null)]).unrated).toBe(true); expect(summarizeVisits([visit(false, null, null)]).unrated).toBe(false); });
   it("is empty and safe for a client with no visits", () => { expect(summarizeVisits([])).toMatchObject({ evvCount: 0, nonEvvCount: 0, readyHours: 0, readyCents: 0 }); });
+  it("excludes scheduled and review rows from compliance counts and billing readiness", () => {
+    const base = { compliant: false, hours: null, rateCents: 2500, amountCents: null };
+    expect(summarizeVisits([{ ...base, evaluationState: "NOT_YET_EVALUATED" }, { ...base, evaluationState: "REQUIRES_REVIEW" }])).toMatchObject({ evvCount: 0, nonEvvCount: 0, notYetCount: 1, reviewCount: 1, readyHours: 0, readyCents: 0 });
+  });
   it("formats hours with the amount in brackets", () => { expect(hoursWithAmount(14.5, 36250)).toBe("14.50 h ($362.50)"); expect(hoursWithAmount(2, 5000, true)).toBe("2.00 h ($50.00+)"); });
 });
 

@@ -74,6 +74,14 @@ describe("billing screen integration", () => {
     expect(detailPage).toContain("notFound()");
   });
 
+  it("collapses non-compliant details by default and exposes explicit EVV evaluation states", () => {
+    expect(detail).toContain('<details className="billing-noncompliant"');
+    expect(detail).toContain("<summary><h2>Not EVV compliant");
+    expect(detail).toContain("Not yet evaluated");
+    expect(detail).toContain("Requires review");
+    expect(styles).toContain(".billing-noncompliant[open]");
+  });
+
   it("keeps the AxisCare settings compact and the connection feedback intact", () => {
     expect(panel).toContain("billing-integration-form");
     expect(panel).toContain("Caregiver mappings");
@@ -99,7 +107,10 @@ describe("billing screen integration", () => {
     expect(service).toContain('state = record.ignoredAt ? "IGNORED"');
     expect(matchRoute).toContain("requireOrganizationAccess(user, organizationId)");
     expect(matchRoute).toContain('requirePermission(membership.id, "billing.run")');
+    expect(matchRoute).toContain('requirePermission(membership.id, "client.create")');
     expect(matchRoute).toContain("changeAxisCareClientDisposition");
+    expect(match).toContain("Create client");
+    expect(match).toContain('row.state === "UNMATCHED"');
   });
 
   it("stays responsive and accessible", () => {

@@ -18,13 +18,24 @@ test("authorized owner opens the safe responsive billing screen from the existin
 
   const matching = page.getByRole("region", { name: "AxisCare client matching management" });
   await expect(matching).toBeVisible();
-  await expect(matching.getByText("2 active", { exact: true })).toBeVisible();
+  await expect(matching.getByText("3 active", { exact: true })).toBeVisible();
   await expect(matching.getByText("3 inactive", { exact: true })).toBeVisible();
   await expect(matching.getByText("1 confirmed", { exact: true })).toBeVisible();
   await expect(matching.getByText("1 ignored", { exact: true })).toBeVisible();
   await expect(matching.getByText("Example Client Three", { exact: true })).toBeVisible();
   await expect(matching.getByText("Historical Inactive", { exact: true })).toHaveCount(0);
   await expect(matching.getByText("Synthetic Caregiver", { exact: true })).toHaveCount(0);
+  const suggestedClientRow = matching.getByRole("row", { name: /^Select Example Client Three / });
+  await expect(suggestedClientRow.getByRole("button", { name: "Create client" })).toHaveCount(0);
+
+  await matching.getByLabel("Matching status").selectOption("ALL");
+  const newClientRow = matching.getByRole("row").filter({ hasText: "New AxisCare Client" });
+  await expect(newClientRow.getByRole("button", { name: "Create client" })).toBeVisible();
+  page.once("dialog", dialog => dialog.accept());
+  await newClientRow.getByRole("button", { name: "Create client" }).click();
+  await expect(newClientRow.getByText("Client created and matched.", { exact: true })).toBeVisible();
+  await expect(newClientRow.getByText("Confirmed", { exact: true })).toBeVisible();
+  await matching.getByLabel("Matching status").selectOption("NEEDS_REVIEW");
 
   await matching.getByLabel("AxisCare status").selectOption("INACTIVE");
   await expect(matching.getByText("Historical Inactive", { exact: true })).toBeVisible();
@@ -39,7 +50,7 @@ test("authorized owner opens the safe responsive billing screen from the existin
   await matching.getByLabel("Matching status").selectOption("IGNORED");
   await matching.getByLabel("AxisCare status").selectOption("ALL");
   await expect(matching.getByText("Example Client Three", { exact: true })).toBeVisible();
-  await matching.getByRole("row").filter({ hasText: "Example Client Three" }).getByRole("button", { name: "Restore" }).click();
+  await matching.getByRole("row", { name: /^Select Example Client Three / }).getByRole("button", { name: "Restore" }).click();
   await expect(matching.getByText("Restored to client matching. A match still requires confirmation.", { exact: true })).toBeVisible();
 
   const directBillingUrl = page.url();
@@ -47,14 +58,20 @@ test("authorized owner opens the safe responsive billing screen from the existin
   await expect(page.getByRole("heading", { name: "Billing", exact: true })).toBeVisible();
   await expect(page.locator(".billing-integration-admin").getByText("Not configured", { exact: true })).toBeVisible();
 
-  const rows = page.locator(".billing-directory-row");
-  if (await rows.count()) {
-    await rows.first().getByRole("link", { name: /More details/ }).click();
-    await page.waitForURL(/\/admin\/billing\/[^/?]+\?organizationId=/);
-    await expect(page.getByRole("link", { name: "← All clients" })).toBeVisible();
-    await page.getByRole("link", { name: "← All clients" }).click();
-    await page.waitForURL(/\/admin\/billing\?organizationId=/);
-  }
+  const sampleRow = page.locator(".billing-directory-row").filter({ hasText: "Sample Client One" });
+  await sampleRow.getByRole("link", { name: /More details/ }).click();
+  await page.waitForURL(/\/admin\/billing\/[^/?]+\?organizationId=/);
+  await expect(page.getByRole("link", { name: "← All clients" })).toBeVisible();
+  const nonCompliant = page.locator("details.billing-noncompliant");
+  await expect(nonCompliant).not.toHaveAttribute("open", "");
+  await expect(nonCompliant.getByText(/missing something required for EVV/)).not.toBeVisible();
+  await nonCompliant.locator("summary").click();
+  await expect(nonCompliant).toHaveAttribute("open", "");
+  await expect(nonCompliant.getByText(/missing something required for EVV/)).toBeVisible();
+  await expect(page.getByText("Not yet evaluated", { exact: true })).toBeVisible();
+  await expect(page.getByText("Requires review", { exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "← All clients" }).click();
+  await page.waitForURL(/\/admin\/billing\?organizationId=/);
 
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.getByRole("heading", { name: "Billing", exact: true })).toBeVisible();

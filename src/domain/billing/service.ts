@@ -2,7 +2,7 @@ import type { User } from "@prisma/client";
 import { AuthorizationError } from "@/domain/auth/errors";
 import { mapClientIdentity, mapClientLifecycle, type AxisCareClientLifecycle } from "@/domain/axiscare/mapping";
 import { requireOrganizationAccess, requirePermission, resolvePermissionCodes } from "@/domain/permissions/authorization";
-import { classifyEvv, roundMoneyCents, type EvvReason } from "./evv";
+import { evaluateEvv, roundMoneyCents, type EvvEvaluationState, type EvvReason } from "./evv";
 import { prisma } from "@/lib/prisma";
 
 export type BillingWorkspaceClient = {
@@ -66,27 +66,26 @@ export type BillingVisit = {
   caregiverName: string | null;
   /** WIRING: billing outcome per visit from the billing ledger. Always null until billing runs exist. */
   result: null;
-  compliant: boolean; reasons: EvvReason[];
+  compliant: boolean; evaluationState: EvvEvaluationState; reasons: EvvReason[];
 };
 
-/** Visits for linked clients, newest first, last 12 months. billing.run only.
- * Shifts that are still scheduled (no clock-in and a start time after `now`) are not visits yet: AxisCare sync pulls ~31 days of schedule ahead, and counting them made EVV look non-compliant. */
+/** Visits for linked clients, newest first, last 12 months. billing.run only. */
 export async function getBillingVisits(user: Pick<User, "id">, organizationId: string, now = new Date(), clientId?: string): Promise<BillingVisit[]> {
   const { membership } = await requireOrganizationAccess(user, organizationId);
   await requirePermission(membership.id, "billing.run");
   const since = new Date(now); since.setUTCMonth(since.getUTCMonth() - 12);
   const [rows, mappings] = await Promise.all([prisma.axisCareVisit.findMany({
-    where: { organizationId, removed: false, clientId: clientId ?? { not: null }, startAt: { gte: since }, NOT: { clockInAt: null, startAt: { gt: now } }, client: { testDataMarkedAt: null, archivedAt: null } },
+    where: { organizationId, removed: false, clientId: clientId ?? { not: null }, startAt: { gte: since }, client: { testDataMarkedAt: null, archivedAt: null } },
     orderBy: { startAt: "desc" }, take: 5000,
-    select: { id: true, clientId: true, startAt: true, clockInAt: true, clockOutAt: true, clockInLatitude: true, clockInLongitude: true, clockOutLatitude: true, clockOutLongitude: true, clockInPhone: true, clockOutPhone: true, axisCareCaregiverId: true, employee: { select: { firstName: true, lastName: true } }, serviceCode: true, chargeRateCents: true, removed: true }
+    select: { id: true, clientId: true, startAt: true, endAt: true, scheduledStartAt: true, scheduledEndAt: true, clockInAt: true, clockOutAt: true, clockInLatitude: true, clockInLongitude: true, clockOutLatitude: true, clockOutLongitude: true, clockInPhone: true, clockOutPhone: true, axisCareCaregiverId: true, employee: { select: { firstName: true, lastName: true } }, serviceCode: true, chargeRateCents: true, removed: true }
   }), prisma.axisCareServiceMapping.findMany({ where: { organizationId }, select: { axisCareServiceCode: true, waldahServiceType: true } })]);
   const caregiverIds = [...new Set(rows.flatMap(row => row.axisCareCaregiverId ? [row.axisCareCaregiverId] : []))];
   const caregiverRecords = caregiverIds.length ? await prisma.axisCareRecord.findMany({ where: { organizationId, entity: "caregiver", externalId: { in: caregiverIds } }, select: { externalId: true, payload: true } }) : [];
   const caregiverNames = new Map(caregiverRecords.map(record => { const p = record.payload && typeof record.payload === "object" && !Array.isArray(record.payload) ? record.payload as Record<string, unknown> : {}; return [record.externalId, [p.firstName, p.lastName].filter(part => typeof part === "string").join(" ") || null] as const; }));
   const serviceTypes = new Map(mappings.map(mapping => [mapping.axisCareServiceCode, mapping.waldahServiceType]));
   return rows.map(row => {
-    const evv = classifyEvv(row), rateCents = row.chargeRateCents;
-    return { id: row.id, clientId: row.clientId!, startAt: row.startAt?.toISOString() ?? null, clockInAt: row.clockInAt?.toISOString() ?? null, clockOutAt: row.clockOutAt?.toISOString() ?? null, serviceCode: row.serviceCode, waldahServiceType: row.serviceCode ? serviceTypes.get(row.serviceCode) ?? null : null, caregiverName: row.employee ? `${row.employee.firstName} ${row.employee.lastName}` : row.axisCareCaregiverId ? caregiverNames.get(row.axisCareCaregiverId) ?? null : null, result: null, hours: evv.hours, rateCents, amountCents: evv.hours !== null && rateCents !== null ? roundMoneyCents(evv.hours, rateCents) : null, compliant: evv.compliant, reasons: evv.reasons };
+    const evv = evaluateEvv(row, now), rateCents = row.chargeRateCents;
+    return { id: row.id, clientId: row.clientId!, startAt: row.startAt?.toISOString() ?? null, clockInAt: row.clockInAt?.toISOString() ?? null, clockOutAt: row.clockOutAt?.toISOString() ?? null, serviceCode: row.serviceCode, waldahServiceType: row.serviceCode ? serviceTypes.get(row.serviceCode) ?? null : null, caregiverName: row.employee ? `${row.employee.firstName} ${row.employee.lastName}` : row.axisCareCaregiverId ? caregiverNames.get(row.axisCareCaregiverId) ?? null : null, result: null, hours: evv.hours, rateCents, amountCents: evv.hours !== null && rateCents !== null ? roundMoneyCents(evv.hours, rateCents) : null, compliant: evv.compliant, evaluationState: evv.state, reasons: evv.reasons };
   });
 }
 
