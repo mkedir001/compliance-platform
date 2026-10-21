@@ -55,6 +55,7 @@ async function main() {
   await db.axisCareRecord.createMany({data:[
     {organizationId:organization.id,entity:"client",externalId:"vqa-confirmed",payload:{id:"vqa-confirmed",firstName:"Sample",lastName:"Client One",status:{active:true,label:"Current"}},payloadHash:digest("vqa-confirmed")},
     {organizationId:organization.id,entity:"client",externalId:"vqa-active-suggested",payload:{id:"vqa-active-suggested",firstName:"Example",lastName:"Client Three",status:{active:true,label:"Current"}},payloadHash:digest("vqa-active-suggested")},
+    {organizationId:organization.id,entity:"client",externalId:"vqa-active-unmatched",payload:{id:"vqa-active-unmatched",firstName:"New",lastName:"AxisCare Client",dateOfBirth:"1993-04-04",status:{active:true,label:"Current"}},payloadHash:digest("vqa-active-unmatched")},
     {organizationId:organization.id,entity:"client",externalId:"vqa-inactive",payload:{id:"vqa-inactive",firstName:"Historical",lastName:"Inactive",status:{active:false,label:"Inactive"}},payloadHash:digest("vqa-inactive")},
     {organizationId:organization.id,entity:"client",externalId:"vqa-discharged",payload:{id:"vqa-discharged",firstName:"Historical",lastName:"Discharged",status:{active:false,label:"Discharged"}},payloadHash:digest("vqa-discharged")},
     {organizationId:organization.id,entity:"client",externalId:"vqa-unknown",payload:{id:"vqa-unknown",firstName:"Status",lastName:"Unknown"},payloadHash:digest("vqa-unknown")},
@@ -62,6 +63,12 @@ async function main() {
     {organizationId:organization.id,entity:"caregiver",externalId:"vqa-caregiver",payload:{id:"vqa-caregiver",firstName:"Synthetic",lastName:"Caregiver"},payloadHash:digest("vqa-caregiver")},
   ]});
   await db.axisCareClientMatch.create({data:{organizationId:organization.id,axisCareClientId:"vqa-active-suggested",clientId:clients[2].id,status:"SUGGESTED",reason:"Synthetic visual-QA identity suggestion",score:90}});
+  await db.axisCareVisit.createMany({data:[
+    {organizationId:organization.id,externalId:"vqa-visit-compliant",axisCareClientId:"vqa-confirmed",clientId:clients[0].id,startAt:at("2026-10-18T14:00:00Z"),endAt:at("2026-10-18T16:00:00Z"),clockInAt:at("2026-10-18T14:01:00Z"),clockOutAt:at("2026-10-18T16:00:00Z"),clockInPhone:"5550100",clockOutPhone:"5550100",serviceCode:"VQA",chargeRateCents:2500,payload:{synthetic:true},payloadHash:digest("vqa-visit-compliant")},
+    {organizationId:organization.id,externalId:"vqa-visit-noncompliant",axisCareClientId:"vqa-confirmed",clientId:clients[0].id,startAt:at("2026-10-17T14:00:00Z"),endAt:at("2026-10-17T16:00:00Z"),clockInAt:at("2026-10-17T14:01:00Z"),clockOutAt:at("2026-10-17T16:00:00Z"),clockInPhone:"5550100",serviceCode:"VQA",chargeRateCents:2500,payload:{synthetic:true},payloadHash:digest("vqa-visit-noncompliant")},
+    {organizationId:organization.id,externalId:"vqa-visit-scheduled",axisCareClientId:"vqa-confirmed",clientId:clients[0].id,startAt:at("2026-10-22T14:00:00Z"),endAt:at("2026-10-22T16:00:00Z"),scheduledStartAt:at("2026-10-22T14:00:00Z"),scheduledEndAt:at("2026-10-22T16:00:00Z"),serviceCode:"VQA",chargeRateCents:2500,payload:{synthetic:true},payloadHash:digest("vqa-visit-scheduled")},
+    {organizationId:organization.id,externalId:"vqa-visit-review",axisCareClientId:"vqa-confirmed",clientId:clients[0].id,startAt:at("2026-10-16T14:00:00Z"),endAt:at("2026-10-16T16:00:00Z"),serviceCode:"VQA",chargeRateCents:2500,payload:{synthetic:true},payloadHash:digest("vqa-visit-review")},
+  ]});
   const [rightsTemplate,faceTemplate] = await Promise.all([
     db.clientDocumentTemplate.create({data:{organizationId:organization.id,code:"VQA-RIGHTS",name:"Synthetic Rights Acknowledgment",documentType:"RIGHTS_ACKNOWLEDGMENT",versionNumber:1,renewalPolicy:"ANNUAL",renewalWarningDays:30,contentJson:{renderer:"BASIC",synthetic:true}}}),
     db.clientDocumentTemplate.create({data:{organizationId:organization.id,code:"VQA-FACE",name:"Synthetic Face Sheet",documentType:"FACE_SHEET",versionNumber:1,renewalPolicy:"NONE",contentJson:{renderer:"BASIC",synthetic:true,signerRoles:["CLIENT"]}}}),
