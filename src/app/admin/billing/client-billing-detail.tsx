@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { StatusChip } from "@/app/components/portal-ui";
 import BillingResultDrawer from "./billing-result-drawer";
-import { REASON_LABELS, day, hoursWithAmount, isBilled, isBillingEligible, money, pretty, resultLabel, stamp, summarizeVisits, type BillingClient, type BillingVisitRow } from "./billing-shared";
+import { REASON_LABELS, day, hoursWithAmount, isBilled, isBillingEligible, money, pretty, resultLabel, stamp, summarizeVisits, billedThisYear, evvRate, percentLabel, reportingPeriods, type BillingClient, type BillingVisitRow } from "./billing-shared";
 import "./billing.css";
 
 function VisitTable({ visits, selected, onToggle, onToggleAll, selectable, onOpenResult }: { visits: BillingVisitRow[]; selected: Set<string>; onToggle: (id: string) => void; onToggleAll: () => void; selectable: boolean; onOpenResult: (id: string) => void }) {
@@ -42,6 +42,7 @@ export default function ClientBillingDetail({ client, visits, canRun, organizati
   const [openResultId, setOpenResultId] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const summary = summarizeVisits(visits);
+  const period = reportingPeriods(), yearRate = evvRate(visits, "YEAR"), billedYtd = billedThisYear(visits);
   const nonEvv = visits.filter(visit => visit.evaluationState === "NON_COMPLIANT");
   const shown = visits.filter(visit => (filter === "ALL" || (filter === "EVV" ? visit.evaluationState === "COMPLIANT" : visit.evaluationState === "NON_COMPLIANT")) && (billedFilter === null || (billedFilter === "BILLED") === isBilled(visit)));
   const openResult = visits.find(visit => visit.id === openResultId && visit.result) ?? null;
@@ -63,12 +64,19 @@ export default function ClientBillingDetail({ client, visits, canRun, organizati
       {!canRun ? <p className="billing-empty">Visit detail and billing are available to billing roles. Billed amounts will appear here once billing runs are enabled.</p>
         : !linked ? <p className="billing-empty">This client is not matched to an AxisCare client yet. Confirm the match on the Billing page to see visits.</p> : <>
         <section className="billing-summary" aria-label="Client billing snapshot">
-          <span><b>{client.approvedHours === null ? "Not recorded" : `${client.approvedHours.toFixed(2)} h`}</b> approved</span>
-          <span className="billing-bad"><b>{summary.nonEvvCount}</b> not EVV compliant</span>
-          <span className="billing-good"><b>{summary.evvCount}</b> EVV compliant</span>
-          {summary.reviewCount ? <span><b>{summary.reviewCount}</b> requires review</span> : null}
-          {summary.notYetCount ? <span><b>{summary.notYetCount}</b> not yet evaluated</span> : null}
-          <span><b>{hoursWithAmount(summary.readyHours, summary.readyCents, summary.unrated)}</b> ready to bill</span>
+          <div className="billing-summary-row">
+            <span><b>{client.approvedHours === null ? "Not recorded" : `${client.approvedHours.toFixed(2)} h`}</b> approved</span>
+            <span className="billing-bad"><b>{summary.nonEvvCount}</b> not EVV compliant <small>since last billing</small></span>
+            <span className="billing-good"><b>{summary.evvCount}</b> EVV compliant <small>since last billing</small></span>
+            {summary.reviewCount ? <span><b>{summary.reviewCount}</b> requires review</span> : null}
+            {summary.notYetCount ? <span><b>{summary.notYetCount}</b> not yet evaluated</span> : null}
+          </div>
+          <div className="billing-money">
+            <div><small>Total ready to bill</small><strong>{money(summary.readyCents)}{summary.unrated ? "+" : ""}</strong><span>{summary.readyHours.toFixed(2)} h · {summary.evvCount + summary.nonEvvCount} {summary.evvCount + summary.nonEvvCount === 1 ? "visit" : "visits"} · since last billing</span></div>
+            <div className="good"><small>EVV-compliant only</small><strong className="billing-good">{money(summary.evv.cents)}{summary.evv.unrated ? "+" : ""}</strong><span>{summary.evv.hours.toFixed(2)} h · {summary.evvCount} {summary.evvCount === 1 ? "visit" : "visits"} · since last billing</span></div>
+            <div className="lost"><small>Held back by non-EVV</small><strong className="billing-bad">{money(summary.nonEvv.cents)}</strong><span>{summary.readyCents ? `${((summary.nonEvv.cents / summary.readyCents) * 100).toFixed(1)}% of total` : "0% of total"} · {summary.nonEvvCount} {summary.nonEvvCount === 1 ? "visit" : "visits"}</span></div>
+          </div>
+          <p className="billing-ytd">YTD {period.year} · {percentLabel(yearRate.percent)} EVV compliant ({yearRate.compliant} of {yearRate.total} visits) · {billedYtd === null ? "billed: not tracked yet" : `${money(billedYtd)} billed`}</p>
         </section>
 
         <section className="billing-bill-options" aria-label="Billing options">

@@ -4,7 +4,16 @@
 .sr-only{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 
 /* One-line summary instead of four stat boxes */
-.billing-summary{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 22px;padding:2px 2px 0;font-size:.9rem;color:var(--portal-ink)}
+.billing-summary{display:grid;gap:10px;padding:2px 2px 0;font-size:.9rem;color:var(--portal-ink)}
+.billing-summary-row{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 22px}.billing-summary-row small{color:var(--portal-muted);font-size:.75rem}
+.billing-rate{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px}
+.billing-rate-pill{display:inline-flex;align-items:center;gap:6px;padding:3px 12px;border-radius:999px;background:#dceee3;color:#174c32;font-weight:600}.billing-rate-pill b{font-size:1.02rem}
+.billing-rate-bar{flex-basis:100%;height:6px;border-radius:99px;background:#fbe1de;overflow:hidden}.billing-rate-bar i{display:block;height:100%;background:#2f6b4a}
+.billing-money{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.billing-money>div{display:grid;gap:1px;padding:10px 12px;border:1px solid #d9d6cd;border-radius:10px;background:#fbfaf7}.billing-money>div.good{border-color:#9cc7ad;background:#f0f8f3}.billing-money>div.lost{border-color:#dca49f;background:#fff7f5}
+.billing-money small{color:var(--portal-muted);font-size:.72rem;text-transform:uppercase;letter-spacing:.04em}.billing-money strong{font-size:1.25rem}.billing-money span{font-size:.78rem;color:var(--portal-muted)}
+.billing-ytd{margin:0;font-size:.78rem;color:var(--portal-muted)}
+@media(max-width:700px){.billing-money{grid-template-columns:1fr}}
 .billing-summary b{font-size:1.02rem}
 
 /* Search toolbar */

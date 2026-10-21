@@ -63,3 +63,27 @@ export const hoursWithAmount = (hoursValue: number, cents: number, unrated = fal
 export const isBilled = (visit: Pick<BillingVisitRow, "result">) => visit.result?.status === "BILLED";
 export const isBillingEligible = (visit: Pick<BillingVisitRow, "evaluationState">) => visit.evaluationState === "COMPLIANT" || visit.evaluationState === "NON_COMPLIANT";
 export const resultLabel = (result: BillingResult | null, formatMoney: (cents: number | null) => string) => !result ? "Not billed" : result.status === "BILLED" ? `Billed · ${formatMoney(result.amountCents)}` : `Error · ${result.code}`;
+
+/** Calendar quarter and year in the organization's time zone (Central). `now` is injectable for tests. */
+export function reportingPeriods(now = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-US", { timeZone: "America/Chicago", year: "numeric", month: "numeric" }).formatToParts(now);
+  const year = Number(parts.find(part => part.type === "year")!.value), month = Number(parts.find(part => part.type === "month")!.value);
+  const quarter = Math.floor((month - 1) / 3) + 1;
+  return { year, quarter, quarterKey: `${year}-Q${quarter}`, label: `Q${quarter} ${year}` };
+}
+const periodOf = (iso: string) => reportingPeriods(new Date(iso));
+/** EVV compliance rate by visit count over the whole period, billed visits included. */
+export function evvRate(visits: (Pick<BillingVisitRow, "startAt" | "compliant"> & { evaluationState?: BillingVisitRow["evaluationState"] })[], scope: "QUARTER" | "YEAR", now = new Date()) {
+  const current = reportingPeriods(now);
+  // Only decided visits count (compliant or non-compliant), the same rule as billing eligibility: scheduled-not-yet-worked and requires-review visits are left out.
+  const inScope = visits.filter(visit => { if (!visit.startAt || (visit.evaluationState && visit.evaluationState !== "COMPLIANT" && visit.evaluationState !== "NON_COMPLIANT")) return false; const period = periodOf(visit.startAt); return scope === "YEAR" ? period.year === current.year : period.quarterKey === current.quarterKey; });
+  const compliant = inScope.filter(visit => visit.compliant).length;
+  return { total: inScope.length, compliant, percent: inScope.length ? Math.round((compliant / inScope.length) * 1000) / 10 : null };
+}
+/** Sum of visits billed this year. null while no visit carries a billing result (the ledger is not connected yet). */
+export function billedThisYear(visits: (Pick<BillingVisitRow, "startAt"> & { result?: BillingResult | null })[], now = new Date()) {
+  if (!visits.some(visit => visit.result)) return null;
+  const year = reportingPeriods(now).year;
+  return visits.reduce((total, visit) => total + (visit.result?.status === "BILLED" && visit.startAt && periodOf(visit.startAt).year === year ? visit.result.amountCents : 0), 0);
+}
+export const percentLabel = (percent: number | null) => percent === null ? "—" : `${percent.toFixed(1)}%`;
