@@ -3535,47 +3535,50 @@ model HistoricalMarImportBatch {
 /// One scheduled occurrence proposed from an approved historical medication schedule and actual AxisCare coverage.
 /// Paper-MAR values remain empty until the attributed caregiver reviews them.
 model HistoricalMarEntry {
-  id                 String                    @id @default(cuid())
-  organizationId     String
-  clientId           String
-  batchId            String
-  medicationId       String
-  axisCareVisitId    String?
-  employeeId         String?
-  doseDate           DateTime                  @db.Date
-  scheduledTime      String
-  stableSourceKey    String
-  matchState         HistoricalMarMatchState
-  confidence         String
-  sourceSnapshotJson Json
-  reviewState        HistoricalMarReviewState  @default(AWAITING_CAREGIVER_REVIEW)
-  paperStatus        MedicationDoseStatus?
-  paperTimeGiven     String?
-  paperNote          String?
-  discrepancyCode    String?
-  discrepancyNote    String?
-  correctionReason   String?
-  reviewedByUserId   String?
-  reviewedAt         DateTime?
-  version            Int                       @default(1)
-  attestationId      String?
-  finalizedDoseId    String?                   @unique
-  createdAt          DateTime                  @default(now())
-  updatedAt          DateTime                  @updatedAt
-  organization       Organization              @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  client             Client                    @relation(fields: [clientId], references: [id], onDelete: Restrict)
-  batch              HistoricalMarImportBatch  @relation(fields: [batchId], references: [id], onDelete: Restrict)
-  medication         ClientMedication          @relation(fields: [medicationId], references: [id], onDelete: Restrict)
-  axisCareVisit      AxisCareVisit?            @relation(fields: [axisCareVisitId], references: [id], onDelete: Restrict)
-  employee           Employee?                 @relation(fields: [employeeId], references: [id], onDelete: Restrict)
-  reviewedBy         User?                     @relation("HistoricalMarEntryReviewer", fields: [reviewedByUserId], references: [id], onDelete: Restrict)
-  attestation        HistoricalMarAttestation? @relation(fields: [attestationId], references: [id], onDelete: Restrict)
-  finalizedDose      ClientMedicationDose?     @relation("HistoricalMarFinalizedDose", fields: [finalizedDoseId], references: [id], onDelete: Restrict)
+  id                    String                    @id @default(cuid())
+  organizationId        String
+  clientId              String
+  batchId               String
+  medicationId          String
+  axisCareVisitId       String?
+  attendanceSource      String                    @default("AXISCARE")
+  attendanceEvidenceKey String?
+  employeeId            String?
+  doseDate              DateTime                  @db.Date
+  scheduledTime         String
+  stableSourceKey       String
+  matchState            HistoricalMarMatchState
+  confidence            String
+  sourceSnapshotJson    Json
+  reviewState           HistoricalMarReviewState  @default(AWAITING_CAREGIVER_REVIEW)
+  paperStatus           MedicationDoseStatus?
+  paperTimeGiven        String?
+  paperNote             String?
+  discrepancyCode       String?
+  discrepancyNote       String?
+  correctionReason      String?
+  reviewedByUserId      String?
+  reviewedAt            DateTime?
+  version               Int                       @default(1)
+  attestationId         String?
+  finalizedDoseId       String?                   @unique
+  createdAt             DateTime                  @default(now())
+  updatedAt             DateTime                  @updatedAt
+  organization          Organization              @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  client                Client                    @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  batch                 HistoricalMarImportBatch  @relation(fields: [batchId], references: [id], onDelete: Restrict)
+  medication            ClientMedication          @relation(fields: [medicationId], references: [id], onDelete: Restrict)
+  axisCareVisit         AxisCareVisit?            @relation(fields: [axisCareVisitId], references: [id], onDelete: Restrict)
+  employee              Employee?                 @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  reviewedBy            User?                     @relation("HistoricalMarEntryReviewer", fields: [reviewedByUserId], references: [id], onDelete: Restrict)
+  attestation           HistoricalMarAttestation? @relation(fields: [attestationId], references: [id], onDelete: Restrict)
+  finalizedDose         ClientMedicationDose?     @relation("HistoricalMarFinalizedDose", fields: [finalizedDoseId], references: [id], onDelete: Restrict)
 
   @@unique([organizationId, stableSourceKey])
   @@unique([batchId, medicationId, doseDate, scheduledTime])
   @@index([organizationId, employeeId, reviewState, doseDate])
   @@index([organizationId, clientId, doseDate])
+  @@index([organizationId, attendanceSource, attendanceEvidenceKey], map: "HistoricalMarEntry_org_attendance_evidence_idx")
 }
 
 /// Immutable exact-set caregiver attestation. `snapshotHash` covers the sorted entry IDs and versioned values.

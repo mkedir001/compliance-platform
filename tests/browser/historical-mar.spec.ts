@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import ExcelJS from "exceljs";
 
 async function enterVisualQa(page: Page) {
   await page.goto("/dev/visual-qa");
@@ -22,6 +23,20 @@ test("synthetic caregiver reviews and batch-signs AxisCare-backed history in the
   await page.getByRole("button", { name: "Historical review" }).click();
   await expect(page.getByText("Historical paper MAR verification")).toBeVisible();
   await expect(page.getByText(/AxisCare clock evidence proposes caregiver attribution only/)).toBeVisible();
+  const workbook = new ExcelJS.Workbook(), shifts = workbook.addWorksheet("Shifts"); workbook.addWorksheet("Summary");
+  shifts.addRow(["Date of service", "Weekday", "Employee", "Employee #", "Service line", "Clock in", "Clock out", "Hours", "Source", "Visit status", "Manual EVV entry"]);
+  const local = (hour: number) => new Date(Date.UTC(2026, 9, 16, hour));
+  shifts.addRow([local(0), "Friday", "Synthetic Caregiver", "SYN-BROWSER", "SERVICE", local(7), local(15), 8, "EVV (app/phone)", "Processed", "No"]);
+  const workbookBytes = Buffer.from(await workbook.xlsx.writeBuffer() as ArrayBuffer);
+  const supplement = page.getByLabel("Verified Pavilio attendance import");
+  await expect(supplement.getByText("Supplement incomplete AxisCare attendance")).toBeVisible();
+  await supplement.getByLabel("Pavilio XLSX workbook").setInputFiles({ name: "synthetic-attendance.xlsx", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", buffer: workbookBytes });
+  await supplement.getByRole("checkbox", { name: /I confirm this workbook belongs/ }).check();
+  await supplement.getByRole("button", { name: "Inspect workbook (no changes)" }).click();
+  await expect(supplement.getByText(/1 usable of 1 attendance rows/)).toBeVisible();
+  await supplement.getByLabel(/Synthetic Caregiver · source ID SYN-BROWSER/).selectOption({ index: 1 });
+  await supplement.getByRole("button", { name: "Preview reconciled MAR staging" }).click();
+  await expect(supplement.getByText(/scheduled occurrences/)).toBeVisible();
   const filters = page.getByLabel("Historical MAR review filters");
   await expect(filters.getByLabel("Medication")).toBeVisible();
   await filters.getByLabel("Medication").selectOption({ label: "Synthetic historical medication" });

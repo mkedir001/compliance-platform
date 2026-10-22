@@ -106,7 +106,7 @@ export async function getMedicationRecord(user: Pick<User, "id">, organizationId
 }
 
 export async function applyMedicationAction(user: Pick<User, "id">, organizationId: string, clientId: string, raw: unknown) {
-  if (raw && typeof raw === "object" && "action" in raw && typeof raw.action === "string" && raw.action.includes("HISTORICAL_MAR")) return applyHistoricalMarAction(user, organizationId, clientId, raw);
+  if (raw && typeof raw === "object" && "action" in raw && typeof raw.action === "string" && (raw.action.includes("HISTORICAL_MAR") || raw.action === "INSPECT_PAVILIO_ATTENDANCE")) return applyHistoricalMarAction(user, organizationId, clientId, raw);
   const a = await access(user, organizationId, clientId), input = medicationRecordAction.parse(raw);
   if (input.action === "SETUP_SIGNATURE") {
     if (!a.permissions.has("medication.activity.record") && !a.canReview && !await hasHistoricalMarReviewAccess(a.userId, organizationId, clientId)) throw new AuthorizationError("Medication signing permission is required");

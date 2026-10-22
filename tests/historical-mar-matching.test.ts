@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildMedicationOccurrences, localTimeCandidates, matchHistoricalOccurrence, type HistoricalVisit, type MedicationVersion } from "@/domain/clients/historical-mar-matching";
+import { buildMedicationOccurrences, localTimeCandidates, matchHistoricalOccurrence, matchHistoricalOccurrenceWithSupplemental, reconcileSupplementalAttendance, type HistoricalVisit, type MedicationVersion, type SupplementalAttendance } from "@/domain/clients/historical-mar-matching";
 
 const visit = (over: Partial<HistoricalVisit> = {}): HistoricalVisit => ({ id: "visit-1", externalId: "axis-visit-1", employeeId: "employee-1", axisCareCaregiverId: "axis-caregiver-1", clockInAt: new Date("2026-01-15T13:00:00Z"), clockOutAt: new Date("2026-01-15T21:00:00Z"), scheduledStartAt: new Date("2026-01-15T13:00:00Z"), scheduledEndAt: new Date("2026-01-15T21:00:00Z"), removed: false, modificationReason: null, ...over });
 
@@ -31,6 +31,24 @@ describe("historical MAR AxisCare matching", () => {
   });
 });
 
+describe("AxisCare-first Pavilio reconciliation", () => {
+  const supplemental = (over: Partial<SupplementalAttendance> = {}): SupplementalAttendance => ({ rowHash: "row-1", rowNumber: 2, employeeId: "employee-1", clockInAt: new Date("2026-01-15T13:00:00Z"), clockOutAt: new Date("2026-01-15T21:00:00Z"), ...over });
+  it("deduplicates exact AxisCare coverage and flags partial or caregiver conflicts", () => {
+    expect(reconcileSupplementalAttendance([visit()], [supplemental()])[0].reconciliationState).toBe("EXACT_AXISCARE_DUPLICATE");
+    expect(reconcileSupplementalAttendance([visit()], [supplemental({ clockOutAt: new Date("2026-01-15T22:00:00Z") })])[0].reconciliationState).toBe("CONFLICTING_TIMESTAMPS");
+    expect(reconcileSupplementalAttendance([visit()], [supplemental({ employeeId: "employee-2" })])[0].reconciliationState).toBe("CONFLICTING_CAREGIVER");
+  });
+  it("uses only non-conflicting supplemental coverage when AxisCare is absent", () => {
+    const rows = reconcileSupplementalAttendance([], [supplemental()]);
+    expect(matchHistoricalOccurrenceWithSupplemental("2026-01-15", "08:00", "America/Chicago", [], rows)).toMatchObject({ state: "MATCHED", attendanceSource: "PAVILIO", employeeId: "employee-1", attendanceEvidenceKey: "row-1" });
+    const ambiguous = reconcileSupplementalAttendance([], [supplemental(), supplemental({ rowHash: "row-2", employeeId: "employee-2" })]);
+    expect(matchHistoricalOccurrenceWithSupplemental("2026-01-15", "08:00", "America/Chicago", [], ambiguous)).toMatchObject({ state: "AMBIGUOUS_VISIT", confidence: "MULTIPLE_VERIFIED_PAVILIO_WINDOWS" });
+  });
+  it("keeps AxisCare primary when both sources cover the occurrence", () => {
+    expect(matchHistoricalOccurrenceWithSupplemental("2026-01-15", "08:00", "America/Chicago", [visit()], reconcileSupplementalAttendance([visit()], [supplemental()]))).toMatchObject({ state: "MATCHED", attendanceSource: "AXISCARE", visitId: "visit-1" });
+  });
+});
+
 describe("historical medication schedules", () => {
   const version = (over: Partial<MedicationVersion> = {}): MedicationVersion => ({ medicationId: "med-1", medication: "Synthetic medication", dose: "1 unit", route: "oral", times: "8 AM", startDate: "2026-01-01", stopDate: null, approved: true, source: "current", ...over });
   it("honors effective start and discontinuation dates", () => {
@@ -43,5 +61,9 @@ describe("historical medication schedules", () => {
   it("flags conflicting historical schedule snapshots rather than guessing", () => {
     const rows = buildMedicationOccurrences([version(), version({ source: "history:old", times: "8 PM" })], "2026-01-01", "2026-01-01");
     expect(rows.map(row => row.scheduleState)).toEqual(["MEDICATION_HISTORY_GAP", "MEDICATION_HISTORY_GAP"]);
+  });
+  it("keeps different doses distinct and excludes PRN-only schedules", () => {
+    const rows = buildMedicationOccurrences([version({ medicationId: "morning", dose: "100 mg", times: "7 AM" }), version({ medicationId: "evening", dose: "200 mg", times: "10 PM" }), version({ medicationId: "prn", dose: "50 mg", times: "PRN" })], "2026-01-01", "2026-01-01");
+    expect(rows.map(row => [row.medicationId, row.dose, row.scheduledTime])).toEqual([["morning", "100 mg", "07:00"], ["evening", "200 mg", "22:00"]]);
   });
 });

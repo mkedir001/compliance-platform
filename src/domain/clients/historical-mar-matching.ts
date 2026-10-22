@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
 import { addDays, isDayKey, medicationActiveOn, parseScheduleTimes } from "./mar";
 
-export const HISTORICAL_MAR_ALGORITHM_VERSION = "historical-mar-v1";
+export const HISTORICAL_MAR_ALGORITHM_VERSION = "historical-mar-v2-pavilio";
+export const HISTORICAL_MAR_OCCURRENCE_KEY_VERSION = "historical-mar-v1";
 
 export type HistoricalVisit = {
   id: string;
@@ -30,6 +31,26 @@ export type HistoricalMatch = {
   visitId: string | null;
   employeeId: string | null;
   candidates: string[];
+};
+
+export type SupplementalAttendance = {
+  rowHash: string;
+  rowNumber: number;
+  employeeId: string;
+  clockInAt: Date;
+  clockOutAt: Date;
+};
+
+export type SupplementalReconciliationState =
+  | "SUPPLEMENTAL"
+  | "EXACT_AXISCARE_DUPLICATE"
+  | "PARTIAL_AXISCARE_OVERLAP"
+  | "CONFLICTING_CAREGIVER"
+  | "CONFLICTING_TIMESTAMPS";
+
+export type ReconciledSupplementalAttendance = SupplementalAttendance & {
+  reconciliationState: SupplementalReconciliationState;
+  axisCareVisitIds: string[];
 };
 
 const partsAt = (instant: Date, timeZone: string) => {
@@ -61,6 +82,25 @@ export function localTimeCandidates(day: string, time: string, timeZone: string)
 
 const covers = (start: Date | null, end: Date | null, occurrence: Date) => Boolean(start && end && start <= occurrence && occurrence <= end);
 const canceled = (visit: HistoricalVisit) => visit.removed || /cancel/i.test(visit.modificationReason ?? "");
+const overlaps = (aStart: Date, aEnd: Date, bStart: Date, bEnd: Date) => aStart < bEnd && bStart < aEnd;
+
+/** AxisCare remains primary. Supplemental rows that materially disagree with it are retained as exceptions, not used as coverage. */
+export function reconcileSupplementalAttendance(visits: readonly HistoricalVisit[], rows: readonly SupplementalAttendance[]) {
+  const actual = visits.filter(visit => !canceled(visit) && visit.clockInAt && visit.clockOutAt);
+  return rows.map<ReconciledSupplementalAttendance>(row => {
+    const intersecting = actual.filter(visit => overlaps(row.clockInAt, row.clockOutAt, visit.clockInAt!, visit.clockOutAt!));
+    if (!intersecting.length) return { ...row, reconciliationState: "SUPPLEMENTAL", axisCareVisitIds: [] };
+    const ids = intersecting.map(visit => visit.externalId).sort();
+    const exact = intersecting.find(visit => visit.clockInAt!.getTime() === row.clockInAt.getTime() && visit.clockOutAt!.getTime() === row.clockOutAt.getTime());
+    if (exact) {
+      if (!exact.employeeId || exact.employeeId !== row.employeeId) return { ...row, reconciliationState: "CONFLICTING_CAREGIVER", axisCareVisitIds: ids };
+      return { ...row, reconciliationState: "EXACT_AXISCARE_DUPLICATE", axisCareVisitIds: ids };
+    }
+    if (intersecting.some(visit => visit.employeeId && visit.employeeId !== row.employeeId)) return { ...row, reconciliationState: "CONFLICTING_CAREGIVER", axisCareVisitIds: ids };
+    if (intersecting.some(visit => visit.employeeId === row.employeeId)) return { ...row, reconciliationState: "CONFLICTING_TIMESTAMPS", axisCareVisitIds: ids };
+    return { ...row, reconciliationState: "PARTIAL_AXISCARE_OVERLAP", axisCareVisitIds: ids };
+  });
+}
 
 /**
  * Attributes a scheduled occurrence only when actual AxisCare clock evidence covers it.
@@ -81,6 +121,26 @@ export function matchHistoricalOccurrence(day: string, time: string, timeZone: s
   if (scheduled.some(visit => !visit.clockInAt)) return { state: "MISSING_CLOCK_IN", confidence: "SCHEDULED_WINDOW_ONLY", visitId: null, employeeId: null, candidates: scheduled.map(v => v.externalId).sort() };
   if (scheduled.some(visit => visit.clockInAt && !visit.clockOutAt)) return { state: "MISSING_CLOCK_OUT", confidence: "INCOMPLETE_ACTUAL_CLOCK_WINDOW", visitId: null, employeeId: null, candidates: scheduled.map(v => v.externalId).sort() };
   return { state: "NO_ACTUAL_VISIT", confidence: "NO_ACTUAL_CLOCK_COVERAGE", visitId: null, employeeId: null, candidates: [] };
+}
+
+export type HistoricalEvidenceMatch = HistoricalMatch & {
+  attendanceSource: "AXISCARE" | "PAVILIO" | null;
+  attendanceEvidenceKey: string | null;
+  supplementalCandidates: string[];
+};
+
+/** Uses verified supplemental coverage only when AxisCare cannot establish a single mapped actual visit. */
+export function matchHistoricalOccurrenceWithSupplemental(day: string, time: string, timeZone: string, visits: readonly HistoricalVisit[], supplemental: readonly ReconciledSupplementalAttendance[]): HistoricalEvidenceMatch {
+  const primary = matchHistoricalOccurrence(day, time, timeZone, visits);
+  if (primary.state === "MATCHED") return { ...primary, attendanceSource: "AXISCARE", attendanceEvidenceKey: primary.visitId, supplementalCandidates: [] };
+  const instants = localTimeCandidates(day, time, timeZone);
+  const candidates = supplemental.filter(row => row.reconciliationState === "SUPPLEMENTAL" && instants.some(instant => covers(row.clockInAt, row.clockOutAt, instant)));
+  if (candidates.length > 1) return { state: "AMBIGUOUS_VISIT", confidence: "MULTIPLE_VERIFIED_PAVILIO_WINDOWS", visitId: null, employeeId: null, candidates: [], attendanceSource: null, attendanceEvidenceKey: null, supplementalCandidates: candidates.map(row => row.rowHash).sort() };
+  if (candidates.length === 1) {
+    const row = candidates[0];
+    return { state: "MATCHED", confidence: "VERIFIED_PAVILIO_COVERAGE", visitId: null, employeeId: row.employeeId, candidates: [], attendanceSource: "PAVILIO", attendanceEvidenceKey: row.rowHash, supplementalCandidates: [row.rowHash] };
+  }
+  return { ...primary, attendanceSource: null, attendanceEvidenceKey: null, supplementalCandidates: [] };
 }
 
 export type MedicationVersion = {

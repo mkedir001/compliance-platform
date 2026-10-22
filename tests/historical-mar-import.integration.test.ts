@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { PrismaClient } from "@prisma/client";
-import { attestHistoricalMarEntries, previewHistoricalMarImport, reviewHistoricalMarEntry, stageHistoricalMarImport } from "@/domain/clients/historical-mar-import";
+import ExcelJS from "exceljs";
+import { attestHistoricalMarEntries, inspectPavilioAttendance, previewHistoricalMarImport, previewPavilioHistoricalMar, reviewHistoricalMarEntry, stageHistoricalMarImport, stagePavilioHistoricalMar } from "@/domain/clients/historical-mar-import";
 import { getAssignedClientCareViews } from "@/domain/portal/service";
 
 const db = new PrismaClient();
@@ -31,7 +32,7 @@ describe.sequential("Radiant-only historical MAR staging and caregiver attestati
     await db.membershipRole.createMany({ data: [{ membershipId: clinicalMembership.id, roleDefinitionId: clinicalRole.id }, { membershipId: caregiverMembership.id, roleDefinitionId: caregiverRole.id }, { membershipId: otherCaregiverMembership.id, roleDefinitionId: caregiverRole.id }] });
     await db.professionalCredential.create({ data: { organizationId, userId: clinicianId, credentialType: "RN", credentialName: "Synthetic RN", licenseNumber: `${tag}-RN`, jurisdiction: "MN", verificationStatus: "VERIFIED", verifiedAt: new Date(), verifiedByUserId: clinicianId, status: "ACTIVE" } });
     const [employee, otherEmployee] = await Promise.all([
-      db.employee.create({ data: { organizationId, userId: caregiverId, firstName: "Synthetic", lastName: "Caregiver", employmentStatus: "ACTIVE", axisCareCaregiverId: `${tag}-axis-caregiver` } }),
+      db.employee.create({ data: { organizationId, userId: caregiverId, employeeNumber: "SYN-PAV-1", firstName: "Synthetic", lastName: "Caregiver", employmentStatus: "ACTIVE", axisCareCaregiverId: `${tag}-axis-caregiver` } }),
       db.employee.create({ data: { organizationId, userId: otherCaregiverId, firstName: "Other", lastName: "Caregiver", employmentStatus: "ACTIVE", axisCareCaregiverId: `${tag}-axis-other` } }),
     ]);
     employeeId = employee.id;
@@ -62,7 +63,7 @@ describe.sequential("Radiant-only historical MAR staging and caregiver attestati
     expect(first.created).toBe(true); expect(second).toMatchObject({ id: first.id, created: false }); batchId = first.id;
     const entry = await db.historicalMarEntry.findFirstOrThrow({ where: { batchId } }); entryId = entry.id;
     expect(entry).toMatchObject({ medicationId, employeeId, matchState: "MATCHED", confidence: "ACTUAL_CLOCK_COVERAGE", paperStatus: null, finalizedDoseId: null });
-    expect(JSON.stringify(entry.sourceSnapshotJson)).toContain("historical-mar-v1");
+    expect(JSON.stringify(entry.sourceSnapshotJson)).toContain("historical-mar-v2-pavilio");
     expect(await db.serviceAssignment.count({ where: { organizationId, employeeId } })).toBe(0);
     expect((await getAssignedClientCareViews({ id: caregiverId }, organizationId)).map(client => client.id)).toContain(clientId);
     const visit = await db.axisCareVisit.findUniqueOrThrow({ where: { id: entry.axisCareVisitId! }, select: { id: true, clockOutAt: true } });
@@ -72,6 +73,25 @@ describe.sequential("Radiant-only historical MAR staging and caregiver attestati
     } finally {
       await db.axisCareVisit.update({ where: { id: visit.id }, data: { clockOutAt: visit.clockOutAt } });
     }
+  });
+
+  it("inspects, explicitly maps, stages, and safely retries verified Pavilio coverage", async () => {
+    const workbook = new ExcelJS.Workbook(), sheet = workbook.addWorksheet("Shifts"); workbook.addWorksheet("Summary");
+    sheet.addRow(["Date of service", "Weekday", "Employee", "Employee #", "Service line", "Clock in", "Clock out", "Hours", "Source", "Visit status", "Manual EVV entry"]);
+    const local = (hour: number) => new Date(Date.UTC(2026, 0, 16, hour));
+    sheet.addRow([local(0), "Friday", "Synthetic Caregiver", "SYN-PAV-1", "SERVICE", local(7), local(15), 8, "EVV (app/phone)", "Processed", "No"]);
+    const bytes = await workbook.xlsx.writeBuffer(), input = { fileName: "synthetic-attendance.xlsx", workbookBase64: Buffer.from(bytes as ArrayBuffer).toString("base64"), confirmedClientId: clientId, confirmClient: true as const };
+    await expect(inspectPavilioAttendance({ id: clinicianId }, organizationId, clientId, { ...input, confirmedClientId: otherOrganizationId })).rejects.toThrow(/selected client confirmation/);
+    const inspection = await inspectPavilioAttendance({ id: clinicianId }, organizationId, clientId, input);
+    expect(inspection).toMatchObject({ totalRows: 1, usableRows: 1, errorCounts: {}, sourceEmployees: [{ sourceEmployeeId: "SYN-PAV-1", suggestedEmployeeId: employeeId }] });
+    const mappings = [{ sourceEmployeeId: "SYN-PAV-1", employeeId }], preview = await previewPavilioHistoricalMar({ id: clinicianId }, organizationId, clientId, input, mappings);
+    expect(preview).toMatchObject({ total: 1, readyForCaregiverReview: 1, blocked: 0, counts: { MATCHED: 1 }, workbook: { reconciliationCounts: { SUPPLEMENTAL: 1 } } });
+    const first = await stagePavilioHistoricalMar({ id: clinicianId }, organizationId, clientId, input, mappings, preview.fingerprint, { refreshSource: false });
+    const retry = await stagePavilioHistoricalMar({ id: clinicianId }, organizationId, clientId, input, mappings, preview.fingerprint, { refreshSource: false });
+    expect(first.created).toBe(true); expect(retry).toMatchObject({ id: first.id, created: false });
+    const entry = await db.historicalMarEntry.findFirstOrThrow({ where: { batchId: first.id } });
+    expect(entry).toMatchObject({ attendanceSource: "PAVILIO", axisCareVisitId: null, employeeId, matchState: "MATCHED", confidence: "VERIFIED_PAVILIO_COVERAGE" });
+    expect(entry.attendanceEvidenceKey).toHaveLength(64);
   });
 
   it("enforces self-only review and creates one immutable exact-set signature at current time", async () => {

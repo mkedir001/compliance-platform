@@ -7,17 +7,23 @@ import { loadAxisCareConfig } from "@/domain/axiscare/config";
 import { newClient, upsertVisit } from "@/domain/axiscare/sync";
 import { dateToDayKey, dayKeyToDate, isDayKey, todayKey } from "./mar";
 import { AXISCARE_API_VERSION } from "@/domain/axiscare/client";
-import { HISTORICAL_MAR_ALGORITHM_VERSION, buildMedicationOccurrences, matchHistoricalOccurrence, stableHistoricalHash, type HistoricalVisit, type MedicationVersion } from "./historical-mar-matching";
+import { HISTORICAL_MAR_ALGORITHM_VERSION, HISTORICAL_MAR_OCCURRENCE_KEY_VERSION, buildMedicationOccurrences, matchHistoricalOccurrenceWithSupplemental, reconcileSupplementalAttendance, stableHistoricalHash, type HistoricalVisit, type MedicationVersion, type ReconciledSupplementalAttendance } from "./historical-mar-matching";
+import { inspectPavilioWorkbookBase64, type PavilioWorkbookInspection } from "./pavilio-attendance";
 
 const day = z.string().refine(isDayKey, "Use a real date (YYYY-MM-DD)");
 const time = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use a 24-hour time (HH:mm)");
 const doseStatus = z.enum(["GIVEN", "REFUSED", "HELD", "NOT_GIVEN"]);
+const workbook = z.object({ fileName: z.string().trim().min(1).max(255).regex(/\.xlsx$/i, "Use an XLSX workbook"), workbookBase64: z.string().min(4).max(7_000_000), confirmedClientId: z.string().min(1).max(100), confirmClient: z.literal(true) });
+const employeeMappings = z.array(z.object({ sourceEmployeeId: z.string().trim().min(1).max(100), employeeId: z.string().min(1).max(100) }).strict()).min(1).max(100);
 export const HISTORICAL_MAR_ATTESTATION_VERSION = "historical-paper-mar-caregiver-v1";
 export const HISTORICAL_MAR_ATTESTATION_STATEMENT = "I reviewed the identified historical paper MAR entries and confirm that the administration values recorded here accurately reflect that paper record. I understand that AxisCare visit evidence supports caregiver attribution but does not itself prove medication administration.";
 
 export const historicalMarAction = z.discriminatedUnion("action", [
   z.object({ action: z.literal("PREVIEW_HISTORICAL_MAR"), rangeStart: day, rangeEnd: day }).strict(),
   z.object({ action: z.literal("STAGE_HISTORICAL_MAR"), rangeStart: day, rangeEnd: day, expectedFingerprint: z.string().length(64) }).strict(),
+  workbook.extend({ action: z.literal("INSPECT_PAVILIO_ATTENDANCE") }).strict(),
+  workbook.extend({ action: z.literal("PREVIEW_PAVILIO_HISTORICAL_MAR"), employeeMappings }).strict(),
+  workbook.extend({ action: z.literal("STAGE_PAVILIO_HISTORICAL_MAR"), employeeMappings, expectedFingerprint: z.string().length(64) }).strict(),
   z.object({ action: z.literal("REVIEW_HISTORICAL_MAR_ENTRY"), entryId: z.string().cuid(), expectedVersion: z.number().int().positive(), paperStatus: doseStatus, paperTimeGiven: time.nullish(), paperNote: z.string().trim().max(1000).nullish(), discrepancyCode: z.string().trim().max(100).nullish(), discrepancyNote: z.string().trim().max(1000).nullish(), correctionReason: z.string().trim().min(10).max(500).nullish() }).strict(),
   z.object({ action: z.literal("ATTEST_HISTORICAL_MAR_ENTRIES"), batchId: z.string().cuid(), entryIds: z.array(z.string().cuid()).min(1).max(500), consent: z.literal(true) }).strict(),
 ]);
@@ -90,29 +96,41 @@ function medicationVersions(medications: MedicationRow[], histories: HistoryRow[
   return [...distinct.values()];
 }
 
-async function buildPreview(organizationId: string, clientId: string, rangeStart: string, rangeEnd: string, timeZone: string) {
+type SupplementalPreview = {
+  workbookHash: string;
+  fileName: string;
+  rows: ReconciledSupplementalAttendance[];
+  rowProvenance: Map<string, { rowNumber: number; sourceEmployeeId: string; localClockIn: string; localClockOut: string; visitStatus: string; evvSource: string; manualEvv: boolean }>;
+  rowErrors: { rowNumber: number; code: string }[];
+  errorCounts: Record<string, number>;
+  reconciliationCounts: Record<string, number>;
+};
+
+async function buildPreview(organizationId: string, clientId: string, rangeStart: string, rangeEnd: string, timeZone: string, supplemental?: SupplementalPreview, ignoreBatchId?: string) {
   const client = await prisma.client.findFirst({ where: { id: clientId, organizationId }, select: { id: true, axisCareClientId: true } });
   if (!client) throw new ResourceNotFoundError("Client not found");
   validateRange(rangeStart, rangeEnd, timeZone);
   const low = new Date(dayKeyToDate(rangeStart).getTime() - 86_400_000), high = new Date(dayKeyToDate(rangeEnd).getTime() + 2 * 86_400_000);
-  const [medications, histories, visits, existing] = await Promise.all([
+  const [medications, histories, visits, existing, existingHistorical] = await Promise.all([
     prisma.clientMedication.findMany({ where: { organizationId, clientId } }),
     prisma.clientMedicationHistory.findMany({ where: { organizationId, clientId, entityType: "MEDICATION" }, orderBy: { changedAt: "asc" } }),
     prisma.axisCareVisit.findMany({ where: { organizationId, clientId, OR: [{ clockInAt: { gte: low, lt: high } }, { scheduledStartAt: { gte: low, lt: high } }, { startAt: { gte: low, lt: high } }] }, orderBy: { startAt: "asc" } }),
     prisma.clientMedicationDose.findMany({ where: { organizationId, clientId, doseDate: { gte: dayKeyToDate(rangeStart), lte: dayKeyToDate(rangeEnd) } }, select: { medicationId: true, doseDate: true, scheduledTime: true } }),
+    prisma.historicalMarEntry.findMany({ where: { organizationId, clientId, ...(ignoreBatchId ? { batchId: { not: ignoreBatchId } } : {}), doseDate: { gte: dayKeyToDate(rangeStart), lte: dayKeyToDate(rangeEnd) } }, select: { medicationId: true, doseDate: true, scheduledTime: true } }),
   ]);
   const visitRows: HistoricalVisit[] = visits.map(row => ({ id: row.id, externalId: row.externalId, employeeId: row.employeeId, axisCareCaregiverId: row.axisCareCaregiverId, clockInAt: row.clockInAt, clockOutAt: row.clockOutAt, scheduledStartAt: row.scheduledStartAt, scheduledEndAt: row.scheduledEndAt, removed: row.removed, modificationReason: row.modificationReason }));
-  const existingKeys = new Set(existing.map(row => `${row.medicationId}|${dateToDayKey(row.doseDate)}|${row.scheduledTime}`));
+  const existingKeys = new Set([...existing, ...existingHistorical].map(row => `${row.medicationId}|${dateToDayKey(row.doseDate)}|${row.scheduledTime}`));
   const occurrences = buildMedicationOccurrences(medicationVersions(medications, histories), rangeStart, rangeEnd);
   const proposals = occurrences.map(occurrence => {
     const slotKey = `${occurrence.medicationId}|${occurrence.day}|${occurrence.scheduledTime}`;
-    const match = matchHistoricalOccurrence(occurrence.day, occurrence.scheduledTime, timeZone, visitRows);
+    const match = matchHistoricalOccurrenceWithSupplemental(occurrence.day, occurrence.scheduledTime, timeZone, visitRows, supplemental?.rows ?? []);
     const matchState = existingKeys.has(slotKey) ? "EXISTING_MAR_ENTRY" : occurrence.scheduleState === "MEDICATION_HISTORY_GAP" ? "MEDICATION_HISTORY_GAP" : occurrence.scheduleState === "MEDICATION_NOT_APPROVED" ? "MEDICATION_NOT_APPROVED" : match.state;
-    const source = { algorithmVersion: HISTORICAL_MAR_ALGORITHM_VERSION, axisCareVisitId: match.visitId, axisCareExternalVisitIds: match.candidates, confidence: match.confidence, scheduleSources: occurrence.scheduleSources, occurrence: { day: occurrence.day, scheduledTime: occurrence.scheduledTime }, medication: { id: occurrence.medicationId, name: occurrence.medication, dose: occurrence.dose, route: occurrence.route } };
-    return { ...occurrence, matchState, confidence: match.confidence, axisCareVisitId: match.visitId, employeeId: matchState === "MATCHED" ? match.employeeId : null, source, stableSourceKey: stableHistoricalHash({ organizationId, clientId, medicationId: occurrence.medicationId, day: occurrence.day, scheduledTime: occurrence.scheduledTime, algorithm: HISTORICAL_MAR_ALGORITHM_VERSION }) };
+    const pavilio = match.attendanceEvidenceKey ? supplemental?.rowProvenance.get(match.attendanceEvidenceKey) ?? null : null;
+    const source = { algorithmVersion: HISTORICAL_MAR_ALGORITHM_VERSION, attendanceSource: match.attendanceSource, attendanceEvidenceKey: match.attendanceEvidenceKey, axisCareVisitId: match.visitId, axisCareExternalVisitIds: match.candidates, pavilioEvidence: pavilio ? { workbookHash: supplemental!.workbookHash, rowHash: match.attendanceEvidenceKey, ...pavilio } : null, supplementalCandidates: match.supplementalCandidates, confidence: match.confidence, scheduleSources: occurrence.scheduleSources, occurrence: { day: occurrence.day, scheduledTime: occurrence.scheduledTime }, medication: { id: occurrence.medicationId, name: occurrence.medication, dose: occurrence.dose, route: occurrence.route } };
+    return { ...occurrence, matchState, confidence: match.confidence, attendanceSource: match.attendanceSource ?? "UNRESOLVED", attendanceEvidenceKey: match.attendanceEvidenceKey, axisCareVisitId: match.visitId, employeeId: matchState === "MATCHED" ? match.employeeId : null, source, stableSourceKey: stableHistoricalHash({ organizationId, clientId, medicationId: occurrence.medicationId, day: occurrence.day, scheduledTime: occurrence.scheduledTime, algorithm: HISTORICAL_MAR_OCCURRENCE_KEY_VERSION }) };
   });
   const counts = proposals.reduce<Record<string, number>>((summary, row) => { summary[row.matchState] = (summary[row.matchState] ?? 0) + 1; return summary; }, {});
-  const sourceQuery = { endpoint: "GET /api/visits", apiVersion: AXISCARE_API_VERSION, startDate: rangeStart, endDate: rangeEnd, pagination: "results.nextPage", limit: 100, clientLink: client.axisCareClientId ? "CONFIRMED" : "MISSING" };
+  const sourceQuery = { endpoint: "GET /api/visits", apiVersion: AXISCARE_API_VERSION, startDate: rangeStart, endDate: rangeEnd, pagination: "results.nextPage", limit: 100, clientLink: client.axisCareClientId ? "CONFIRMED" : "MISSING", supplemental: supplemental ? { provider: "PAVILIO", fileName: supplemental.fileName, workbookHash: supplemental.workbookHash, rows: supplemental.rows.map(row => ({ rowHash: row.rowHash, rowNumber: row.rowNumber, reconciliationState: row.reconciliationState, axisCareVisitIds: row.axisCareVisitIds })).sort((a, b) => a.rowNumber - b.rowNumber), errors: supplemental.rowErrors, errorCounts: supplemental.errorCounts, reconciliationCounts: supplemental.reconciliationCounts } : null };
   const fingerprint = stableHistoricalHash({ organizationId, clientId, rangeStart, rangeEnd, algorithm: HISTORICAL_MAR_ALGORITHM_VERSION, proposals: proposals.map(proposal => ({ stableSourceKey: proposal.stableSourceKey, matchState: proposal.matchState, confidence: proposal.confidence, axisCareVisitId: proposal.axisCareVisitId, employeeId: proposal.employeeId, sourceHash: stableHistoricalHash(proposal.source) })) });
   return { fingerprint, sourceQuery, counts, total: proposals.length, readyForCaregiverReview: counts.MATCHED ?? 0, blocked: proposals.length - (counts.MATCHED ?? 0), proposals };
 }
@@ -122,17 +140,98 @@ export async function previewHistoricalMarImport(user: Pick<User, "id">, organiz
   return buildPreview(organizationId, clientId, rangeStart, rangeEnd, organization.timezone);
 }
 
+type WorkbookInput = { fileName: string; workbookBase64: string; confirmedClientId: string; confirmClient: true };
+type EmployeeMappingInput = { sourceEmployeeId: string; employeeId: string }[];
+
+async function inspectConfirmedWorkbook(user: Pick<User, "id">, organizationId: string, clientId: string, input: WorkbookInput) {
+  const organization = await requireImportAdmin(user, organizationId);
+  if (input.confirmedClientId !== clientId) throw new ValidationError("The selected client confirmation does not match this workspace");
+  const client = await prisma.client.findFirst({ where: { id: clientId, organizationId }, select: { id: true } });
+  if (!client) throw new ResourceNotFoundError("Client not found");
+  return { organization, inspection: await inspectPavilioWorkbookBase64(input.workbookBase64, organization.timezone) };
+}
+
+function errorCounts(inspection: PavilioWorkbookInspection) {
+  return inspection.errors.reduce<Record<string, number>>((counts, row) => { counts[row.code] = (counts[row.code] ?? 0) + 1; return counts; }, {});
+}
+
+export async function inspectPavilioAttendance(user: Pick<User, "id">, organizationId: string, clientId: string, input: WorkbookInput) {
+  const { inspection } = await inspectConfirmedWorkbook(user, organizationId, clientId, input);
+  const employees = await prisma.employee.findMany({ where: { organizationId, employmentStatus: "ACTIVE" }, select: { id: true, employeeNumber: true, firstName: true, lastName: true }, orderBy: [{ lastName: "asc" }, { firstName: "asc" }] });
+  return {
+    workbookHash: inspection.workbookHash,
+    sheets: inspection.sheetNames,
+    columns: inspection.columns,
+    totalRows: inspection.totalRows,
+    usableRows: inspection.usableRows.length,
+    errorCounts: errorCounts(inspection),
+    errors: inspection.errors,
+    dateCoverage: inspection.dateCoverage,
+    sourceEmployees: inspection.sourceEmployees.map(source => ({ ...source, suggestedEmployeeId: employees.find(employee => employee.employeeNumber === source.sourceEmployeeId)?.id ?? null })),
+    employees: employees.map(employee => ({ id: employee.id, employeeNumber: employee.employeeNumber, name: `${employee.firstName} ${employee.lastName}` })),
+  };
+}
+
+async function supplementalPreview(user: Pick<User, "id">, organizationId: string, clientId: string, input: WorkbookInput, mappings: EmployeeMappingInput, ignoreBatchId?: string) {
+  const { organization, inspection } = await inspectConfirmedWorkbook(user, organizationId, clientId, input);
+  if (!inspection.dateCoverage || !inspection.usableRows.length) throw new ValidationError("The workbook has no usable verified attendance rows");
+  const unique = new Map(mappings.map(mapping => [mapping.sourceEmployeeId, mapping.employeeId]));
+  if (unique.size !== mappings.length) throw new ValidationError("Each Pavilio employee identifier may be mapped only once");
+  const required = new Set(inspection.sourceEmployees.map(employee => employee.sourceEmployeeId));
+  if ([...required].some(id => !unique.has(id)) || [...unique].some(([id]) => !required.has(id))) throw new ValidationError("Every workbook employee identifier must have one explicit mapping");
+  const employeeIds = [...new Set(mappings.map(mapping => mapping.employeeId))];
+  const employees = await prisma.employee.findMany({ where: { id: { in: employeeIds }, organizationId, employmentStatus: "ACTIVE" }, select: { id: true } });
+  if (employees.length !== employeeIds.length) throw new ValidationError("Every mapped caregiver must be an active employee in this organization");
+  const rangeStart = inspection.dateCoverage.start, rangeEnd = inspection.dateCoverage.end;
+  validateRange(rangeStart, rangeEnd, organization.timezone);
+  const low = new Date(dayKeyToDate(rangeStart).getTime() - 86_400_000), high = new Date(dayKeyToDate(rangeEnd).getTime() + 2 * 86_400_000);
+  const visits = await prisma.axisCareVisit.findMany({ where: { organizationId, clientId, OR: [{ clockInAt: { gte: low, lt: high } }, { scheduledStartAt: { gte: low, lt: high } }, { startAt: { gte: low, lt: high } }] }, orderBy: { startAt: "asc" } });
+  const visitRows: HistoricalVisit[] = visits.map(row => ({ id: row.id, externalId: row.externalId, employeeId: row.employeeId, axisCareCaregiverId: row.axisCareCaregiverId, clockInAt: row.clockInAt, clockOutAt: row.clockOutAt, scheduledStartAt: row.scheduledStartAt, scheduledEndAt: row.scheduledEndAt, removed: row.removed, modificationReason: row.modificationReason }));
+  const mapped = inspection.usableRows.map(row => ({ rowHash: row.rowHash, rowNumber: row.rowNumber, employeeId: unique.get(row.sourceEmployeeId)!, clockInAt: row.clockInAt, clockOutAt: row.clockOutAt }));
+  const rows = reconcileSupplementalAttendance(visitRows, mapped);
+  const reconciliationCounts = rows.reduce<Record<string, number>>((counts, row) => { counts[row.reconciliationState] = (counts[row.reconciliationState] ?? 0) + 1; return counts; }, {});
+  const rowProvenance = new Map(inspection.usableRows.map(row => [row.rowHash, { rowNumber: row.rowNumber, sourceEmployeeId: row.sourceEmployeeId, localClockIn: row.localClockIn, localClockOut: row.localClockOut, visitStatus: row.visitStatus, evvSource: row.evvSource, manualEvv: row.manualEvv }]));
+  const supplemental: SupplementalPreview = { workbookHash: inspection.workbookHash, fileName: input.fileName, rows, rowProvenance, rowErrors: inspection.errors.map(error => ({ rowNumber: error.rowNumber, code: error.code })), errorCounts: errorCounts(inspection), reconciliationCounts };
+  const preview = await buildPreview(organizationId, clientId, rangeStart, rangeEnd, organization.timezone, supplemental, ignoreBatchId);
+  return { ...preview, rangeStart, rangeEnd, workbook: { hash: inspection.workbookHash, totalRows: inspection.totalRows, usableRows: inspection.usableRows.length, errorCounts: supplemental.errorCounts, reconciliationCounts, dateCoverage: inspection.dateCoverage } };
+}
+
+export async function previewPavilioHistoricalMar(user: Pick<User, "id">, organizationId: string, clientId: string, input: WorkbookInput, mappings: EmployeeMappingInput) {
+  return supplementalPreview(user, organizationId, clientId, input, mappings);
+}
+
+export async function stagePavilioHistoricalMar(user: Pick<User, "id">, organizationId: string, clientId: string, input: WorkbookInput, mappings: EmployeeMappingInput, expectedFingerprint: string, options: { refreshSource?: boolean } = {}) {
+  const organization = await requireImportAdmin(user, organizationId);
+  if (input.confirmedClientId !== clientId) throw new ValidationError("The selected client confirmation does not match this workspace");
+  const prior = await prisma.historicalMarImportBatch.findUnique({ where: { organizationId_sourceFingerprint: { organizationId, sourceFingerprint: expectedFingerprint } }, include: { entries: true } });
+  if (prior?.clientId !== undefined && prior.clientId !== clientId) throw new ConflictError("This import fingerprint belongs to another client", "HISTORICAL_MAR_CLIENT_MISMATCH");
+  const inspection = await inspectPavilioWorkbookBase64(input.workbookBase64, organization.timezone);
+  if (!inspection.dateCoverage) throw new ValidationError("The workbook has no usable verified attendance rows");
+  if (options.refreshSource !== false) await refreshAxisCareRange(organizationId, inspection.dateCoverage.start, inspection.dateCoverage.end);
+  const preview = await supplementalPreview(user, organizationId, clientId, input, mappings, prior?.id);
+  if (preview.fingerprint !== expectedFingerprint) throw new ConflictError("The historical import preview is stale. Review it again before staging.", "HISTORICAL_MAR_PREVIEW_STALE");
+  if (prior) return { id: prior.id, status: prior.status, created: false, summary: prior.summaryJson };
+  const batch = await prisma.$transaction(async tx => {
+    const row = await tx.historicalMarImportBatch.create({ data: { organizationId, clientId, rangeStart: dayKeyToDate(preview.rangeStart), rangeEnd: dayKeyToDate(preview.rangeEnd), source: "AXISCARE_PAVILIO", sourceQueryJson: preview.sourceQuery as Prisma.InputJsonValue, sourceFingerprint: preview.fingerprint, summaryJson: { counts: preview.counts, total: preview.total, readyForCaregiverReview: preview.readyForCaregiverReview, blocked: preview.blocked, workbook: preview.workbook }, requestedByUserId: user.id } });
+    if (preview.proposals.length) await tx.historicalMarEntry.createMany({ data: preview.proposals.map(proposal => ({ organizationId, clientId, batchId: row.id, medicationId: proposal.medicationId, axisCareVisitId: proposal.axisCareVisitId, attendanceSource: proposal.attendanceSource, attendanceEvidenceKey: proposal.attendanceEvidenceKey, employeeId: proposal.employeeId, doseDate: dayKeyToDate(proposal.day), scheduledTime: proposal.scheduledTime, stableSourceKey: proposal.stableSourceKey, matchState: proposal.matchState as DbHistoricalMarMatchState, confidence: proposal.confidence, sourceSnapshotJson: proposal.source as Prisma.InputJsonValue })), skipDuplicates: true });
+    await tx.auditEvent.create({ data: { organizationId, actorUserId: user.id, eventType: "client.historical_mar_pavilio_staged", entityType: "HistoricalMarImportBatch", entityId: row.id, metadataJson: { clientId, rangeStart: preview.rangeStart, rangeEnd: preview.rangeEnd, counts: preview.counts, workbookHash: preview.workbook.hash, usableAttendanceRows: preview.workbook.usableRows, reconciliationCounts: preview.workbook.reconciliationCounts, algorithmVersion: HISTORICAL_MAR_ALGORITHM_VERSION } } });
+    return row;
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  return { id: batch.id, status: batch.status, created: true, summary: batch.summaryJson };
+}
+
 export async function stageHistoricalMarImport(user: Pick<User, "id">, organizationId: string, clientId: string, rangeStart: string, rangeEnd: string, expectedFingerprint: string, options: { refreshSource?: boolean } = {}) {
   const organization = await requireImportAdmin(user, organizationId);
   validateRange(rangeStart, rangeEnd, organization.timezone);
+  const prior = await prisma.historicalMarImportBatch.findUnique({ where: { organizationId_sourceFingerprint: { organizationId, sourceFingerprint: expectedFingerprint } }, include: { entries: true } });
+  if (prior?.clientId !== undefined && prior.clientId !== clientId) throw new ConflictError("This import fingerprint belongs to another client", "HISTORICAL_MAR_CLIENT_MISMATCH");
   if (options.refreshSource !== false) await refreshAxisCareRange(organizationId, rangeStart, rangeEnd);
-  const preview = await buildPreview(organizationId, clientId, rangeStart, rangeEnd, organization.timezone);
+  const preview = await buildPreview(organizationId, clientId, rangeStart, rangeEnd, organization.timezone, undefined, prior?.id);
   if (preview.fingerprint !== expectedFingerprint) throw new ConflictError("The historical import preview is stale. Review it again before staging.", "HISTORICAL_MAR_PREVIEW_STALE");
-  const existing = await prisma.historicalMarImportBatch.findUnique({ where: { organizationId_sourceFingerprint: { organizationId, sourceFingerprint: preview.fingerprint } }, include: { entries: true } });
-  if (existing) return { id: existing.id, status: existing.status, created: false, summary: existing.summaryJson };
+  if (prior) return { id: prior.id, status: prior.status, created: false, summary: prior.summaryJson };
   const batch = await prisma.$transaction(async tx => {
     const row = await tx.historicalMarImportBatch.create({ data: { organizationId, clientId, rangeStart: dayKeyToDate(rangeStart), rangeEnd: dayKeyToDate(rangeEnd), sourceQueryJson: preview.sourceQuery as Prisma.InputJsonValue, sourceFingerprint: preview.fingerprint, summaryJson: { counts: preview.counts, total: preview.total, readyForCaregiverReview: preview.readyForCaregiverReview, blocked: preview.blocked }, requestedByUserId: user.id } });
-    if (preview.proposals.length) await tx.historicalMarEntry.createMany({ data: preview.proposals.map(proposal => ({ organizationId, clientId, batchId: row.id, medicationId: proposal.medicationId, axisCareVisitId: proposal.axisCareVisitId, employeeId: proposal.employeeId, doseDate: dayKeyToDate(proposal.day), scheduledTime: proposal.scheduledTime, stableSourceKey: proposal.stableSourceKey, matchState: proposal.matchState as DbHistoricalMarMatchState, confidence: proposal.confidence, sourceSnapshotJson: proposal.source as Prisma.InputJsonValue })), skipDuplicates: true });
+    if (preview.proposals.length) await tx.historicalMarEntry.createMany({ data: preview.proposals.map(proposal => ({ organizationId, clientId, batchId: row.id, medicationId: proposal.medicationId, axisCareVisitId: proposal.axisCareVisitId, attendanceSource: proposal.attendanceSource, attendanceEvidenceKey: proposal.attendanceEvidenceKey, employeeId: proposal.employeeId, doseDate: dayKeyToDate(proposal.day), scheduledTime: proposal.scheduledTime, stableSourceKey: proposal.stableSourceKey, matchState: proposal.matchState as DbHistoricalMarMatchState, confidence: proposal.confidence, sourceSnapshotJson: proposal.source as Prisma.InputJsonValue })), skipDuplicates: true });
     await tx.auditEvent.create({ data: { organizationId, actorUserId: user.id, eventType: "client.historical_mar_staged", entityType: "HistoricalMarImportBatch", entityId: row.id, metadataJson: { clientId, rangeStart, rangeEnd, counts: preview.counts, algorithmVersion: HISTORICAL_MAR_ALGORITHM_VERSION } } });
     return row;
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
@@ -180,7 +279,7 @@ export async function attestHistoricalMarEntries(user: Pick<User, "id">, organiz
     if (entry.employeeId !== employee.id || entry.reviewedByUserId !== user.id) throw new AuthorizationError("Caregivers may attest only their own reviewed entries");
     if (entry.matchState !== "MATCHED" || entry.reviewState !== "READY_TO_ATTEST" || !entry.paperStatus) throw new ValidationError("Every selected entry must be reviewed and ready to attest");
   }
-  const snapshot = entries.map(entry => ({ id: entry.id, version: entry.version, medicationId: entry.medicationId, doseDate: dateToDayKey(entry.doseDate), scheduledTime: entry.scheduledTime, status: entry.paperStatus, timeGiven: entry.paperTimeGiven, note: entry.paperNote, axisCareVisitId: entry.axisCareVisitId, confidence: entry.confidence, correctionReason: entry.correctionReason, priorAttestationId: entry.attestationId }));
+  const snapshot = entries.map(entry => ({ id: entry.id, version: entry.version, medicationId: entry.medicationId, doseDate: dateToDayKey(entry.doseDate), scheduledTime: entry.scheduledTime, status: entry.paperStatus, timeGiven: entry.paperTimeGiven, note: entry.paperNote, attendanceSource: entry.attendanceSource, attendanceEvidenceKey: entry.attendanceEvidenceKey, axisCareVisitId: entry.axisCareVisitId, confidence: entry.confidence, correctionReason: entry.correctionReason, priorAttestationId: entry.attestationId }));
   const snapshotHash = stableHistoricalHash({ organizationId, employeeId: employee.id, statementVersion: HISTORICAL_MAR_ATTESTATION_VERSION, entries: snapshot });
   const attestation = await prisma.$transaction(async tx => {
     const current = await tx.historicalMarEntry.findMany({ where: { id: { in: uniqueIds } }, orderBy: { id: "asc" } });
@@ -217,13 +316,16 @@ export async function getHistoricalMarWorkspace(userId: string, organizationId: 
   const employee = await prisma.employee.findFirst({ where: { organizationId, userId, employmentStatus: "ACTIVE" }, select: { id: true } });
   const entries = canAdmin || employee ? await prisma.historicalMarEntry.findMany({ where: { organizationId, clientId, ...(canAdmin ? {} : { employeeId: employee!.id }) }, include: { medication: { select: { medication: true, dose: true, route: true } }, employee: { select: { id: true, firstName: true, lastName: true } }, axisCareVisit: { select: { externalId: true, clockInAt: true, clockOutAt: true } }, attestation: { select: { signedAt: true, snapshotHash: true } } }, orderBy: [{ doseDate: "asc" }, { scheduledTime: "asc" }] }) : [];
   const batches = canAdmin ? await prisma.historicalMarImportBatch.findMany({ where: { organizationId, clientId }, select: { id: true, rangeStart: true, rangeEnd: true, status: true, summaryJson: true, createdAt: true }, orderBy: { createdAt: "desc" }, take: 20 }) : [];
-  return { enabled: true, canImport: canAdmin, statement: HISTORICAL_MAR_ATTESTATION_STATEMENT, batches: batches.map(batch => ({ ...batch, rangeStart: dateToDayKey(batch.rangeStart), rangeEnd: dateToDayKey(batch.rangeEnd), createdAt: batch.createdAt.toISOString() })), entries: entries.map(entry => ({ id: entry.id, batchId: entry.batchId, medication: entry.medication, employee: entry.employee ? { id: entry.employee.id, name: `${entry.employee.firstName} ${entry.employee.lastName}` } : null, mine: Boolean(employee && entry.employeeId === employee.id), doseDate: dateToDayKey(entry.doseDate), scheduledTime: entry.scheduledTime, matchState: entry.matchState, confidence: entry.confidence, reviewState: entry.reviewState, paperStatus: entry.paperStatus, paperTimeGiven: entry.paperTimeGiven, paperNote: entry.paperNote, discrepancyCode: entry.discrepancyCode, discrepancyNote: entry.discrepancyNote, correctionReason: entry.correctionReason, version: entry.version, visit: entry.axisCareVisit ? { externalId: entry.axisCareVisit.externalId, clockInAt: entry.axisCareVisit.clockInAt?.toISOString() ?? null, clockOutAt: entry.axisCareVisit.clockOutAt?.toISOString() ?? null } : null, attestation: entry.attestation ? { signedAt: entry.attestation.signedAt.toISOString(), snapshotHash: entry.attestation.snapshotHash } : null })) };
+  return { enabled: true, canImport: canAdmin, statement: HISTORICAL_MAR_ATTESTATION_STATEMENT, batches: batches.map(batch => ({ ...batch, rangeStart: dateToDayKey(batch.rangeStart), rangeEnd: dateToDayKey(batch.rangeEnd), createdAt: batch.createdAt.toISOString() })), entries: entries.map(entry => ({ id: entry.id, batchId: entry.batchId, medication: entry.medication, employee: entry.employee ? { id: entry.employee.id, name: `${entry.employee.firstName} ${entry.employee.lastName}` } : null, mine: Boolean(employee && entry.employeeId === employee.id), doseDate: dateToDayKey(entry.doseDate), scheduledTime: entry.scheduledTime, matchState: entry.matchState, confidence: entry.confidence, attendanceSource: entry.attendanceSource, attendanceEvidenceKey: entry.attendanceEvidenceKey, reviewState: entry.reviewState, paperStatus: entry.paperStatus, paperTimeGiven: entry.paperTimeGiven, paperNote: entry.paperNote, discrepancyCode: entry.discrepancyCode, discrepancyNote: entry.discrepancyNote, correctionReason: entry.correctionReason, version: entry.version, visit: entry.axisCareVisit ? { externalId: entry.axisCareVisit.externalId, clockInAt: entry.axisCareVisit.clockInAt?.toISOString() ?? null, clockOutAt: entry.axisCareVisit.clockOutAt?.toISOString() ?? null } : null, attestation: entry.attestation ? { signedAt: entry.attestation.signedAt.toISOString(), snapshotHash: entry.attestation.snapshotHash } : null })) };
 }
 
 export async function applyHistoricalMarAction(user: Pick<User, "id">, organizationId: string, clientId: string, raw: unknown) {
   const input = historicalMarAction.parse(raw);
   if (input.action === "PREVIEW_HISTORICAL_MAR") return previewHistoricalMarImport(user, organizationId, clientId, input.rangeStart, input.rangeEnd);
   if (input.action === "STAGE_HISTORICAL_MAR") return stageHistoricalMarImport(user, organizationId, clientId, input.rangeStart, input.rangeEnd, input.expectedFingerprint);
+  if (input.action === "INSPECT_PAVILIO_ATTENDANCE") return inspectPavilioAttendance(user, organizationId, clientId, input);
+  if (input.action === "PREVIEW_PAVILIO_HISTORICAL_MAR") return previewPavilioHistoricalMar(user, organizationId, clientId, input, input.employeeMappings);
+  if (input.action === "STAGE_PAVILIO_HISTORICAL_MAR") return stagePavilioHistoricalMar(user, organizationId, clientId, input, input.employeeMappings, input.expectedFingerprint);
   if (input.action === "REVIEW_HISTORICAL_MAR_ENTRY") return reviewHistoricalMarEntry(user, organizationId, clientId, input);
   return attestHistoricalMarEntries(user, organizationId, clientId, input.batchId, input.entryIds);
 }
