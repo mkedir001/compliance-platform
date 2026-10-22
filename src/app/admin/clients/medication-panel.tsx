@@ -9,7 +9,7 @@ type Week = { weekStart: string; weekEnd: string; firstDay: string; lastDay: str
 type Staff = { userId: string; typedName: string; initials: string };
 type MarData = {
   month: string; today: string;
-  me: { userId: string; hasSignature: boolean; canRecord: boolean; canSignWeek: boolean; isManager: boolean; canEditMedications: boolean; administrationBlockers: string[] };
+  me: { userId: string; hasSignature: boolean; canRecord: boolean; canSignWeek: boolean; isManager: boolean; canEditMedications: boolean; canProposeMedications: boolean; administrationBlockers: string[] };
   consent: { version: string; text: string };
   medications: Medication[]; doses: Dose[]; weeks: Week[]; staff: Staff[];
   admin: null | { summary: { given: number; refused: number; held: number; notGiven: number; notDocumented: number }; entries: { [id: string]: { enteredAt: string; signedAt: string; appliedBy: string | null; attestedInPerson: boolean } }; history: { id: string; entityType: string; action: string; changedAt: string; changedBy: string; label: string }[] };
@@ -81,7 +81,7 @@ export function MedicationPanel({ organizationId, clientId, allergies, headers }
     {(me.canRecord || me.canSignWeek) && !me.hasSignature ? <SignatureSetup consent={data.consent.text} busy={busy} onSave={name => act({ action: "SETUP_SIGNATURE", typedName: name, consent: true })} /> : null}
     {!me.canRecord && me.administrationBlockers.length ? <p className="med-note med-noprint">Administration documentation is unavailable until the assigned employee&apos;s current medication qualification, person-specific instruction, authorization, and active client assignment are all satisfied.</p> : null}
 
-    {view === "MEDICATIONS" ? <MedicationList data={data} editing={editing} setEditing={setEditing} busy={busy} onSave={async value => { if (await act({ action: "SAVE_MEDICATION", ...value })) setEditing(null); }} /> : <>
+    {view === "MEDICATIONS" ? <MedicationList data={data} editing={editing} setEditing={setEditing} busy={busy} onSave={async value => { if (await act({ action: "SAVE_MEDICATION", ...value })) setEditing(null); }} onApprove={id => void act({ action: "APPROVE_MEDICATION", id })} /> : <>
       <h4 style={{ margin: 0 }}>{monthLabel(month)}</h4>
       {rows.length ? <div className="med-scroll"><table className="med-grid" aria-label={`MAR for ${monthLabel(month)}`}>
         <thead><tr><th className="med-name">Medication · dose · route</th><th className="med-time">Time</th>{days.map(day => <th key={day}>{Number(day.slice(8))}</th>)}</tr></thead>
@@ -159,14 +159,14 @@ function DosePanel({ target, data, busy, onClose, onSave }: { target: Target; da
 }
 
 type MedForm = { id?: string; medication: string; dose: string; route: string; times: string; reason: string; prescriber: string; startDate: string; stopDate: string };
-function MedicationList({ data, editing, setEditing, busy, onSave }: { data: MarData; editing: Medication | "new" | null; setEditing: (value: Medication | "new" | null) => void; busy: boolean; onSave: (value: { [key: string]: unknown }) => void }) {
+function MedicationList({ data, editing, setEditing, busy, onSave, onApprove }: { data: MarData; editing: Medication | "new" | null; setEditing: (value: Medication | "new" | null) => void; busy: boolean; onSave: (value: { [key: string]: unknown }) => void; onApprove: (id: string) => void }) {
   const initial = (m: Medication | "new" | null): MedForm => (m && m !== "new" ? { id: m.id, medication: m.medication, dose: m.dose ?? "", route: m.route ?? "", times: m.times ?? "", reason: m.reason ?? "", prescriber: m.prescriber ?? "", startDate: m.startDate ?? "", stopDate: m.stopDate ?? "" } : { medication: "", dose: "", route: "", times: "", reason: "", prescriber: "", startDate: "", stopDate: "" });
   const [form, setForm] = useState<MedForm>(initial(editing));
   useEffect(() => setForm(initial(editing)), [editing]);
   const set = (key: keyof MedForm) => (e: { target: { value: string } }) => setForm(prev => ({ ...prev, [key]: e.target.value }));
   return <div style={{ display: "grid", gap: 12 }}>
-    {data.me.canEditMedications ? <div className="med-noprint"><button type="button" onClick={() => setEditing("new")}>+ Add medication</button></div> : null}
-    {!data.me.canEditMedications ? <p className="med-note med-noprint">Medications can be added, changed or discontinued only by a clinical reviewer: a user with medication approval permission and a verified, current RN, CNS, CNP, PA or physician credential.</p> : null}
+    {data.me.canProposeMedications ? <div className="med-noprint"><button type="button" onClick={() => setEditing("new")}>+ Add medication</button></div> : <p className="med-note med-noprint">Medications can be added by an organization manager or a clinical reviewer.</p>}
+    {data.me.canProposeMedications && !data.me.canEditMedications ? <p className="med-note med-noprint">Medications you add stay <b>pending approval</b> and cannot be used on the MAR until a clinical reviewer (a verified, current RN, CNS, CNP, PA or physician) approves them. Changing an approved medication sends it back for approval.</p> : null}
     {editing ? <form className="med-form med-noprint" onSubmit={e => { e.preventDefault(); onSave({ id: form.id, medication: form.medication, dose: form.dose || null, route: form.route || null, times: form.times || null, reason: form.reason || null, prescriber: form.prescriber || null, startDate: form.startDate || null, stopDate: form.stopDate || null }); }}>
       <label>Medication<input required value={form.medication} onChange={set("medication")} /></label>
       <label>Dose<input value={form.dose} onChange={set("dose")} placeholder="100 mg" /></label>
@@ -178,7 +178,7 @@ function MedicationList({ data, editing, setEditing, busy, onSave }: { data: Mar
       <label>Stop date<input type="date" value={form.stopDate} onChange={set("stopDate")} /></label>
       <div style={{ display: "flex", gap: 8, alignItems: "end" }}><button disabled={busy}>Save medication</button><button type="button" className="secondary" onClick={() => setEditing(null)}>Cancel</button></div>
     </form> : null}
-    {data.medications.length ? <table className="med-list"><thead><tr><th>Medication</th><th>Dose · route</th><th>Times</th><th>Reason</th><th>Prescriber</th><th>Ordered</th><th>MAR status</th><th /></tr></thead><tbody>{data.medications.map(m => <tr key={m.id}><td><strong>{m.medication}</strong></td><td>{[m.dose, m.route].filter(Boolean).join(" · ") || "—"}</td><td>{m.times ?? "—"}</td><td>{m.reason ?? "—"}</td><td>{m.prescriber ?? "—"}</td><td>{m.startDate ? shortDay(m.startDate) : "—"}{m.stopDate ? ` → ${shortDay(m.stopDate)}` : ""}</td><td>{m.marApproved ? "Approved" : "Needs medication approval"}</td><td>{data.me.canEditMedications ? <button type="button" className="secondary med-noprint" onClick={() => setEditing(m)}>Edit / approve</button> : null}</td></tr>)}</tbody></table> : <p className="empty-state">No medications recorded.</p>}
+    {data.medications.length ? <table className="med-list"><thead><tr><th>Medication</th><th>Dose · route</th><th>Times</th><th>Reason</th><th>Prescriber</th><th>Ordered</th><th>MAR status</th><th /></tr></thead><tbody>{data.medications.map(m => <tr key={m.id}><td><strong>{m.medication}</strong></td><td>{[m.dose, m.route].filter(Boolean).join(" · ") || "—"}</td><td>{m.times ?? "—"}</td><td>{m.reason ?? "—"}</td><td>{m.prescriber ?? "—"}</td><td>{m.startDate ? shortDay(m.startDate) : "—"}{m.stopDate ? ` → ${shortDay(m.stopDate)}` : ""}</td><td>{m.marApproved ? "Approved" : <span className="med-pending">Pending clinical approval</span>}</td><td className="med-noprint" style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>{data.me.canProposeMedications ? <button type="button" className="secondary" onClick={() => setEditing(m)}>Edit</button> : null}{data.me.canEditMedications && !m.marApproved ? <button type="button" disabled={busy} onClick={() => onApprove(m.id)}>Approve for MAR</button> : null}</td></tr>)}</tbody></table> : <p className="empty-state">No medications recorded.</p>}
     <p className="med-note">Set a start date for each medication so the MAR knows which days it applies to. Times such as &ldquo;8 AM, 8 PM&rdquo; become the rows of the MAR.</p>
   </div>;
 }

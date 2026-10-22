@@ -47,3 +47,4 @@ table.med-grid{border-collapse:collapse;width:100%;font-size:.78rem}
   .med-noprint,.med-bar button,.med-sub,.med-dialog{display:none!important}
   .med-cell{pointer-events:none}
 }
+.med-pending{display:inline-block;padding:2px 10px;border-radius:999px;background:#fdf0cf;color:#8a5a00;font-size:.72rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase}

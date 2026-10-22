@@ -4,7 +4,7 @@ import { addDays, todayKey } from "@/domain/clients/mar";
 const state = vi.hoisted(() => ({
   permissions: new Set<string>(), client: true, employee: true, assignment: true, eligible: true, medApproved: true, clinicalCredential: false,
   signatures: [] as { userId: string; typedName: string; initials: string }[], dose: null as null | Record<string, unknown>,
-  history: [] as Record<string, unknown>[], audits: [] as Record<string, unknown>[], writes: [] as Record<string, unknown>[],
+  created: [] as Record<string, unknown>[], history: [] as Record<string, unknown>[], audits: [] as Record<string, unknown>[], writes: [] as Record<string, unknown>[],
 }));
 
 vi.mock("@/domain/permissions/authorization", () => ({
@@ -21,6 +21,10 @@ vi.mock("@/lib/prisma", () => {
   };
   const tx = {
     clientMedicationDose: doseApi,
+    clientMedication: {
+      create: async ({ data }: { data: Record<string, unknown> }) => { state.created.push(data); return { id: "ckmedication0000000000002", medication: String(data.medication), ...data }; },
+      update: async ({ data }: { data: Record<string, unknown> }) => ({ id: "ckmedication0000000000001", medication: "Lamotrigine", ...data }),
+    },
     clientMedicationHistory: { create: async ({ data }: { data: Record<string, unknown> }) => { state.history.push(data); return data; } },
     auditEvent: { create: async ({ data }: { data: Record<string, unknown> }) => { state.audits.push(data); return data; } },
   };
@@ -48,7 +52,7 @@ const call = (body: unknown) => applyMedicationAction({ id: userId }, "org1", "c
 beforeEach(() => {
   vi.useFakeTimers(); vi.setSystemTime(new Date("2026-10-21T18:00:00.000Z"));
   state.permissions = new Set(["medication.activity.record"]); state.client = true; state.employee = true; state.assignment = true; state.eligible = true; state.medApproved = true; state.clinicalCredential = false;
-  state.signatures = [{ userId, typedName: "Amina Bashir", initials: "AB" }]; state.dose = null; state.history = []; state.audits = []; state.writes = [];
+  state.signatures = [{ userId, typedName: "Amina Bashir", initials: "AB" }]; state.dose = null; state.history = []; state.audits = []; state.writes = []; state.created = [];
 });
 afterAll(() => vi.useRealTimers());
 
@@ -107,5 +111,29 @@ describe("MAR service safety rules", () => {
   it("fails closed for a client outside the organization", async () => {
     state.client = false;
     await expect(call(dose())).rejects.toThrow(/Client not found/);
+  });
+});
+
+describe("Pending medication approval", () => {
+  const manager = () => { state.permissions = new Set(["organization.manage", "medication.approve"]); state.clinicalCredential = false; };
+  it("lets an organization manager add a medication that stays unapproved", async () => {
+    manager();
+    await expect(call({ action: "SAVE_MEDICATION", medication: "Synthetic medication", dose: "1 unit", times: "8 AM" })).resolves.toMatchObject({ ok: true });
+    expect(state.created.at(-1)).toMatchObject({ marApprovedAt: null, marApprovedByUserId: null });
+  });
+  it("approves a medication on save when the user is a clinical reviewer", async () => {
+    manager(); state.clinicalCredential = true;
+    await call({ action: "SAVE_MEDICATION", medication: "Synthetic medication", times: "8 AM" });
+    expect(state.created.at(-1)).toMatchObject({ marApprovedByUserId: userId });
+  });
+  it("refuses medication entry from someone who is neither a manager nor a reviewer", async () => {
+    state.permissions = new Set(["medication.assigned.read"]);
+    await expect(call({ action: "SAVE_MEDICATION", medication: "Synthetic medication" })).rejects.toThrow();
+  });
+  it("only a clinical reviewer can approve", async () => {
+    manager();
+    await expect(call({ action: "APPROVE_MEDICATION", id: med })).rejects.toThrow(/clinical reviewer/);
+    state.clinicalCredential = true;
+    await expect(call({ action: "APPROVE_MEDICATION", id: med })).resolves.toMatchObject({ ok: true });
   });
 });
