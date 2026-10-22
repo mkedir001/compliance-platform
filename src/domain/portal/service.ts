@@ -65,7 +65,7 @@ export async function inviteEmployeeToPortal(user: Pick<User, "id">, organizatio
     const accepted = await provider.send({
       to: invitedEmail,
       subject: `You're invited to ${employee.organization.displayName}`,
-      text: `${employee.organization.displayName} invited you to access your Compliance Platform employee account.\n\nAccept your invitation: ${claimUrl}\n\nThis invitation expires seven days after it was created. If you did not expect this invitation, contact your organization administrator.`,
+      text: `${employee.organization.displayName} invited you to access your Waldah employee account.\n\nAccept your invitation: ${claimUrl}\n\nThis invitation expires seven days after it was created. If you did not expect this invitation, contact your organization administrator.`,
       actionHref: claimUrl,
       deliveryContext: { organizationId, logicalType: "EmployeePortalInvitation", logicalId: invitation.id, purpose: "WORKFORCE_TRANSACTIONAL" },
     });

@@ -5,6 +5,7 @@ import { createClaimContinuation, readClaimContinuation } from "@/domain/auth/cl
 import { resolveAuthenticatedLanding } from "@/domain/auth/landing";
 import { claimEmployeePortalInvitationByIdentity, inspectEmployeePortalInvitation, inviteEmployeeToPortal } from "@/domain/portal/service";
 import { GET as resumeClaim } from "@/app/learn/claim/resume/route";
+import { POST as invitationStatus } from "@/app/api/public/portal/claim/status/route";
 
 const db = new PrismaClient();
 const tokenDigest = (token: string) => createHash("sha256").update(token).digest("hex");
@@ -24,6 +25,8 @@ describe.sequential("employee invitation claim onboarding", () => {
   it("keeps a valid first-time invitation public-safe until a verified identity claims it", async () => {
     const created = await invitation("first-time");
     expect(await inspectEmployeePortalInvitation(created.claimToken)).toEqual({ state: "VALID" });
+    const publicResponse = await invitationStatus(new Request("http://local/api/public/portal/claim/status", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token: created.claimToken }) }));
+    expect(publicResponse.status).toBe(200); expect(await publicResponse.json()).toEqual({ state: "VALID" });
     const before = await db.user.findUniqueOrThrow({ where: { email: created.email } });
     expect(before).toMatchObject({ status: "INVITED", authProviderUserId: null });
     expect((await db.employee.findUniqueOrThrow({ where: { id: created.employee.id } })).userId).toBeNull();
@@ -61,6 +64,13 @@ describe.sequential("employee invitation claim onboarding", () => {
     expect(await inspectEmployeePortalInvitation(revoked.claimToken)).toEqual({ state: "REVOKED" });
     const superseded = await invitation("superseded"), replacement = await inviteEmployeeToPortal({ id: ownerId }, organizationId, superseded.employee.id);
     expect(await inspectEmployeePortalInvitation(superseded.claimToken)).toEqual({ state: "SUPERSEDED" }); expect(await inspectEmployeePortalInvitation(replacement.claimToken)).toEqual({ state: "VALID" });
+  });
+
+  it("returns a bounded public-safe state for invalid and missing invitation tokens", async () => {
+    const invalid = await invitationStatus(new Request("http://local/api/public/portal/claim/status", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token: "x".repeat(43) }) }));
+    expect(invalid.status).toBe(404); expect(await invalid.json()).toEqual({ state: "INVALID" });
+    const missing = await invitationStatus(new Request("http://local/api/public/portal/claim/status", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" }));
+    expect(missing.status).toBe(404); expect(await missing.json()).toEqual({ state: "INVALID" });
   });
 
   it("encrypts short-lived claim continuation state and safely resumes after sign-out", async () => {
