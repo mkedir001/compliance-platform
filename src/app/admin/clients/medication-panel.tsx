@@ -166,6 +166,7 @@ function MedicationList({ data, editing, setEditing, busy, onSave }: { data: Mar
   const set = (key: keyof MedForm) => (e: { target: { value: string } }) => setForm(prev => ({ ...prev, [key]: e.target.value }));
   return <div style={{ display: "grid", gap: 12 }}>
     {data.me.canEditMedications ? <div className="med-noprint"><button type="button" onClick={() => setEditing("new")}>+ Add medication</button></div> : null}
+    {!data.me.canEditMedications ? <p className="med-note med-noprint">Medications can be added, changed or discontinued only by a clinical reviewer: a user with medication approval permission and a verified, current RN, CNS, CNP, PA or physician credential.</p> : null}
     {editing ? <form className="med-form med-noprint" onSubmit={e => { e.preventDefault(); onSave({ id: form.id, medication: form.medication, dose: form.dose || null, route: form.route || null, times: form.times || null, reason: form.reason || null, prescriber: form.prescriber || null, startDate: form.startDate || null, stopDate: form.stopDate || null }); }}>
       <label>Medication<input required value={form.medication} onChange={set("medication")} /></label>
       <label>Dose<input value={form.dose} onChange={set("dose")} placeholder="100 mg" /></label>
