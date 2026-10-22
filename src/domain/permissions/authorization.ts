@@ -1,6 +1,7 @@
 import type { Prisma, User } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { AuthorizationError, ResourceNotFoundError } from "@/domain/auth/errors";
+import { isMasterAccount, masterAccountEmails } from "@/domain/permissions/master-account";
 
 export type MembershipWithRoles = Prisma.OrganizationMembershipGetPayload<{ include: { roles: { include: { roleDefinition: true } } } }>;
 
@@ -21,6 +22,10 @@ export async function requireOrganizationAccess(user: Pick<User, "id">, organiza
 }
 
 export async function resolvePermissionCodes(membershipId: string): Promise<Set<string>> {
+  if (masterAccountEmails().length) {
+    const membership = await prisma.organizationMembership.findUnique({ where: { id: membershipId }, select: { userId: true, status: true } });
+    if (membership?.status === "ACTIVE" && await isMasterAccount(membership.userId)) return new Set((await prisma.permission.findMany({ select: { code: true } })).map(row => row.code));
+  }
   const [rows, overrides] = await Promise.all([
     prisma.permission.findMany({ where: { roles: { some: { roleDefinition: { memberships: { some: { membershipId } } } } } }, select: { code: true } }),
     prisma.membershipPermission.findMany({ where: { membershipId }, select: { effect: true, permission: { select: { code: true } } } }),

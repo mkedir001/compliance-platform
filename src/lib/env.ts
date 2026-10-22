@@ -10,6 +10,7 @@ const productionInfrastructureSchema = z.object({
   EVIDENCE_STORAGE_MODE: z.literal("external-reference"),
   EVIDENCE_STORAGE_URL: z.string().url().refine(value => value.startsWith("https://"), "EVIDENCE_STORAGE_URL must use HTTPS"),
   EVIDENCE_STORAGE_TOKEN: z.string().min(20),
+  MASTER_ACCOUNT_EMAILS: z.preprocess(value => value === "" ? undefined : value, z.string().optional()),
   EMAIL_PROVIDER: z.preprocess(value => value === "" ? undefined : value, z.enum(["ses", "http", "paubox", "mailgun"]).optional()),
   EMAIL_API_URL: z.preprocess(value => value === "" ? undefined : value, z.string().url().optional()),
   EMAIL_API_TOKEN: z.preprocess(value => value === "" ? undefined : value, z.string().min(20).optional()),
@@ -31,6 +32,9 @@ const productionInfrastructureSchema = z.object({
   WORKFORCE_EMAIL_REPLY_TO: z.preprocess(value => value === "" ? undefined : value, z.string().email().optional()),
   SIGNING_DELIVERY_MODE: z.preprocess(value => value === "" ? undefined : value, z.enum(["email", "test"]).optional()),
 }).superRefine((value, context) => {
+  for (const email of value.MASTER_ACCOUNT_EMAILS?.split(",").map(entry => entry.trim()).filter(Boolean) ?? []) {
+    if (!z.string().email().safeParse(email).success) context.addIssue({ code: "custom", message: "MASTER_ACCOUNT_EMAILS must contain only comma-separated email addresses", path: ["MASTER_ACCOUNT_EMAILS"] });
+  }
   if (value.SIGNING_DELIVERY_MODE === "test") context.addIssue({ code: "custom", message: "Test signing delivery is disabled in production", path: ["SIGNING_DELIVERY_MODE"] });
   if (value.SIGNING_DELIVERY_MODE === "email" && !value.EMAIL_PROVIDER) context.addIssue({ code: "custom", message: "EMAIL_PROVIDER is required for production signing delivery", path: ["EMAIL_PROVIDER"] });
   if (value.SIGNING_DELIVERY_MODE === "email" && (!value.AWS_REGION || !value.MAILGUN_RELAY_FUNCTION_NAME || !value.MAILGUN_FROM)) context.addIssue({ code: "custom", message: "AWS_REGION, MAILGUN_RELAY_FUNCTION_NAME, and MAILGUN_FROM are required for Mailgun-first signing delivery", path: ["MAILGUN_RELAY_FUNCTION_NAME"] });

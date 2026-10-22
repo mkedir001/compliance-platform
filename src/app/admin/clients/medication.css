@@ -1,7 +1,7 @@
 .med-shell{display:grid;gap:14px}
 .med-bar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between}
 .med-sub{display:flex;gap:8px;flex-wrap:wrap}
-.med-sub button{padding:5px 14px;border:1px solid var(--portal-border);border-radius:999px;background:#fff;font-weight:600;font-size:.85rem;cursor:pointer}
+.med-sub button{padding:5px 14px;border:1px solid var(--portal-border);border-radius:999px;background:#fff;color:var(--portal-green);font-weight:600;font-size:.85rem;cursor:pointer}
 .med-sub button.on{background:var(--portal-green);border-color:var(--portal-green);color:#fff}
 .med-month{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .med-month input[type=month]{min-height:34px;padding:0 8px}
@@ -47,3 +47,4 @@ table.med-grid{border-collapse:collapse;width:100%;font-size:.78rem}
   .med-noprint,.med-bar button,.med-sub,.med-dialog{display:none!important}
   .med-cell{pointer-events:none}
 }
+.med-pending{display:inline-block;padding:2px 10px;border-radius:999px;background:#fdf0cf;color:#8a5a00;font-size:.72rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase}

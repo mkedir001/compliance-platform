@@ -25,6 +25,8 @@ describe.sequential("Phase 23 production hardening", () => {
   it("fails closed on incomplete production configuration without exposing values", () => {
     expect(() => validateProductionEnvironment({ DATABASE_URL: "postgresql://db.invalid/app", APP_BASE_URL: "http://insecure.test" })).toThrow();
     expect(validateProductionEnvironment({ DATABASE_URL: "postgresql://db.invalid/app", ...production })).toEqual(expect.objectContaining({ EVIDENCE_STORAGE_MODE: "external-reference" }));
+    expect(validateProductionEnvironment({ DATABASE_URL: "postgresql://db.invalid/app", ...production, MASTER_ACCOUNT_EMAILS: "owner@example.test, mkedir@radiantcaremn.com" })).toEqual(expect.objectContaining({ MASTER_ACCOUNT_EMAILS: "owner@example.test, mkedir@radiantcaremn.com" }));
+    expect(() => validateProductionEnvironment({ DATABASE_URL: "postgresql://db.invalid/app", ...production, MASTER_ACCOUNT_EMAILS: "not-an-email" })).toThrow(/MASTER_ACCOUNT_EMAILS/);
   });
 
   it("accepts only fresh signed production identity assertions and rejects cross-site mutations", async () => {
