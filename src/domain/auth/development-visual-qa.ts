@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { resolveAuthenticatedLanding } from "./landing";
 
 export const DEVELOPMENT_VISUAL_QA_OWNER_EMAIL = "visual.qa.owner@example.test";
+export const DEVELOPMENT_VISUAL_QA_ORGANIZATION_ID = "visual-qa-radiant-care-org";
 export const DEVELOPMENT_VISUAL_QA_ORGANIZATION_SLUG = "radiant-care-visual-qa";
 export const DEVELOPMENT_VISUAL_QA_ORGANIZATION_NAME = "Radiant Care — Visual QA";
 

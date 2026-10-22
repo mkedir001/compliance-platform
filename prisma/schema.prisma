@@ -686,98 +686,101 @@ model Brand {
 }
 
 model Organization {
-  id                        String                                   @id @default(cuid())
-  brandId                   String?
-  legalName                 String
-  displayName               String
-  slug                      String                                   @unique
-  status                    OrganizationStatus                       @default(ACTIVE)
-  timezone                  String                                   @default("America/Chicago")
-  defaultLanguage           String?
-  phone                     String?
-  email                     String?
-  addressLine1              String?
-  addressLine2              String?
-  city                      String?
-  state                     String?
-  postalCode                String?
-  country                   String?
-  createdAt                 DateTime                                 @default(now())
-  updatedAt                 DateTime                                 @updatedAt
-  brand                     Brand?                                   @relation(fields: [brandId], references: [id], onDelete: SetNull)
-  licenses                  OrganizationLicense[]
-  programs                  Program[]
-  locations                 Location[]
-  memberships               OrganizationMembership[]
-  roles                     RoleDefinition[]
-  employees                 Employee[]
-  serviceEvents             EmployeeServiceEvent[]
-  complianceEvaluationRuns  ComplianceEvaluationRun[]
-  complianceInstances       ComplianceInstance[]
-  trainingCourses           TrainingCourse[]
-  trainingAssignments       TrainingAssignment[]
-  trainingCompletions       TrainingCompletion[]
-  assessmentAttempts        AssessmentAttempt[]
-  trainingAssignmentEvents  TrainingAssignmentEvent[]
-  competencyDefinitions     CompetencyDefinition[]
-  skillChecklists           SkillChecklist[]
-  competencyAssessments     CompetencyAssessment[]
-  professionalCredentials   ProfessionalCredential[]
-  externalTrainingRecords   ExternalTrainingRecord[]
-  equivalencyDecisions      RequirementEquivalencyDecision[]
-  attestations              Attestation[]
-  evidenceCorrections       EvidenceCorrection[]
-  certificates              Certificate[]
-  onboardingTemplates       OnboardingTemplate[]
-  employeeOnboardings       EmployeeOnboarding[]
-  policies                  Policy[]
-  policyAssignments         PolicyAssignment[]
-  workReadinessEvaluations  WorkReadinessEvaluation[]
-  medicationPathways        MedicationQualificationPathway[]
-  clinicalApprovals         ClinicalCurriculumApproval[]
-  medicationQualifications  MedicationQualification[]
-  medicationInstructions    PersonSpecificMedicationInstruction[]
-  medicationAuthorizations  MedicationAuthorizationEvidence[]
-  clinicalEvents            ClinicalGovernanceEvent[]
-  serviceAssignments        ServiceAssignment[]
-  assignmentRules           ServiceAssignmentRequirementRule[]
-  assignmentEvaluations     ServiceAssignmentEligibilityEvaluation[]
-  assignmentEvents          ServiceAssignmentEvent[]
-  complianceIssues          ComplianceIssue[]
-  complianceIssueEvents     ComplianceIssueEvent[]
-  auditPackages             AuditPackage[]
-  auditEvents               AuditEvent[]
-  employeePortalInvitations EmployeePortalInvitation[]
-  organizationInvitations   OrganizationUserInvitation[]
-  workforceReadinessIntakes EmployeeWorkforceReadiness[]
-  notifications             Notification[]
-  notificationDeliveries    NotificationDelivery[]
-  notificationPreferences   NotificationPreference[]
-  emailCommunications       EmailCommunication[]
-  emailProviderEvents       EmailProviderEvent[]
-  clients                   Client[]
-  professionalContacts      ProfessionalContact[]
-  clientDocumentTemplates   ClientDocumentTemplate[]
-  clientDocumentRequests    ClientDocumentRequest[]
-  auditAccessSessions       AuditAccessSession[]
-  clientImportSessions      ClientImportSession[]
-  clientImportDocuments     ClientImportDocument[]
-  clientImportProposals     ClientImportProposal[]
-  referrals                 Referral[]
-  referralIntakeDrafts      ReferralIntakeDraft[]
-  documentQuestionnaires    ClientDocumentQuestionnaire[]
-  testDataCleanupPreviews   TestDataCleanupPreview[]
-  axisCareConnection        AxisCareConnection?
-  medicationStaffSignatures MedicationStaffSignature[]
-  clientMedicationDoses     ClientMedicationDose[]
-  clientMedicationSignoffs  ClientMedicationWeekSignoff[]
-  clientMedicationHistory   ClientMedicationHistory[]
-  axisCareWebhookEvents     AxisCareWebhookEvent[]
-  axisCareRecords           AxisCareRecord[]
-  axisCareVisits            AxisCareVisit[]
-  axisCareClientMatches     AxisCareClientMatch[]
-  axisCareSyncStates        AxisCareSyncState[]
-  axisCareServiceMappings   AxisCareServiceMapping[]
+  id                         String                                   @id @default(cuid())
+  brandId                    String?
+  legalName                  String
+  displayName                String
+  slug                       String                                   @unique
+  status                     OrganizationStatus                       @default(ACTIVE)
+  timezone                   String                                   @default("America/Chicago")
+  defaultLanguage            String?
+  phone                      String?
+  email                      String?
+  addressLine1               String?
+  addressLine2               String?
+  city                       String?
+  state                      String?
+  postalCode                 String?
+  country                    String?
+  createdAt                  DateTime                                 @default(now())
+  updatedAt                  DateTime                                 @updatedAt
+  brand                      Brand?                                   @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  licenses                   OrganizationLicense[]
+  programs                   Program[]
+  locations                  Location[]
+  memberships                OrganizationMembership[]
+  roles                      RoleDefinition[]
+  employees                  Employee[]
+  serviceEvents              EmployeeServiceEvent[]
+  complianceEvaluationRuns   ComplianceEvaluationRun[]
+  complianceInstances        ComplianceInstance[]
+  trainingCourses            TrainingCourse[]
+  trainingAssignments        TrainingAssignment[]
+  trainingCompletions        TrainingCompletion[]
+  assessmentAttempts         AssessmentAttempt[]
+  trainingAssignmentEvents   TrainingAssignmentEvent[]
+  competencyDefinitions      CompetencyDefinition[]
+  skillChecklists            SkillChecklist[]
+  competencyAssessments      CompetencyAssessment[]
+  professionalCredentials    ProfessionalCredential[]
+  externalTrainingRecords    ExternalTrainingRecord[]
+  equivalencyDecisions       RequirementEquivalencyDecision[]
+  attestations               Attestation[]
+  evidenceCorrections        EvidenceCorrection[]
+  certificates               Certificate[]
+  onboardingTemplates        OnboardingTemplate[]
+  employeeOnboardings        EmployeeOnboarding[]
+  policies                   Policy[]
+  policyAssignments          PolicyAssignment[]
+  workReadinessEvaluations   WorkReadinessEvaluation[]
+  medicationPathways         MedicationQualificationPathway[]
+  clinicalApprovals          ClinicalCurriculumApproval[]
+  medicationQualifications   MedicationQualification[]
+  medicationInstructions     PersonSpecificMedicationInstruction[]
+  medicationAuthorizations   MedicationAuthorizationEvidence[]
+  clinicalEvents             ClinicalGovernanceEvent[]
+  serviceAssignments         ServiceAssignment[]
+  assignmentRules            ServiceAssignmentRequirementRule[]
+  assignmentEvaluations      ServiceAssignmentEligibilityEvaluation[]
+  assignmentEvents           ServiceAssignmentEvent[]
+  complianceIssues           ComplianceIssue[]
+  complianceIssueEvents      ComplianceIssueEvent[]
+  auditPackages              AuditPackage[]
+  auditEvents                AuditEvent[]
+  employeePortalInvitations  EmployeePortalInvitation[]
+  organizationInvitations    OrganizationUserInvitation[]
+  workforceReadinessIntakes  EmployeeWorkforceReadiness[]
+  notifications              Notification[]
+  notificationDeliveries     NotificationDelivery[]
+  notificationPreferences    NotificationPreference[]
+  emailCommunications        EmailCommunication[]
+  emailProviderEvents        EmailProviderEvent[]
+  clients                    Client[]
+  professionalContacts       ProfessionalContact[]
+  clientDocumentTemplates    ClientDocumentTemplate[]
+  clientDocumentRequests     ClientDocumentRequest[]
+  auditAccessSessions        AuditAccessSession[]
+  clientImportSessions       ClientImportSession[]
+  clientImportDocuments      ClientImportDocument[]
+  clientImportProposals      ClientImportProposal[]
+  referrals                  Referral[]
+  referralIntakeDrafts       ReferralIntakeDraft[]
+  documentQuestionnaires     ClientDocumentQuestionnaire[]
+  testDataCleanupPreviews    TestDataCleanupPreview[]
+  axisCareConnection         AxisCareConnection?
+  medicationStaffSignatures  MedicationStaffSignature[]
+  clientMedicationDoses      ClientMedicationDose[]
+  clientMedicationSignoffs   ClientMedicationWeekSignoff[]
+  clientMedicationHistory    ClientMedicationHistory[]
+  axisCareWebhookEvents      AxisCareWebhookEvent[]
+  axisCareRecords            AxisCareRecord[]
+  axisCareVisits             AxisCareVisit[]
+  axisCareClientMatches      AxisCareClientMatch[]
+  axisCareSyncStates         AxisCareSyncState[]
+  axisCareServiceMappings    AxisCareServiceMapping[]
+  historicalMarImportBatches HistoricalMarImportBatch[]
+  historicalMarEntries       HistoricalMarEntry[]
+  historicalMarAttestations  HistoricalMarAttestation[]
 }
 
 model OrganizationLicense {
@@ -909,6 +912,9 @@ model User {
   approvedClientMedications       ClientMedication[]                       @relation("ClientMedicationApprovedBy")
   createdDocumentQuestionnaires   ClientDocumentQuestionnaire[]            @relation("DocumentQuestionnaireCreator")
   reviewedDocumentQuestionnaires  ClientDocumentQuestionnaire[]            @relation("DocumentQuestionnaireReviewer")
+  requestedHistoricalMarImports   HistoricalMarImportBatch[]               @relation("HistoricalMarImportRequester")
+  reviewedHistoricalMarEntries    HistoricalMarEntry[]                     @relation("HistoricalMarEntryReviewer")
+  historicalMarAttestations       HistoricalMarAttestation[]               @relation("HistoricalMarAttestationSigner")
 }
 
 model OrganizationMembership {
@@ -1019,61 +1025,63 @@ model OrganizationUserInvitation {
   acceptedBy       User?                        @relation("OrganizationInvitationAccepter", fields: [acceptedByUserId], references: [id], onDelete: SetNull)
 
   @@index([organizationId, status, invitedAt])
-  @@index([organizationId, invitedEmail, status])
+  @@index([organizationId, invitedEmail, status], map: "OrganizationUserInvitation_organizationId_invitedEmail_status_i")
 }
 
 model Employee {
-  id                       String                                   @id @default(cuid())
-  organizationId           String
-  userId                   String?
-  employeeNumber           String?
-  firstName                String
-  middleName               String?
-  lastName                 String
-  preferredName            String?
-  email                    String?
-  phone                    String?
-  hireDate                 DateTime?                                @db.Date
-  terminationDate          DateTime?                                @db.Date
-  employmentStatus         EmploymentStatus                         @default(PENDING)
-  jobTitle                 String?
-  employmentType           EmploymentType?
-  createdAt                DateTime                                 @default(now())
-  updatedAt                DateTime                                 @updatedAt
-  testDataMarkedAt         DateTime?
-  testDataMarkedByUserId   String?
-  testDataReason           String?
-  axisCareCaregiverId      String?
-  organization             Organization                             @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  user                     User?                                    @relation(fields: [userId], references: [id], onDelete: SetNull)
-  roles                    EmployeeRole[]
-  duties                   EmployeeDuty[]
-  serviceEvents            EmployeeServiceEvent[]
-  complianceInstances      ComplianceInstance[]
-  trainingAssignments      TrainingAssignment[]
-  trainingCompletions      TrainingCompletion[]
-  assessmentAttempts       AssessmentAttempt[]
-  trainingAcknowledgments  TrainingAcknowledgment[]
-  competencyAssessments    CompetencyAssessment[]                   @relation("CompetencySubject")
-  assessedCompetencies     CompetencyAssessment[]                   @relation("CompetencyAssessorEmployee")
-  professionalCredentials  ProfessionalCredential[]
-  externalTrainingRecords  ExternalTrainingRecord[]
-  attestations             Attestation[]
-  certificates             Certificate[]
-  onboardings              EmployeeOnboarding[]
-  policyAssignments        PolicyAssignment[]
-  workReadinessEvaluations WorkReadinessEvaluation[]
-  medicationQualifications MedicationQualification[]
-  medicationInstructions   PersonSpecificMedicationInstruction[]
-  medicationAuthorizations MedicationAuthorizationEvidence[]
-  serviceAssignments       ServiceAssignment[]
-  assignmentEvaluations    ServiceAssignmentEligibilityEvaluation[]
-  complianceIssues         ComplianceIssue[]
-  portalInvitations        EmployeePortalInvitation[]
-  organizationInvitations  OrganizationUserInvitation[]
-  workforceReadiness       EmployeeWorkforceReadiness?
-  auditAccessScopes        AuditAccessEmployee[]
-  axisCareVisits           AxisCareVisit[]
+  id                        String                                   @id @default(cuid())
+  organizationId            String
+  userId                    String?
+  employeeNumber            String?
+  firstName                 String
+  middleName                String?
+  lastName                  String
+  preferredName             String?
+  email                     String?
+  phone                     String?
+  hireDate                  DateTime?                                @db.Date
+  terminationDate           DateTime?                                @db.Date
+  employmentStatus          EmploymentStatus                         @default(PENDING)
+  jobTitle                  String?
+  employmentType            EmploymentType?
+  createdAt                 DateTime                                 @default(now())
+  updatedAt                 DateTime                                 @updatedAt
+  testDataMarkedAt          DateTime?
+  testDataMarkedByUserId    String?
+  testDataReason            String?
+  axisCareCaregiverId       String?
+  organization              Organization                             @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  user                      User?                                    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  roles                     EmployeeRole[]
+  duties                    EmployeeDuty[]
+  serviceEvents             EmployeeServiceEvent[]
+  complianceInstances       ComplianceInstance[]
+  trainingAssignments       TrainingAssignment[]
+  trainingCompletions       TrainingCompletion[]
+  assessmentAttempts        AssessmentAttempt[]
+  trainingAcknowledgments   TrainingAcknowledgment[]
+  competencyAssessments     CompetencyAssessment[]                   @relation("CompetencySubject")
+  assessedCompetencies      CompetencyAssessment[]                   @relation("CompetencyAssessorEmployee")
+  professionalCredentials   ProfessionalCredential[]
+  externalTrainingRecords   ExternalTrainingRecord[]
+  attestations              Attestation[]
+  certificates              Certificate[]
+  onboardings               EmployeeOnboarding[]
+  policyAssignments         PolicyAssignment[]
+  workReadinessEvaluations  WorkReadinessEvaluation[]
+  medicationQualifications  MedicationQualification[]
+  medicationInstructions    PersonSpecificMedicationInstruction[]
+  medicationAuthorizations  MedicationAuthorizationEvidence[]
+  serviceAssignments        ServiceAssignment[]
+  assignmentEvaluations     ServiceAssignmentEligibilityEvaluation[]
+  complianceIssues          ComplianceIssue[]
+  portalInvitations         EmployeePortalInvitation[]
+  organizationInvitations   OrganizationUserInvitation[]
+  workforceReadiness        EmployeeWorkforceReadiness?
+  auditAccessScopes         AuditAccessEmployee[]
+  axisCareVisits            AxisCareVisit[]
+  historicalMarEntries      HistoricalMarEntry[]
+  historicalMarAttestations HistoricalMarAttestation[]
 
   @@unique([organizationId, employeeNumber])
   @@unique([organizationId, userId])
@@ -2709,7 +2717,7 @@ model AuditAccessSession {
   employees          AuditAccessEmployee[]
 
   @@index([organizationId, status, startsAt, expiresAt])
-  @@index([inspectorUserId, status, startsAt, expiresAt])
+  @@index([inspectorUserId, status, startsAt, expiresAt], map: "AuditAccessSession_inspectorUserId_status_startsAt_expiresAt_id")
 }
 
 model AuditAccessClient {
@@ -2763,7 +2771,7 @@ model EmployeePortalInvitation {
   invitedBy           User                                   @relation("EmployeePortalInvitationSender", fields: [invitedByUserId], references: [id], onDelete: Restrict)
   acceptedBy          User?                                  @relation("EmployeePortalInvitationAccepter", fields: [acceptedByUserId], references: [id], onDelete: SetNull)
 
-  @@index([organizationId, employeeId, invitedAt])
+  @@index([organizationId, employeeId, invitedAt], map: "EmployeePortalInvitation_organizationId_employeeId_invitedAt_id")
   @@index([organizationId, invitedEmail, status])
 }
 
@@ -2793,7 +2801,7 @@ model Notification {
   recipient        User                   @relation("NotificationRecipient", fields: [recipientUserId], references: [id], onDelete: Restrict)
   deliveries       NotificationDelivery[]
 
-  @@index([organizationId, recipientUserId, status, readAt, generatedAt])
+  @@index([organizationId, recipientUserId, status, readAt, generatedAt], map: "Notification_organizationId_recipientUserId_status_readAt_gener")
   @@index([organizationId, sourceType, sourceId, status])
 }
 
@@ -2839,7 +2847,7 @@ model EmailCommunication {
   attempts           EmailProviderAttempt[]
   events             EmailProviderEvent[]
 
-  @@unique([organizationId, purpose, logicalType, logicalId])
+  @@unique([organizationId, purpose, logicalType, logicalId], map: "EmailCommunication_organizationId_purpose_logicalType_logicalId")
   @@index([organizationId, purpose, state, createdAt])
   @@index([selectedProvider, providerMessageId])
 }
@@ -3165,65 +3173,67 @@ enum RoiStatus {
 }
 
 model Client {
-  id                       String                        @id @default(cuid())
-  organizationId           String
-  status                   ClientStatus                  @default(PROSPECTIVE)
-  legalFirstName           String
-  legalLastName            String
-  preferredName            String?
-  dateOfBirth              DateTime?                     @db.Date
-  creationRequestId        String?
-  gender                   String?
-  phone                    String?
-  email                    String?
-  addressLine1             String?
-  addressLine2             String?
-  city                     String?
-  state                    String?
-  postalCode               String?
-  maPmiNumber              String?
-  waiverProgram            String?
-  financialResponsibility  String?
-  primaryLanguage          String?
-  interpreterNeeded        Boolean                       @default(false)
-  preferredCommunication   String?
-  livingSituation          String?
-  strengthsInterests       String?
-  culturalPractices        String?
-  supportNeeds             String?
-  dischargedAt             DateTime?
-  archivedAt               DateTime?
-  createdByUserId          String
-  createdAt                DateTime                      @default(now())
-  updatedAt                DateTime                      @updatedAt
-  testDataMarkedAt         DateTime?
-  testDataMarkedByUserId   String?
-  testDataReason           String?
-  axisCareClientId         String?
-  axisCareServiceStartDate DateTime?                     @db.Date
-  organization             Organization                  @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  createdBy                User                          @relation("ClientCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
-  services                 ClientService[]
-  representatives          ClientRepresentative[]
-  emergencyContacts        ClientEmergencyContact[]
-  healthProfile            ClientHealthProfile?
-  medications              ClientMedication[]
-  contacts                 ClientProfessionalContact[]
-  intakes                  ClientIntake[]
-  documents                ClientDocument[]
-  roiAuthorizations        RoiAuthorization[]
-  signatureEnvelopes       SignatureEnvelope[]
-  documentRequests         ClientDocumentRequest[]
-  auditAccessScopes        AuditAccessClient[]
-  importSessions           ClientImportSession[]
-  referrals                Referral[]
-  referralIntakeDrafts     ReferralIntakeDraft[]
-  documentQuestionnaires   ClientDocumentQuestionnaire[]
-  axisCareMatches          AxisCareClientMatch[]
-  axisCareVisits           AxisCareVisit[]
-  medicationDoses          ClientMedicationDose[]
-  medicationWeekSignoffs   ClientMedicationWeekSignoff[]
-  medicationHistory        ClientMedicationHistory[]
+  id                         String                        @id @default(cuid())
+  organizationId             String
+  status                     ClientStatus                  @default(PROSPECTIVE)
+  legalFirstName             String
+  legalLastName              String
+  preferredName              String?
+  dateOfBirth                DateTime?                     @db.Date
+  creationRequestId          String?
+  gender                     String?
+  phone                      String?
+  email                      String?
+  addressLine1               String?
+  addressLine2               String?
+  city                       String?
+  state                      String?
+  postalCode                 String?
+  maPmiNumber                String?
+  waiverProgram              String?
+  financialResponsibility    String?
+  primaryLanguage            String?
+  interpreterNeeded          Boolean                       @default(false)
+  preferredCommunication     String?
+  livingSituation            String?
+  strengthsInterests         String?
+  culturalPractices          String?
+  supportNeeds               String?
+  dischargedAt               DateTime?
+  archivedAt                 DateTime?
+  createdByUserId            String
+  createdAt                  DateTime                      @default(now())
+  updatedAt                  DateTime                      @updatedAt
+  testDataMarkedAt           DateTime?
+  testDataMarkedByUserId     String?
+  testDataReason             String?
+  axisCareClientId           String?
+  axisCareServiceStartDate   DateTime?                     @db.Date
+  organization               Organization                  @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  createdBy                  User                          @relation("ClientCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  services                   ClientService[]
+  representatives            ClientRepresentative[]
+  emergencyContacts          ClientEmergencyContact[]
+  healthProfile              ClientHealthProfile?
+  medications                ClientMedication[]
+  contacts                   ClientProfessionalContact[]
+  intakes                    ClientIntake[]
+  documents                  ClientDocument[]
+  roiAuthorizations          RoiAuthorization[]
+  signatureEnvelopes         SignatureEnvelope[]
+  documentRequests           ClientDocumentRequest[]
+  auditAccessScopes          AuditAccessClient[]
+  importSessions             ClientImportSession[]
+  referrals                  Referral[]
+  referralIntakeDrafts       ReferralIntakeDraft[]
+  documentQuestionnaires     ClientDocumentQuestionnaire[]
+  axisCareMatches            AxisCareClientMatch[]
+  axisCareVisits             AxisCareVisit[]
+  medicationDoses            ClientMedicationDose[]
+  medicationWeekSignoffs     ClientMedicationWeekSignoff[]
+  medicationHistory          ClientMedicationHistory[]
+  historicalMarImportBatches HistoricalMarImportBatch[]
+  historicalMarEntries       HistoricalMarEntry[]
 
   @@unique([organizationId, creationRequestId])
   @@unique([organizationId, axisCareClientId])
@@ -3350,24 +3360,25 @@ model ClientHealthProfile {
 }
 
 model ClientMedication {
-  id                  String                 @id @default(cuid())
-  organizationId      String
-  clientId            String
-  medication          String
-  dose                String?
-  times               String?
-  reason              String?
-  prescriber          String?
-  route               String?
-  startDate           DateTime?              @db.Date
-  stopDate            DateTime?              @db.Date
-  marApprovedAt       DateTime?
-  marApprovedByUserId String?
-  createdAt           DateTime               @default(now())
-  updatedAt           DateTime               @updatedAt
-  client              Client                 @relation(fields: [clientId], references: [id], onDelete: Restrict)
-  marApprovedBy       User?                  @relation("ClientMedicationApprovedBy", fields: [marApprovedByUserId], references: [id], onDelete: Restrict)
-  doses               ClientMedicationDose[]
+  id                   String                 @id @default(cuid())
+  organizationId       String
+  clientId             String
+  medication           String
+  dose                 String?
+  times                String?
+  reason               String?
+  prescriber           String?
+  route                String?
+  startDate            DateTime?              @db.Date
+  stopDate             DateTime?              @db.Date
+  marApprovedAt        DateTime?
+  marApprovedByUserId  String?
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+  client               Client                 @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  marApprovedBy        User?                  @relation("ClientMedicationApprovedBy", fields: [marApprovedByUserId], references: [id], onDelete: Restrict)
+  doses                ClientMedicationDose[]
+  historicalMarEntries HistoricalMarEntry[]
 
   @@index([organizationId, clientId])
 }
@@ -3381,17 +3392,18 @@ enum MedicationDoseStatus {
 
 /// A staff member's adopted typed signature, stored once and reused on every MAR entry and weekly sign-off.
 model MedicationStaffSignature {
-  id             String       @id @default(cuid())
-  organizationId String
-  userId         String
-  typedName      String
-  initials       String
-  consentVersion String
-  consentedAt    DateTime
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  user           User         @relation("MedicationSignatureUser", fields: [userId], references: [id], onDelete: Restrict)
+  id                        String                     @id @default(cuid())
+  organizationId            String
+  userId                    String
+  typedName                 String
+  initials                  String
+  consentVersion            String
+  consentedAt               DateTime
+  createdAt                 DateTime                   @default(now())
+  updatedAt                 DateTime                   @updatedAt
+  organization              Organization               @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  user                      User                       @relation("MedicationSignatureUser", fields: [userId], references: [id], onDelete: Restrict)
+  historicalMarAttestations HistoricalMarAttestation[]
 
   @@unique([organizationId, userId])
   @@unique([organizationId, initials])
@@ -3400,29 +3412,30 @@ model MedicationStaffSignature {
 /// One MAR entry keyed by the day and time the dose was due. The system-recorded timestamps, authenticated actor,
 /// and immutable before/after history distinguish timely entries, late entries, and corrections.
 model ClientMedicationDose {
-  id                   String               @id @default(cuid())
-  organizationId       String
-  clientId             String
-  medicationId         String
-  doseDate             DateTime             @db.Date
-  scheduledTime        String
-  status               MedicationDoseStatus
-  timeGiven            String?
-  note                 String?
-  signerUserId         String?
-  signerName           String?
-  signerInitials       String?
-  appliedByUserId      String
-  attestedInPerson     Boolean              @default(false)
-  transferredFromPaper Boolean              @default(false)
-  signedAt             DateTime             @default(now())
-  createdAt            DateTime             @default(now())
-  updatedAt            DateTime             @updatedAt
-  correctionReason     String?
-  organization         Organization         @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  client               Client               @relation(fields: [clientId], references: [id], onDelete: Restrict)
-  actor                User                 @relation("MedicationDoseActor", fields: [appliedByUserId], references: [id], onDelete: Restrict)
-  medication           ClientMedication     @relation(fields: [medicationId], references: [id], onDelete: Restrict)
+  id                    String               @id @default(cuid())
+  organizationId        String
+  clientId              String
+  medicationId          String
+  doseDate              DateTime             @db.Date
+  scheduledTime         String
+  status                MedicationDoseStatus
+  timeGiven             String?
+  note                  String?
+  signerUserId          String?
+  signerName            String?
+  signerInitials        String?
+  appliedByUserId       String
+  attestedInPerson      Boolean              @default(false)
+  transferredFromPaper  Boolean              @default(false)
+  signedAt              DateTime             @default(now())
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+  correctionReason      String?
+  organization          Organization         @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  client                Client               @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  actor                 User                 @relation("MedicationDoseActor", fields: [appliedByUserId], references: [id], onDelete: Restrict)
+  medication            ClientMedication     @relation(fields: [medicationId], references: [id], onDelete: Restrict)
+  historicalImportEntry HistoricalMarEntry?  @relation("HistoricalMarFinalizedDose")
 
   @@unique([medicationId, doseDate, scheduledTime])
   @@index([organizationId, clientId, doseDate])
@@ -3466,6 +3479,129 @@ model ClientMedicationHistory {
 
   @@index([organizationId, clientId, changedAt])
   @@index([entityType, entityId])
+}
+
+enum HistoricalMarImportBatchStatus {
+  STAGED
+  IN_REVIEW
+  COMPLETED
+  COMPLETED_WITH_EXCEPTIONS
+}
+
+enum HistoricalMarMatchState {
+  MATCHED
+  AMBIGUOUS_VISIT
+  NO_ACTUAL_VISIT
+  MISSING_CLOCK_IN
+  MISSING_CLOCK_OUT
+  MISSING_CAREGIVER_MAPPING
+  MEDICATION_HISTORY_GAP
+  MEDICATION_NOT_APPROVED
+  EXISTING_MAR_ENTRY
+}
+
+enum HistoricalMarReviewState {
+  AWAITING_CAREGIVER_REVIEW
+  READY_TO_ATTEST
+  FLAGGED_FOR_CORRECTION
+  ATTESTED
+}
+
+/// A bounded, idempotent staging run. Creating a batch never asserts that a dose was administered.
+model HistoricalMarImportBatch {
+  id                String                         @id @default(cuid())
+  organizationId    String
+  clientId          String
+  rangeStart        DateTime                       @db.Date
+  rangeEnd          DateTime                       @db.Date
+  source            String                         @default("AXISCARE_VISITS")
+  sourceQueryJson   Json
+  sourceFingerprint String
+  status            HistoricalMarImportBatchStatus @default(STAGED)
+  summaryJson       Json
+  requestedByUserId String
+  createdAt         DateTime                       @default(now())
+  updatedAt         DateTime                       @updatedAt
+  organization      Organization                   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  client            Client                         @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  requestedBy       User                           @relation("HistoricalMarImportRequester", fields: [requestedByUserId], references: [id], onDelete: Restrict)
+  entries           HistoricalMarEntry[]
+  attestations      HistoricalMarAttestation[]
+
+  @@unique([organizationId, sourceFingerprint])
+  @@index([organizationId, clientId, createdAt])
+}
+
+/// One scheduled occurrence proposed from an approved historical medication schedule and actual AxisCare coverage.
+/// Paper-MAR values remain empty until the attributed caregiver reviews them.
+model HistoricalMarEntry {
+  id                 String                    @id @default(cuid())
+  organizationId     String
+  clientId           String
+  batchId            String
+  medicationId       String
+  axisCareVisitId    String?
+  employeeId         String?
+  doseDate           DateTime                  @db.Date
+  scheduledTime      String
+  stableSourceKey    String
+  matchState         HistoricalMarMatchState
+  confidence         String
+  sourceSnapshotJson Json
+  reviewState        HistoricalMarReviewState  @default(AWAITING_CAREGIVER_REVIEW)
+  paperStatus        MedicationDoseStatus?
+  paperTimeGiven     String?
+  paperNote          String?
+  discrepancyCode    String?
+  discrepancyNote    String?
+  correctionReason   String?
+  reviewedByUserId   String?
+  reviewedAt         DateTime?
+  version            Int                       @default(1)
+  attestationId      String?
+  finalizedDoseId    String?                   @unique
+  createdAt          DateTime                  @default(now())
+  updatedAt          DateTime                  @updatedAt
+  organization       Organization              @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  client             Client                    @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  batch              HistoricalMarImportBatch  @relation(fields: [batchId], references: [id], onDelete: Restrict)
+  medication         ClientMedication          @relation(fields: [medicationId], references: [id], onDelete: Restrict)
+  axisCareVisit      AxisCareVisit?            @relation(fields: [axisCareVisitId], references: [id], onDelete: Restrict)
+  employee           Employee?                 @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  reviewedBy         User?                     @relation("HistoricalMarEntryReviewer", fields: [reviewedByUserId], references: [id], onDelete: Restrict)
+  attestation        HistoricalMarAttestation? @relation(fields: [attestationId], references: [id], onDelete: Restrict)
+  finalizedDose      ClientMedicationDose?     @relation("HistoricalMarFinalizedDose", fields: [finalizedDoseId], references: [id], onDelete: Restrict)
+
+  @@unique([organizationId, stableSourceKey])
+  @@unique([batchId, medicationId, doseDate, scheduledTime])
+  @@index([organizationId, employeeId, reviewState, doseDate])
+  @@index([organizationId, clientId, doseDate])
+}
+
+/// Immutable exact-set caregiver attestation. `snapshotHash` covers the sorted entry IDs and versioned values.
+model HistoricalMarAttestation {
+  id                    String                   @id @default(cuid())
+  organizationId        String
+  batchId               String
+  employeeId            String
+  signerUserId          String
+  medicationSignatureId String
+  entryIdsJson          Json
+  snapshotJson          Json
+  snapshotHash          String
+  statementVersion      String
+  statementSnapshot     String
+  signedAt              DateTime                 @default(now())
+  createdAt             DateTime                 @default(now())
+  organization          Organization             @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  batch                 HistoricalMarImportBatch @relation(fields: [batchId], references: [id], onDelete: Restrict)
+  employee              Employee                 @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  signer                User                     @relation("HistoricalMarAttestationSigner", fields: [signerUserId], references: [id], onDelete: Restrict)
+  medicationSignature   MedicationStaffSignature @relation(fields: [medicationSignatureId], references: [id], onDelete: Restrict)
+  entries               HistoricalMarEntry[]
+
+  @@unique([organizationId, snapshotHash])
+  @@index([organizationId, employeeId, signedAt])
 }
 
 model ClientIntake {
@@ -3575,9 +3711,9 @@ model ClientDocument {
   referralSubmission        ReferralSubmission?
 
   @@index([organizationId, clientId, documentType, status])
-  @@index([organizationId, clientId, documentType, versionNumber])
+  @@index([organizationId, clientId, documentType, versionNumber], map: "ClientDocument_organizationId_clientId_documentType_versionNumb")
   @@index([supersedesDocumentId])
-  @@index([organizationId, clientId, authoritativeCompletedAt])
+  @@index([organizationId, clientId, authoritativeCompletedAt], map: "ClientDocument_organizationId_clientId_authoritativeCompletedAt")
 }
 
 enum ReferralFormStatus {
@@ -3649,7 +3785,7 @@ model Referral {
   events            ReferralEvent[]
   proposals         ReferralProposal[]
 
-  @@index([organizationId, formStatus, dispositionStatus, updatedAt])
+  @@index([organizationId, formStatus, dispositionStatus, updatedAt], map: "Referral_organizationId_formStatus_dispositionStatus_updatedAt_")
   @@index([organizationId, recipientEmail])
   @@index([organizationId, linkedClientId])
 }
@@ -3756,7 +3892,7 @@ model TestDataCleanupPreview {
   organization      Organization                 @relation(fields: [organizationId], references: [id], onDelete: Restrict)
 
   @@index([organizationId, status, expiresAt])
-  @@index([organizationId, requestedByUserId, createdAt])
+  @@index([organizationId, requestedByUserId, createdAt], map: "TestDataCleanupPreview_organizationId_requestedByUserId_created")
 }
 
 enum DocumentQuestionnaireStatus {
@@ -3793,7 +3929,7 @@ model ClientDocumentQuestionnaire {
   createdBy           User                        @relation("DocumentQuestionnaireCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
   reviewedBy          User?                       @relation("DocumentQuestionnaireReviewer", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
 
-  @@index([organizationId, clientId, documentType, status])
+  @@index([organizationId, clientId, documentType, status], map: "ClientDocumentQuestionnaire_organizationId_clientId_documentTyp")
 }
 
 model ClientImportSession {
@@ -3857,7 +3993,7 @@ model ClientImportDocument {
   proposals                  ClientImportProposal[]
 
   @@unique([sessionId, sha256])
-  @@index([organizationId, sessionId, classification])
+  @@index([organizationId, sessionId, classification], map: "ClientImportDocument_organizationId_sessionId_classification_id")
   @@index([sourceClientDocumentId])
 }
 
@@ -4059,8 +4195,8 @@ model SignatureInvitation {
   replacedBy                   SignatureInvitation?              @relation("InvitationReplacement", fields: [replacedById], references: [id], onDelete: Restrict)
   replaces                     SignatureInvitation?              @relation("InvitationReplacement")
 
-  @@index([organizationId, envelopeId, signerId, status])
-  @@index([organizationId, deliveryStatus, deliveryAttemptedAt])
+  @@index([organizationId, envelopeId, signerId, status], map: "SignatureInvitation_organizationId_envelopeId_signerId_status_i")
+  @@index([organizationId, deliveryStatus, deliveryAttemptedAt], map: "SignatureInvitation_organizationId_deliveryStatus_deliveryAttem")
   @@index([expiresAt, status])
 }
 
@@ -4165,44 +4301,45 @@ model AxisCareRecord {
 }
 
 model AxisCareVisit {
-  id                  String       @id @default(cuid())
-  organizationId      String
-  externalId          String
-  axisCareClientId    String?
-  axisCareCaregiverId String?
-  clientId            String?
-  employeeId          String?
-  startAt             DateTime?
-  endAt               DateTime?
-  scheduledStartAt    DateTime?
-  scheduledEndAt      DateTime?
-  clockInAt           DateTime?
-  clockOutAt          DateTime?
-  clockInMethod       String?
-  clockOutMethod      String?
-  clockInLatitude     Decimal?     @db.Decimal(9, 6)
-  clockInLongitude    Decimal?     @db.Decimal(9, 6)
-  clockOutLatitude    Decimal?     @db.Decimal(9, 6)
-  clockOutLongitude   Decimal?     @db.Decimal(9, 6)
-  clockInPhone        String?
-  clockOutPhone       String?
-  serviceCode         String?
-  procedureCode       String?
-  visitType           String?
-  timezone            String?
-  verified            Boolean      @default(false)
-  removed             Boolean      @default(false)
-  chargeRateCents     Int?
-  billableRateMode    String?
-  modificationReason  String?
-  detailPayload       Json?
-  payload             Json
-  payloadHash         String
-  firstSeenAt         DateTime     @default(now())
-  lastSyncedAt        DateTime     @default(now())
-  client              Client?      @relation(fields: [clientId], references: [id], onDelete: SetNull)
-  employee            Employee?    @relation(fields: [employeeId], references: [id], onDelete: SetNull)
-  organization        Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  id                   String               @id @default(cuid())
+  organizationId       String
+  externalId           String
+  axisCareClientId     String?
+  axisCareCaregiverId  String?
+  clientId             String?
+  employeeId           String?
+  startAt              DateTime?
+  endAt                DateTime?
+  scheduledStartAt     DateTime?
+  scheduledEndAt       DateTime?
+  clockInAt            DateTime?
+  clockOutAt           DateTime?
+  clockInMethod        String?
+  clockOutMethod       String?
+  clockInLatitude      Decimal?             @db.Decimal(9, 6)
+  clockInLongitude     Decimal?             @db.Decimal(9, 6)
+  clockOutLatitude     Decimal?             @db.Decimal(9, 6)
+  clockOutLongitude    Decimal?             @db.Decimal(9, 6)
+  clockInPhone         String?
+  clockOutPhone        String?
+  serviceCode          String?
+  procedureCode        String?
+  visitType            String?
+  timezone             String?
+  verified             Boolean              @default(false)
+  removed              Boolean              @default(false)
+  chargeRateCents      Int?
+  billableRateMode     String?
+  modificationReason   String?
+  detailPayload        Json?
+  payload              Json
+  payloadHash          String
+  firstSeenAt          DateTime             @default(now())
+  lastSyncedAt         DateTime             @default(now())
+  client               Client?              @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  employee             Employee?            @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+  organization         Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  historicalMarEntries HistoricalMarEntry[]
 
   @@unique([organizationId, externalId])
   @@index([organizationId, clientId, startAt])
@@ -4226,7 +4363,7 @@ model AxisCareClientMatch {
   client           Client?             @relation(fields: [clientId], references: [id], onDelete: Cascade)
   organization     Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
-  @@unique([organizationId, axisCareClientId, clientId])
+  @@unique([organizationId, axisCareClientId, clientId], map: "AxisCareClientMatch_organizationId_axisCareClientId_clientId_ke")
   @@index([organizationId, status])
 }
 

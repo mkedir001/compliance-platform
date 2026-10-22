@@ -5,6 +5,7 @@ import { AuthorizationError, ConflictError, ResourceNotFoundError, ValidationErr
 import { requireOrganizationAccess, resolvePermissionCodes } from "@/domain/permissions/authorization";
 import { computeMedicationDutyEligibility } from "@/domain/medication/service";
 import { DOSE_STATUSES, MAR_SIGNING_CONSENT_TEXT, MAR_SIGNING_CONSENT_VERSION, addDays, currentTimeKey, dateToDayKey, dayKeyToDate, initialsFor, isDayKey, marSummary, medicationActiveOn, monthDays, monthWeeks, parseScheduleTimes, timeKeyPattern, todayKey, weekStartKey, type DoseStatus } from "@/domain/clients/mar";
+import { applyHistoricalMarAction, getHistoricalMarWorkspace, hasHistoricalMarReviewAccess } from "@/domain/clients/historical-mar-import";
 
 const day = z.string().refine(isDayKey, "Use a real date (YYYY-MM-DD)");
 const time = z.string().regex(timeKeyPattern, "Use a 24-hour time (HH:mm)");
@@ -20,7 +21,7 @@ export const medicationRecordAction = z.discriminatedUnion("action", [
 export type MedicationRecordAction = z.infer<typeof medicationRecordAction>;
 
 type AssignmentGate = { employeeId: string; assignmentId: string; eligible: boolean; reasons: string[] } | null;
-type Access = { userId: string; organizationId: string; timezone: string; permissions: Set<string>; canAdminView: boolean; canReview: boolean; canEditMedications: boolean; canProposeMedications: boolean; assignmentGate: AssignmentGate };
+type Access = { userId: string; organizationId: string; timezone: string; permissions: Set<string>; canAdminView: boolean; canReview: boolean; canEditMedications: boolean; canProposeMedications: boolean; assignmentGate: AssignmentGate; historicalOnly: boolean };
 
 async function resolveAssignmentGate(userId: string, organizationId: string, clientId: string, now: Date): Promise<AssignmentGate> {
   const employee = await prisma.employee.findFirst({ where: { organizationId, userId, employmentStatus: "ACTIVE" }, select: { id: true } });
@@ -38,13 +39,14 @@ async function hasAssignedClientAccess(userId: string, organizationId: string, c
 async function access(user: Pick<User, "id">, organizationId: string, clientId: string): Promise<Access> {
   const { organization, membership } = await requireOrganizationAccess(user, organizationId);
   const permissions = await resolvePermissionCodes(membership.id), canAdminView = permissions.has("medication.approve"), assignedRead = permissions.has("medication.assigned.read") || permissions.has("medication.activity.record"), now = new Date();
-  if (!canAdminView && (!assignedRead || !await hasAssignedClientAccess(user.id, organizationId, clientId, now))) throw new AuthorizationError("Assigned-client medication access is required");
+  const assignedClient = canAdminView ? true : await hasAssignedClientAccess(user.id, organizationId, clientId, now), historicalReview = canAdminView ? false : await hasHistoricalMarReviewAccess(user.id, organizationId, clientId);
+  if (!canAdminView && (!assignedRead || (!assignedClient && !historicalReview))) throw new AuthorizationError("Assigned-client medication access is required");
   if (!await prisma.client.findFirst({ where: { id: clientId, organizationId }, select: { id: true } })) throw new ResourceNotFoundError("Client not found");
   const clinicalCredential = canAdminView ? await prisma.professionalCredential.findFirst({ where: { organizationId, userId: user.id, status: "ACTIVE", verificationStatus: "VERIFIED", credentialType: { in: ["RN", "CNS", "CNP", "PA", "PHYSICIAN"] }, OR: [{ expiresAt: null }, { expiresAt: { gte: now } }] }, select: { id: true } }) : null;
   // Permission to reach the review workflow is not a substitute for a current,
   // verified clinical credential. This remains true for master accounts.
   const canReview = Boolean(canAdminView && clinicalCredential), assignmentGate = permissions.has("medication.activity.record") ? await resolveAssignmentGate(user.id, organizationId, clientId, now) : null;
-  return { userId: user.id, organizationId, timezone: organization.timezone, permissions, canAdminView, canReview, canEditMedications: canReview, canProposeMedications: canReview || permissions.has("organization.manage") || permissions.has("client.update"), assignmentGate };
+  return { userId: user.id, organizationId, timezone: organization.timezone, permissions, canAdminView, canReview, canEditMedications: canReview, canProposeMedications: canReview || permissions.has("organization.manage") || permissions.has("client.update"), assignmentGate, historicalOnly: !canAdminView && !assignedClient && historicalReview };
 }
 
 function requireAdministration(a: Access) {
@@ -75,36 +77,39 @@ export async function recordMedicationAuthorizationFailure(userId: string, organ
 
 export async function getMedicationRecord(user: Pick<User, "id">, organizationId: string, clientId: string, monthRaw: string) {
   const a = await access(user, organizationId, clientId), month = monthInput.parse(monthRaw), days = monthDays(month), today = todayKey(new Date(), a.timezone);
-  const [medications, doses, signoffs, mine] = await Promise.all([
-    prisma.clientMedication.findMany({ where: { organizationId, clientId }, orderBy: [{ createdAt: "asc" }, { medication: "asc" }] }),
-    prisma.clientMedicationDose.findMany({ where: { organizationId, clientId, doseDate: { gte: dayKeyToDate(days[0]), lte: dayKeyToDate(days[days.length - 1]) } } }),
-    prisma.clientMedicationWeekSignoff.findMany({ where: { organizationId, clientId, weekStart: { gte: dayKeyToDate(monthWeeks(month)[0].weekStart), lte: dayKeyToDate(days[days.length - 1]) } } }),
+  const [medications, doses, signoffs, mine, historical] = await Promise.all([
+    prisma.clientMedication.findMany({ where: { organizationId, clientId, ...(a.historicalOnly ? { historicalMarEntries: { some: { employee: { userId: a.userId } } } } : {}) }, orderBy: [{ createdAt: "asc" }, { medication: "asc" }] }),
+    prisma.clientMedicationDose.findMany({ where: { organizationId, clientId, doseDate: { gte: dayKeyToDate(days[0]), lte: dayKeyToDate(days[days.length - 1]) }, ...(a.historicalOnly ? { historicalImportEntry: { is: { employee: { userId: a.userId } } } } : {}) } }),
+    a.historicalOnly ? Promise.resolve([]) : prisma.clientMedicationWeekSignoff.findMany({ where: { organizationId, clientId, weekStart: { gte: dayKeyToDate(monthWeeks(month)[0].weekStart), lte: dayKeyToDate(days[days.length - 1]) } } }),
     storedSignature(organizationId, a.userId),
+    getHistoricalMarWorkspace(a.userId, organizationId, clientId, a.canReview),
   ]);
   const meds = medications.map(row => ({ id: row.id, medication: row.medication, dose: row.dose, route: row.route, times: row.times, reason: row.reason, prescriber: row.prescriber, startDate: row.startDate ? dateToDayKey(row.startDate) : null, stopDate: row.stopDate ? dateToDayKey(row.stopDate) : null, marApproved: Boolean(row.marApprovedAt && row.marApprovedByUserId) }));
-  const doseRows = doses.map(row => ({ id: row.id, medicationId: row.medicationId, doseDate: dateToDayKey(row.doseDate), scheduledTime: row.scheduledTime, status: row.status as DoseStatus, timeGiven: row.timeGiven, note: row.note, signerUserId: row.signerUserId, signerName: row.signerName, signerInitials: row.signerInitials, signedAt: row.signedAt.toISOString(), updatedAt: row.updatedAt.toISOString(), correctionReason: row.correctionReason }));
+  const doseRows = doses.map(row => ({ id: row.id, medicationId: row.medicationId, doseDate: dateToDayKey(row.doseDate), scheduledTime: row.scheduledTime, status: row.status as DoseStatus, timeGiven: row.timeGiven, note: row.note, signerUserId: row.signerUserId, signerName: row.signerName, signerInitials: row.signerInitials, signedAt: row.signedAt.toISOString(), updatedAt: row.updatedAt.toISOString(), correctionReason: row.correctionReason, transferredFromPaper: row.transferredFromPaper }));
   const canRecord = Boolean(a.permissions.has("medication.activity.record") && a.assignmentGate?.eligible);
+  const canHistoricalReview = historical.enabled && historical.entries.some(entry => entry.mine);
   const payload = {
     month, today,
-    me: { userId: a.userId, hasSignature: Boolean(mine), canRecord, canSignWeek: a.canReview, isManager: a.canReview, canEditMedications: a.canEditMedications, canProposeMedications: a.canProposeMedications, administrationBlockers: a.permissions.has("medication.activity.record") && !canRecord ? a.assignmentGate?.reasons ?? ["ACTIVE_CLIENT_MEDICATION_ASSIGNMENT_REQUIRED"] : [] },
+    me: { userId: a.userId, hasSignature: Boolean(mine), canRecord, canHistoricalReview, canSignWeek: a.canReview, isManager: a.canReview, canEditMedications: a.canEditMedications, canProposeMedications: a.canProposeMedications, administrationBlockers: a.permissions.has("medication.activity.record") && !canRecord ? a.assignmentGate?.reasons ?? ["ACTIVE_CLIENT_MEDICATION_ASSIGNMENT_REQUIRED"] : [] },
     consent: { version: MAR_SIGNING_CONSENT_VERSION, text: MAR_SIGNING_CONSENT_TEXT }, medications: meds, doses: doseRows,
     weeks: monthWeeks(month).map(week => { const row = signoffs.find(item => dateToDayKey(item.weekStart) === week.weekStart); return { ...week, signoff: row ? { signerName: row.signerName } : null }; }),
-    staff: mine ? [{ userId: mine.userId, typedName: mine.typedName, initials: mine.initials }] : [],
-    admin: null as null | { summary: ReturnType<typeof marSummary>; entries: Record<string, { enteredAt: string; signedAt: string; appliedBy: string | null; attestedInPerson: boolean }>; history: { id: string; entityType: string; action: string; changedAt: string; changedBy: string; label: string; snapshot: unknown }[] },
+    staff: mine ? [{ userId: mine.userId, typedName: mine.typedName, initials: mine.initials }] : [], historical,
+    admin: null as null | { summary: ReturnType<typeof marSummary>; entries: Record<string, { enteredAt: string; signedAt: string; appliedBy: string | null; attestedInPerson: boolean; transferredFromPaper: boolean }>; history: { id: string; entityType: string; action: string; changedAt: string; changedBy: string; label: string; snapshot: unknown }[] },
   };
   if (a.canAdminView) {
     const rows = await prisma.clientMedicationHistory.findMany({ where: { organizationId, clientId }, orderBy: { changedAt: "desc" }, take: 200 });
     const ids = [...new Set([...rows.map(row => row.changedByUserId), ...doses.map(row => row.appliedByUserId)])];
     const people = await prisma.user.findMany({ where: { id: { in: ids } }, select: { id: true, email: true } }), nameOf = (id: string) => people.find(row => row.id === id)?.email ?? null;
-    payload.admin = { summary: marSummary(meds, doseRows, days, today), entries: Object.fromEntries(doses.map(row => [row.id, { enteredAt: row.createdAt.toISOString(), signedAt: row.signedAt.toISOString(), appliedBy: nameOf(row.appliedByUserId), attestedInPerson: false }])), history: rows.map(row => ({ id: row.id, entityType: row.entityType, action: row.action, changedAt: row.changedAt.toISOString(), changedBy: nameOf(row.changedByUserId) ?? "Unknown", label: String((row.snapshotJson as { label?: unknown } | null)?.label ?? ""), snapshot: row.snapshotJson })) };
+    payload.admin = { summary: marSummary(meds, doseRows, days, today), entries: Object.fromEntries(doses.map(row => [row.id, { enteredAt: row.createdAt.toISOString(), signedAt: row.signedAt.toISOString(), appliedBy: nameOf(row.appliedByUserId), attestedInPerson: row.attestedInPerson, transferredFromPaper: row.transferredFromPaper }])), history: rows.map(row => ({ id: row.id, entityType: row.entityType, action: row.action, changedAt: row.changedAt.toISOString(), changedBy: nameOf(row.changedByUserId) ?? "Unknown", label: String((row.snapshotJson as { label?: unknown } | null)?.label ?? ""), snapshot: row.snapshotJson })) };
   }
   return payload;
 }
 
 export async function applyMedicationAction(user: Pick<User, "id">, organizationId: string, clientId: string, raw: unknown) {
+  if (raw && typeof raw === "object" && "action" in raw && typeof raw.action === "string" && raw.action.includes("HISTORICAL_MAR")) return applyHistoricalMarAction(user, organizationId, clientId, raw);
   const a = await access(user, organizationId, clientId), input = medicationRecordAction.parse(raw);
   if (input.action === "SETUP_SIGNATURE") {
-    if (!a.permissions.has("medication.activity.record") && !a.canReview) throw new AuthorizationError("Medication signing permission is required");
+    if (!a.permissions.has("medication.activity.record") && !a.canReview && !await hasHistoricalMarReviewAccess(a.userId, organizationId, clientId)) throw new AuthorizationError("Medication signing permission is required");
     if (await storedSignature(organizationId, a.userId)) throw new ValidationError("Your signature is already set up");
     const base = initialsFor(input.typedName) || "XX", taken = new Set((await prisma.medicationStaffSignature.findMany({ where: { organizationId }, select: { initials: true } })).map(row => row.initials));
     let initials = base; for (let n = 2; taken.has(initials); n++) initials = `${base}${n}`;

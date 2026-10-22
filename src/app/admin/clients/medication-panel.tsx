@@ -4,15 +4,18 @@ import { marRows, medicationActiveOn, timeLabel, UNSCHEDULED_TIME, type DoseStat
 import "./medication.css";
 
 type Medication = { id: string; medication: string; dose: string | null; route: string | null; times: string | null; reason: string | null; prescriber: string | null; startDate: string | null; stopDate: string | null; marApproved: boolean };
-type Dose = { id: string; medicationId: string; doseDate: string; scheduledTime: string; status: DoseStatus; timeGiven: string | null; note: string | null; signerUserId: string | null; signerName: string | null; signerInitials: string | null; signedAt: string; updatedAt: string; correctionReason: string | null };
+type Dose = { id: string; medicationId: string; doseDate: string; scheduledTime: string; status: DoseStatus; timeGiven: string | null; note: string | null; signerUserId: string | null; signerName: string | null; signerInitials: string | null; signedAt: string; updatedAt: string; correctionReason: string | null; transferredFromPaper: boolean };
 type Week = { weekStart: string; weekEnd: string; firstDay: string; lastDay: string; signoff: { signerName: string } | null };
 type Staff = { userId: string; typedName: string; initials: string };
+type HistoricalEntry = { id: string; batchId: string; medication: { medication: string; dose: string | null; route: string | null }; employee: { id: string; name: string } | null; mine: boolean; doseDate: string; scheduledTime: string; matchState: string; confidence: string; reviewState: string; paperStatus: DoseStatus | null; paperTimeGiven: string | null; paperNote: string | null; discrepancyCode: string | null; discrepancyNote: string | null; correctionReason: string | null; version: number; visit: { externalId: string; clockInAt: string | null; clockOutAt: string | null } | null; attestation: { signedAt: string; snapshotHash: string } | null };
+type HistoricalWorkspace = { enabled: boolean; canImport: boolean; statement: string; batches: { id: string; rangeStart: string; rangeEnd: string; status: string; summaryJson: unknown; createdAt: string }[]; entries: HistoricalEntry[] };
 type MarData = {
   month: string; today: string;
-  me: { userId: string; hasSignature: boolean; canRecord: boolean; canSignWeek: boolean; isManager: boolean; canEditMedications: boolean; canProposeMedications: boolean; administrationBlockers: string[] };
+  me: { userId: string; hasSignature: boolean; canRecord: boolean; canHistoricalReview: boolean; canSignWeek: boolean; isManager: boolean; canEditMedications: boolean; canProposeMedications: boolean; administrationBlockers: string[] };
   consent: { version: string; text: string };
   medications: Medication[]; doses: Dose[]; weeks: Week[]; staff: Staff[];
-  admin: null | { summary: { given: number; refused: number; held: number; notGiven: number; notDocumented: number }; entries: { [id: string]: { enteredAt: string; signedAt: string; appliedBy: string | null; attestedInPerson: boolean } }; history: { id: string; entityType: string; action: string; changedAt: string; changedBy: string; label: string }[] };
+  historical: HistoricalWorkspace;
+  admin: null | { summary: { given: number; refused: number; held: number; notGiven: number; notDocumented: number }; entries: { [id: string]: { enteredAt: string; signedAt: string; appliedBy: string | null; attestedInPerson: boolean; transferredFromPaper: boolean } }; history: { id: string; entityType: string; action: string; changedAt: string; changedBy: string; label: string }[] };
 };
 type Props = { organizationId: string; clientId: string; allergies?: string | null; headers: { [key: string]: string } };
 
@@ -29,7 +32,7 @@ type Target = { medication: Medication; time: string; day: string; existing: Dos
 
 export function MedicationPanel({ organizationId, clientId, allergies, headers }: Props) {
   const [month, setMonth] = useState(() => new Date().toLocaleDateString("en-CA", { timeZone: "America/Chicago" }).slice(0, 7));
-  const [view, setView] = useState<"MAR" | "MEDICATIONS">("MAR");
+  const [view, setView] = useState<"MAR" | "MEDICATIONS" | "HISTORICAL">("MAR");
   const [data, setData] = useState<MarData | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -52,8 +55,8 @@ export function MedicationPanel({ organizationId, clientId, allergies, headers }
     try {
       const response = await fetch(base, { method: "POST", headers: headersRef.current, body: JSON.stringify(body) }), result = await response.json();
       if (!response.ok) throw new Error(result.error ?? "Could not save");
-      await load(); return true;
-    } catch (caught) { setError(caught instanceof Error ? caught.message : "Could not save"); return false; }
+      await load(); return result as Record<string, unknown>;
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "Could not save"); return null; }
     finally { setBusy(false); }
   }
 
@@ -75,13 +78,13 @@ export function MedicationPanel({ organizationId, clientId, allergies, headers }
         <button type="button" className="secondary" onClick={() => window.print()}>Print / PDF</button>
       </div>
     </div>
-    <div className="med-sub med-noprint"><button type="button" className={view === "MAR" ? "on" : ""} onClick={() => setView("MAR")}>MAR</button><button type="button" className={view === "MEDICATIONS" ? "on" : ""} onClick={() => setView("MEDICATIONS")}>Medications</button></div>
+    <div className="med-sub med-noprint"><button type="button" className={view === "MAR" ? "on" : ""} onClick={() => setView("MAR")}>MAR</button><button type="button" className={view === "MEDICATIONS" ? "on" : ""} onClick={() => setView("MEDICATIONS")}>Medications</button>{data.historical.enabled ? <button type="button" className={view === "HISTORICAL" ? "on" : ""} onClick={() => setView("HISTORICAL")}>Historical review</button> : null}</div>
     {error ? <p className="med-error" role="alert">{error}</p> : null}
 
-    {(me.canRecord || me.canSignWeek) && !me.hasSignature ? <SignatureSetup consent={data.consent.text} busy={busy} onSave={name => act({ action: "SETUP_SIGNATURE", typedName: name, consent: true })} /> : null}
+    {(me.canRecord || me.canSignWeek || me.canHistoricalReview) && !me.hasSignature ? <SignatureSetup consent={data.consent.text} busy={busy} onSave={name => act({ action: "SETUP_SIGNATURE", typedName: name, consent: true })} /> : null}
     {!me.canRecord && me.administrationBlockers.length ? <p className="med-note med-noprint">Administration documentation is unavailable until the assigned employee&apos;s current medication qualification, person-specific instruction, authorization, and active client assignment are all satisfied.</p> : null}
 
-    {view === "MEDICATIONS" ? <MedicationList data={data} editing={editing} setEditing={setEditing} busy={busy} onSave={async value => { if (await act({ action: "SAVE_MEDICATION", ...value })) setEditing(null); }} onApprove={id => void act({ action: "APPROVE_MEDICATION", id })} /> : <>
+    {view === "MEDICATIONS" ? <MedicationList data={data} editing={editing} setEditing={setEditing} busy={busy} onSave={async value => { if (await act({ action: "SAVE_MEDICATION", ...value })) setEditing(null); }} onApprove={id => void act({ action: "APPROVE_MEDICATION", id })} /> : view === "HISTORICAL" ? <HistoricalMarPanel data={data} busy={busy} act={act} /> : <>
       <h4 style={{ margin: 0 }}>{monthLabel(month)}</h4>
       {rows.length ? <div className="med-scroll"><table className="med-grid" aria-label={`MAR for ${monthLabel(month)}`}>
         <thead><tr><th className="med-name">Medication · dose · route</th><th className="med-time">Time</th>{days.map(day => <th key={day}>{Number(day.slice(8))}</th>)}</tr></thead>
@@ -94,11 +97,11 @@ export function MedicationPanel({ organizationId, clientId, allergies, headers }
               const dose = doseAt(row.medicationId, day, row.time), future = day > data.today, inactive = !dose && !medicationActiveOn(medication, day);
               if (inactive) return <td key={day} style={{ background: "#efede6" }} />;
               const info = dose ? CELL[dose.status] : null, text = dose ? (dose.status === "GIVEN" ? dose.signerInitials ?? "✓" : info!.text) : "";
-              return <td key={day}><button type="button" disabled={future || !me.canRecord || !medication.marApproved || row.time === UNSCHEDULED_TIME} className={`med-cell ${info?.css ?? ""} ${future ? "future" : ""} ${day === data.today ? "today" : ""}`} aria-label={`${medication.medication} ${timeLabel(row.time)} ${longDay(day)}${dose ? `, ${info!.name}${dose.signerName ? ` by ${dose.signerName}` : ""}` : ", no entry"}`} title={!medication.marApproved ? "This medication has not been explicitly approved for MAR documentation" : row.time === UNSCHEDULED_TIME ? "PRN or unstructured schedules require a governed workflow and cannot be recorded here" : dose ? `${info!.name}${dose.signerName ? ` · ${dose.signerName}` : ""}${dose.timeGiven ? ` · ${timeLabel(dose.timeGiven)}` : ""}${dose.note ? ` · ${dose.note}` : ""}` : ""} onClick={() => setTarget({ medication, time: row.time, day, existing: dose })}>{text}</button></td>;
+              return <td key={day}><button type="button" disabled={future || !me.canRecord || !medication.marApproved || row.time === UNSCHEDULED_TIME || Boolean(dose?.transferredFromPaper)} className={`med-cell ${info?.css ?? ""} ${dose?.transferredFromPaper ? "historical" : ""} ${future ? "future" : ""} ${day === data.today ? "today" : ""}`} aria-label={`${medication.medication} ${timeLabel(row.time)} ${longDay(day)}${dose ? `, ${info!.name}${dose.signerName ? ` by ${dose.signerName}` : ""}${dose.transferredFromPaper ? ", historical paper MAR verified electronically later" : ""}` : ", no entry"}`} title={!medication.marApproved ? "This medication has not been explicitly approved for MAR documentation" : row.time === UNSCHEDULED_TIME ? "PRN or unstructured schedules require a governed workflow and cannot be recorded here" : dose ? `${info!.name}${dose.signerName ? ` · ${dose.signerName}` : ""}${dose.timeGiven ? ` · ${timeLabel(dose.timeGiven)}` : ""}${dose.note ? ` · ${dose.note}` : ""}${dose.transferredFromPaper ? ` · historical paper MAR · electronically verified ${new Date(dose.signedAt).toLocaleString()} · corrections require re-attestation in Historical review` : ""}` : ""} onClick={() => setTarget({ medication, time: row.time, day, existing: dose })}>{text}</button></td>;
             })}
           </tr>;
         })}</tbody></table></div> : <p className="empty-state">No medications are recorded for this client. Add them on the Medications tab.</p>}
-      <div className="med-legend"><span><i className="med-cell given">AB</i>Given (staff initials)</span><span><i className="med-cell refused">R</i>Refused</span><span><i className="med-cell held">H</i>Held</span><span><i className="med-cell notgiven">N</i>Not given</span>{me.canRecord ? <span className="med-noprint">Authorized staff may record today or a reasoned late entry from the prior seven days. Existing entries require a signed correction.</span> : null}</div>
+      <div className="med-legend"><span><i className="med-cell given">AB</i>Given (staff initials)</span><span><i className="med-cell refused">R</i>Refused</span><span><i className="med-cell held">H</i>Held</span><span><i className="med-cell notgiven">N</i>Not given</span><span><i className="med-cell historical">◆</i>Historical paper MAR, electronically verified later</span>{me.canRecord ? <span className="med-noprint">Authorized staff may record today or a reasoned late entry from the prior seven days. Existing entries require a signed correction.</span> : null}</div>
 
       <h4 style={{ margin: "6px 0 0" }}>Weekly sign-off</h4>
       <div className="med-weeks">{data.weeks.map(week => <WeekBox key={week.weekStart} week={week} data={data} busy={busy} onSign={() => act({ action: "SIGN_WEEK", weekStart: week.weekStart })} />)}</div>
@@ -156,6 +159,60 @@ function DosePanel({ target, data, busy, onClose, onSave }: { target: Target; da
       </div>
       <p className="med-note" style={{ margin: 0 }}>The entry is dated {longDay(target.day)} on the MAR no matter when it is entered or signed.</p>
     </div></div>;
+}
+
+type HistoricalAction = (body: { [key: string]: unknown }) => Promise<Record<string, unknown> | null>;
+function HistoricalMarPanel({ data, busy, act }: { data: MarData; busy: boolean; act: HistoricalAction }) {
+  const today = data.today, monthAgo = new Date(`${today}T12:00:00Z`); monthAgo.setUTCMonth(monthAgo.getUTCMonth() - 1);
+  const [rangeStart, setRangeStart] = useState(monthAgo.toISOString().slice(0, 10)), [rangeEnd, setRangeEnd] = useState(today);
+  const [preview, setPreview] = useState<{ fingerprint: string; total: number; readyForCaregiverReview: number; blocked: number; counts: Record<string, number> } | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [reviewStart, setReviewStart] = useState(""), [reviewEnd, setReviewEnd] = useState(""), [medicationFilter, setMedicationFilter] = useState(""), [batchFilter, setBatchFilter] = useState("");
+  const mine = data.historical.entries.filter(entry => entry.mine), ready = mine.filter(entry => entry.reviewState === "READY_TO_ATTEST");
+  const batches = [...new Set(ready.map(entry => entry.batchId))];
+  const medicationOptions = [...new Set(data.historical.entries.map(entry => entry.medication.medication))].sort();
+  const filteredEntries = data.historical.entries.filter(entry => (!reviewStart || entry.doseDate >= reviewStart) && (!reviewEnd || entry.doseDate <= reviewEnd) && (!medicationFilter || entry.medication.medication === medicationFilter) && (!batchFilter || entry.batchId === batchFilter));
+  async function previewImport() {
+    const result = await act({ action: "PREVIEW_HISTORICAL_MAR", rangeStart, rangeEnd });
+    if (result) setPreview(result as unknown as typeof preview);
+  }
+  async function stageImport() {
+    if (!preview) return;
+    if (await act({ action: "STAGE_HISTORICAL_MAR", rangeStart, rangeEnd, expectedFingerprint: preview.fingerprint })) setPreview(null);
+  }
+  async function attest(batchId: string) {
+    const ids = [...selected].filter(id => ready.some(entry => entry.id === id && entry.batchId === batchId));
+    if (!ids.length) return;
+    if (await act({ action: "ATTEST_HISTORICAL_MAR_ENTRIES", batchId, entryIds: ids, consent: true })) setSelected(new Set());
+  }
+  return <div className="med-historical">
+    <div className="med-callout"><strong>Historical paper MAR verification</strong><p>AxisCare clock evidence proposes caregiver attribution only. It does not prove that medication was administered. Each caregiver must compare these entries with the signed paper MAR before applying one current electronic signature to the exact reviewed set.</p></div>
+    {data.historical.canImport ? <section className="med-import med-noprint" aria-label="Historical MAR import">
+      <h4>Stage AxisCare-backed history</h4>
+      <div className="med-import-range"><label>From<input type="date" value={rangeStart} max={rangeEnd} onChange={event => { setRangeStart(event.target.value); setPreview(null); }} /></label><label>Through<input type="date" value={rangeEnd} min={rangeStart} max={today} onChange={event => { setRangeEnd(event.target.value); setPreview(null); }} /></label><button type="button" className="secondary" disabled={busy} onClick={() => void previewImport()}>Preview</button></div>
+      {preview ? <div className="med-preview" role="status"><b>{preview.total}</b> scheduled occurrences · <b>{preview.readyForCaregiverReview}</b> matched to one actual clock window · <b>{preview.blocked}</b> require review<div className="med-preview-counts">{Object.entries(preview.counts).map(([key, value]) => <span key={key}>{key.replaceAll("_", " ").toLowerCase()}: {value}</span>)}</div><button type="button" disabled={busy} onClick={() => void stageImport()}>Confirm and stage</button></div> : null}
+      {data.historical.batches.length ? <div className="med-batches">{data.historical.batches.map(batch => <span key={batch.id}>{batch.rangeStart}–{batch.rangeEnd} · {batch.status.replaceAll("_", " ").toLowerCase()}</span>)}</div> : null}
+    </section> : null}
+    {data.historical.entries.length ? <><div className="med-history-filters med-noprint" aria-label="Historical MAR review filters"><label>From<input type="date" value={reviewStart} max={reviewEnd || undefined} onChange={event => setReviewStart(event.target.value)} /></label><label>Through<input type="date" value={reviewEnd} min={reviewStart || undefined} onChange={event => setReviewEnd(event.target.value)} /></label><label>Medication<select value={medicationFilter} onChange={event => setMedicationFilter(event.target.value)}><option value="">All medications</option>{medicationOptions.map(name => <option key={name} value={name}>{name}</option>)}</select></label><label>Import batch<select value={batchFilter} onChange={event => setBatchFilter(event.target.value)}><option value="">All batches</option>{data.historical.batches.map(batch => <option key={batch.id} value={batch.id}>{batch.rangeStart}–{batch.rangeEnd}</option>)}</select></label><button type="button" className="secondary" onClick={() => { setReviewStart(""); setReviewEnd(""); setMedicationFilter(""); setBatchFilter(""); }}>Clear filters</button></div>{filteredEntries.length ? <div className="med-history-list">{filteredEntries.map(entry => <HistoricalEntryCard key={entry.id} entry={entry} busy={busy} act={act} selected={selected.has(entry.id)} onSelect={checked => setSelected(current => { const next = new Set(current); if (checked) next.add(entry.id); else next.delete(entry.id); return next; })} />)}</div> : <p className="empty-state">No staged entries match these filters.</p>}</> : <p className="empty-state">No historical MAR entries are staged for this client.</p>}
+    {batches.map(batchId => {
+      const count = ready.filter(entry => entry.batchId === batchId && selected.has(entry.id)).length;
+      return <div className="med-attest med-noprint" key={batchId}><p>{data.historical.statement}</p><button type="button" disabled={busy || !data.me.hasSignature || !count} onClick={() => void attest(batchId)}>Sign {count || "selected"} reviewed {count === 1 ? "entry" : "entries"}</button>{!data.me.hasSignature ? <small>Set up your medication signature above before attesting.</small> : null}</div>;
+    })}
+  </div>;
+}
+
+function HistoricalEntryCard({ entry, busy, act, selected, onSelect }: { entry: HistoricalEntry; busy: boolean; act: HistoricalAction; selected: boolean; onSelect: (checked: boolean) => void }) {
+  const [status, setStatus] = useState<DoseStatus>(entry.paperStatus ?? "GIVEN"), [timeGiven, setTimeGiven] = useState(entry.paperTimeGiven ?? entry.scheduledTime), [note, setNote] = useState(entry.paperNote ?? "");
+  const [discrepancy, setDiscrepancy] = useState(entry.discrepancyNote ?? ""), [correctionReason, setCorrectionReason] = useState("");
+  const canReview = entry.mine && entry.matchState === "MATCHED" && entry.reviewState !== "FLAGGED_FOR_CORRECTION";
+  async function save() { await act({ action: "REVIEW_HISTORICAL_MAR_ENTRY", entryId: entry.id, expectedVersion: entry.version, paperStatus: status, paperTimeGiven: status === "GIVEN" ? timeGiven : null, paperNote: note || null, discrepancyCode: discrepancy ? "PAPER_MAR_DISCREPANCY" : null, discrepancyNote: discrepancy || null, correctionReason: entry.reviewState === "ATTESTED" ? correctionReason : null }); }
+  return <article className={`med-history-card ${entry.reviewState.toLowerCase()}`}>
+    <header><div><strong>{entry.medication.medication}{entry.medication.dose ? ` ${entry.medication.dose}` : ""}</strong><span>{longDay(entry.doseDate)} · {timeLabel(entry.scheduledTime)} · {entry.employee?.name ?? "Caregiver mapping required"}</span></div><b className="med-state">{entry.reviewState.replaceAll("_", " ").toLowerCase()}</b></header>
+    <div className="med-evidence"><span>Source match: {entry.matchState.replaceAll("_", " ").toLowerCase()}</span><span>{entry.confidence.replaceAll("_", " ").toLowerCase()}</span>{entry.visit?.clockInAt && entry.visit.clockOutAt ? <span>Actual visit {new Date(entry.visit.clockInAt).toLocaleString()}–{new Date(entry.visit.clockOutAt).toLocaleTimeString()}</span> : null}</div>
+    {canReview ? <div className="med-review-grid med-noprint"><label>Paper MAR status<select value={status} onChange={event => setStatus(event.target.value as DoseStatus)}>{(Object.keys(CELL) as DoseStatus[]).map(value => <option key={value} value={value}>{CELL[value].name}</option>)}</select></label>{status === "GIVEN" ? <label>Paper time given<input type="time" value={timeGiven} onChange={event => setTimeGiven(event.target.value)} /></label> : null}<label>Paper MAR note<textarea rows={2} value={note} onChange={event => setNote(event.target.value)} /></label><label>Discrepancy / correction request<textarea rows={2} value={discrepancy} onChange={event => setDiscrepancy(event.target.value)} placeholder="Leave blank when the staged attribution and paper MAR agree" /></label>{entry.reviewState === "ATTESTED" ? <label>Correction reason<textarea required minLength={10} rows={2} value={correctionReason} onChange={event => setCorrectionReason(event.target.value)} /></label> : null}<button type="button" disabled={busy || (status === "GIVEN" && !timeGiven) || (status !== "GIVEN" && !note.trim()) || (entry.reviewState === "ATTESTED" && correctionReason.trim().length < 10)} onClick={() => void save()}>{discrepancy ? "Flag for correction" : entry.reviewState === "ATTESTED" ? "Prepare correction" : "Mark reviewed"}</button></div> : null}
+    {entry.mine && entry.reviewState === "READY_TO_ATTEST" ? <label className="check med-noprint"><input type="checkbox" checked={selected} onChange={event => onSelect(event.target.checked)} /><span>Include this reviewed entry in my signature set</span></label> : null}
+    {entry.attestation ? <small>Electronically verified later on {new Date(entry.attestation.signedAt).toLocaleString()} · signature snapshot {entry.attestation.snapshotHash.slice(0, 12)}…</small> : null}
+  </article>;
 }
 
 type MedForm = { id?: string; medication: string; dose: string; route: string; times: string; reason: string; prescriber: string; startDate: string; stopDate: string };

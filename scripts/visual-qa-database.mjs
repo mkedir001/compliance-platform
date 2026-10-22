@@ -15,5 +15,5 @@ export function assertVisualQaDatabaseUrl(databaseUrl, environment = process.env
 
 export function visualQaEnvironment(source = process.env) {
   const databaseUrl = assertVisualQaDatabaseUrl(source.VISUAL_QA_DATABASE_URL ?? DEFAULT_VISUAL_QA_DATABASE_URL, source);
-  return { ...source, DATABASE_URL: databaseUrl, VISUAL_QA_MODE: "true" };
+  return { ...source, DATABASE_URL: databaseUrl, VISUAL_QA_MODE: "true", HISTORICAL_MAR_ORGANIZATION_IDS: "visual-qa-radiant-care-org" };
 }

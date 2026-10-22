@@ -6,6 +6,7 @@ import { requireEmployeeAccess, requireEmployeeSelfAccess, requireOrganizationAc
 import { deriveAssignmentDisplayStatus } from "@/domain/training/assignments/service";
 import { configuredEmailProviderForPurpose, EmailDeliveryError, type EmailProvider } from "@/domain/notifications/email";
 import { prisma } from "@/lib/prisma";
+import { historicalMarAllowlist } from "@/domain/clients/historical-mar-import";
 
 const hashToken = (token: string) => createHash("sha256").update(token).digest("hex");
 const invitationLifetimeMs = 7 * 24 * 60 * 60 * 1000;
@@ -176,12 +177,15 @@ export async function getAssignedClientCareViews(user: Pick<User, "id">, organiz
   const permissions = await resolvePermissionCodes(membership.id);
   if (!permissions.has("client.assigned.read") || !permissions.has("client.caregiver.read")) return [];
   const advanceAccess = new Date(at.getTime() + 24 * 60 * 60 * 1000);
-  const assignments = await prisma.serviceAssignment.findMany({ where: { organizationId, employeeId: employee.id, status: "ACTIVE", startsAt: { lte: advanceAccess }, OR: [{ endsAt: null }, { endsAt: { gt: at } }], serviceRecipientRef: { not: null } }, select: { id: true, serviceRecipientRef: true, blockingScope: true, startsAt: true, endsAt: true, program: { select: { name: true } }, location: { select: { name: true, addressLine1: true, addressLine2: true, city: true, state: true, postalCode: true } }, duties: { select: { dutyDefinition: { select: { code: true, name: true } } } } } });
-  const clientIds = [...new Set(assignments.flatMap(item => item.serviceRecipientRef ? [item.serviceRecipientRef] : []))];
-  if (!clientIds.length) return [];
   const includeMedication = permissions.has("medication.assigned.read");
+  const [assignments, historicalClients] = await Promise.all([
+    prisma.serviceAssignment.findMany({ where: { organizationId, employeeId: employee.id, status: "ACTIVE", startsAt: { lte: advanceAccess }, OR: [{ endsAt: null }, { endsAt: { gt: at } }], serviceRecipientRef: { not: null } }, select: { id: true, serviceRecipientRef: true, blockingScope: true, startsAt: true, endsAt: true, program: { select: { name: true } }, location: { select: { name: true, addressLine1: true, addressLine2: true, city: true, state: true, postalCode: true } }, duties: { select: { dutyDefinition: { select: { code: true, name: true } } } } } }),
+    includeMedication && historicalMarAllowlist().has(organizationId) ? prisma.historicalMarEntry.findMany({ where: { organizationId, employeeId: employee.id }, distinct: ["clientId", "medicationId"], select: { clientId: true, medicationId: true } }) : Promise.resolve([]),
+  ]);
+  const clientIds = [...new Set([...assignments.flatMap(item => item.serviceRecipientRef ? [item.serviceRecipientRef] : []), ...historicalClients.map(item => item.clientId)])];
+  if (!clientIds.length) return [];
   const [clients, instructions] = await Promise.all([
-    prisma.client.findMany({ where: { organizationId, id: { in: clientIds }, archivedAt: null, dischargedAt: null }, select: { id: true, legalFirstName: true, legalLastName: true, preferredName: true, addressLine1: true, addressLine2: true, city: true, state: true, postalCode: true, supportNeeds: true, preferredCommunication: true, primaryLanguage: true, interpreterNeeded: true, emergencyContacts: { where: { informationSharingAllowed: true }, select: { name: true, relationship: true, phone: true } }, services: { where: { status: "ACTIVE" }, select: { serviceType: true, scheduleJson: true } }, healthProfile: { select: { allergiesReactions: true, specialDietTexture: true, chokingSwallowingRisk: true, seizureProtocol: true, mobilityEquipment: true, medicationResponsibility: true } }, medications: includeMedication ? { select: { medication: true, dose: true, times: true, reason: true } } : false } }),
+    prisma.client.findMany({ where: { organizationId, id: { in: clientIds }, archivedAt: null, dischargedAt: null }, select: { id: true, legalFirstName: true, legalLastName: true, preferredName: true, addressLine1: true, addressLine2: true, city: true, state: true, postalCode: true, supportNeeds: true, preferredCommunication: true, primaryLanguage: true, interpreterNeeded: true, emergencyContacts: { where: { informationSharingAllowed: true }, select: { name: true, relationship: true, phone: true } }, services: { where: { status: "ACTIVE" }, select: { serviceType: true, scheduleJson: true } }, healthProfile: { select: { allergiesReactions: true, specialDietTexture: true, chokingSwallowingRisk: true, seizureProtocol: true, mobilityEquipment: true, medicationResponsibility: true } }, medications: includeMedication ? { select: { id: true, medication: true, dose: true, times: true, reason: true } } : false } }),
     includeMedication ? prisma.personSpecificMedicationInstruction.findMany({ where: { organizationId, employeeId: employee.id, serviceRecipientRef: { in: clientIds }, status: "ACTIVE", effectiveFrom: { lte: at }, OR: [{ effectiveUntil: null }, { effectiveUntil: { gte: at } }] }, select: { serviceRecipientRef: true, procedureReference: true, procedureVersion: true, effectiveUntil: true } }) : Promise.resolve([]),
   ]);
   return clients.map(client => ({
@@ -191,7 +195,7 @@ export async function getAssignedClientCareViews(user: Pick<User, "id">, organiz
     safety: client.healthProfile ? { allergies: client.healthProfile.allergiesReactions, diet: client.healthProfile.specialDietTexture, chokingRisk: client.healthProfile.chokingSwallowingRisk, seizureProtocol: client.healthProfile.seizureProtocol, mobilityEquipment: client.healthProfile.mobilityEquipment, medicationResponsibility: client.healthProfile.medicationResponsibility } : null,
     emergencyContacts: client.emergencyContacts, services: client.services,
     assignments: assignments.filter(item => item.serviceRecipientRef === client.id).map(item => ({ id: item.id, blockingScope: item.blockingScope, startsAt: item.startsAt, endsAt: item.endsAt, program: item.program, location: item.location, duties: item.duties })),
-    medication: includeMedication ? { medications: client.medications, instructions: instructions.filter(item => item.serviceRecipientRef === client.id).map(item => ({ procedureReference: item.procedureReference, procedureVersion: item.procedureVersion, effectiveUntil: item.effectiveUntil })), administrationAuthorized: false, disclaimer: "Viewing medication instructions does not authorize medication administration." } : null,
+    medication: includeMedication ? { medications: client.medications.filter(medication => assignments.some(item => item.serviceRecipientRef === client.id) || historicalClients.some(item => item.clientId === client.id && item.medicationId === medication.id)).map(medication => ({ medication: medication.medication, dose: medication.dose, times: medication.times, reason: medication.reason })), instructions: instructions.filter(item => item.serviceRecipientRef === client.id).map(item => ({ procedureReference: item.procedureReference, procedureVersion: item.procedureVersion, effectiveUntil: item.effectiveUntil })), administrationAuthorized: false, disclaimer: "Viewing medication instructions does not authorize medication administration." } : null,
   }));
 }
 
