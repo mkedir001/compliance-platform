@@ -16,6 +16,7 @@ export const medicationRecordAction = z.discriminatedUnion("action", [
   z.object({ action: z.literal("SAVE_MEDICATION"), id: z.string().cuid().optional(), medication: z.string().trim().min(1).max(200), dose: z.string().trim().max(100).nullish(), route: z.string().trim().max(100).nullish(), times: z.string().trim().max(500).nullish(), reason: z.string().trim().max(300).nullish(), prescriber: z.string().trim().max(200).nullish(), startDate: day.nullish(), stopDate: day.nullish() }).strict(),
   z.object({ action: z.literal("SAVE_DOSE"), medicationId: z.string().cuid(), doseDate: day, scheduledTime: time, status: z.enum(DOSE_STATUSES as unknown as [DoseStatus, ...DoseStatus[]]), timeGiven: time.nullish(), note: z.string().trim().max(1000).nullish(), lateEntryReason: z.string().trim().min(10).max(500).nullish(), correctionReason: z.string().trim().min(10).max(500).nullish(), expectedUpdatedAt: z.string().datetime().optional() }).strict(),
   z.object({ action: z.literal("APPROVE_MEDICATION"), id: z.string().cuid() }).strict(),
+  z.object({ action: z.literal("APPROVE_HISTORICAL_MEDICATION"), id: z.string().cuid(), effectiveFrom: day, effectiveThrough: day, sourceReference: z.string().trim().min(3).max(300) }).strict(),
   z.object({ action: z.literal("SIGN_WEEK"), weekStart: day }).strict(),
 ]);
 export type MedicationRecordAction = z.infer<typeof medicationRecordAction>;
@@ -39,14 +40,15 @@ async function hasAssignedClientAccess(userId: string, organizationId: string, c
 async function access(user: Pick<User, "id">, organizationId: string, clientId: string): Promise<Access> {
   const { organization, membership } = await requireOrganizationAccess(user, organizationId);
   const permissions = await resolvePermissionCodes(membership.id), canAdminView = permissions.has("medication.approve"), assignedRead = permissions.has("medication.assigned.read") || permissions.has("medication.activity.record"), now = new Date();
+  const historicalPrivileged = ["historical_mar.reconstruct", "historical_mar.review", "historical_mar.correct", "historical_mar.attest"].some(code => permissions.has(code));
   const assignedClient = canAdminView ? true : await hasAssignedClientAccess(user.id, organizationId, clientId, now), historicalReview = canAdminView ? false : await hasHistoricalMarReviewAccess(user.id, organizationId, clientId);
-  if (!canAdminView && (!assignedRead || (!assignedClient && !historicalReview))) throw new AuthorizationError("Assigned-client medication access is required");
+  if (!canAdminView && !historicalPrivileged && (!assignedRead || (!assignedClient && !historicalReview))) throw new AuthorizationError("Assigned-client medication access is required");
   if (!await prisma.client.findFirst({ where: { id: clientId, organizationId }, select: { id: true } })) throw new ResourceNotFoundError("Client not found");
   const clinicalCredential = canAdminView ? await prisma.professionalCredential.findFirst({ where: { organizationId, userId: user.id, status: "ACTIVE", verificationStatus: "VERIFIED", credentialType: { in: ["RN", "CNS", "CNP", "PA", "PHYSICIAN"] }, OR: [{ expiresAt: null }, { expiresAt: { gte: now } }] }, select: { id: true } }) : null;
   // Permission to reach the review workflow is not a substitute for a current,
   // verified clinical credential. This remains true for master accounts.
   const canReview = Boolean(canAdminView && clinicalCredential), assignmentGate = permissions.has("medication.activity.record") ? await resolveAssignmentGate(user.id, organizationId, clientId, now) : null;
-  return { userId: user.id, organizationId, timezone: organization.timezone, permissions, canAdminView, canReview, canEditMedications: canReview, canProposeMedications: canReview || permissions.has("organization.manage") || permissions.has("client.update"), assignmentGate, historicalOnly: !canAdminView && !assignedClient && historicalReview };
+  return { userId: user.id, organizationId, timezone: organization.timezone, permissions, canAdminView, canReview, canEditMedications: canReview, canProposeMedications: canReview || permissions.has("organization.manage") || permissions.has("client.update"), assignmentGate, historicalOnly: !canAdminView && !assignedClient && !historicalPrivileged && historicalReview };
 }
 
 function requireAdministration(a: Access) {
@@ -84,10 +86,10 @@ export async function getMedicationRecord(user: Pick<User, "id">, organizationId
     storedSignature(organizationId, a.userId),
     getHistoricalMarWorkspace(a.userId, organizationId, clientId, a.canReview),
   ]);
-  const meds = medications.map(row => ({ id: row.id, medication: row.medication, dose: row.dose, route: row.route, times: row.times, reason: row.reason, prescriber: row.prescriber, startDate: row.startDate ? dateToDayKey(row.startDate) : null, stopDate: row.stopDate ? dateToDayKey(row.stopDate) : null, marApproved: Boolean(row.marApprovedAt && row.marApprovedByUserId) }));
+  const meds = medications.map(row => ({ id: row.id, medication: row.medication, dose: row.dose, route: row.route, times: row.times, reason: row.reason, prescriber: row.prescriber, startDate: row.startDate ? dateToDayKey(row.startDate) : null, stopDate: row.stopDate ? dateToDayKey(row.stopDate) : null, marApproved: Boolean(row.marApprovedAt && row.marApprovedByUserId), historicalApprovedFrom: row.historicalApprovedFrom ? dateToDayKey(row.historicalApprovedFrom) : null, historicalApprovedThrough: row.historicalApprovedThrough ? dateToDayKey(row.historicalApprovedThrough) : null }));
   const doseRows = doses.map(row => ({ id: row.id, medicationId: row.medicationId, doseDate: dateToDayKey(row.doseDate), scheduledTime: row.scheduledTime, status: row.status as DoseStatus, timeGiven: row.timeGiven, note: row.note, signerUserId: row.signerUserId, signerName: row.signerName, signerInitials: row.signerInitials, signedAt: row.signedAt.toISOString(), updatedAt: row.updatedAt.toISOString(), correctionReason: row.correctionReason, transferredFromPaper: row.transferredFromPaper }));
   const canRecord = Boolean(a.permissions.has("medication.activity.record") && a.assignmentGate?.eligible);
-  const canHistoricalReview = historical.enabled && historical.entries.some(entry => entry.mine);
+  const canHistoricalReview = historical.enabled && Boolean(historical.canReview || historical.canAttest);
   const payload = {
     month, today,
     me: { userId: a.userId, hasSignature: Boolean(mine), canRecord, canHistoricalReview, canSignWeek: a.canReview, isManager: a.canReview, canEditMedications: a.canEditMedications, canProposeMedications: a.canProposeMedications, administrationBlockers: a.permissions.has("medication.activity.record") && !canRecord ? a.assignmentGate?.reasons ?? ["ACTIVE_CLIENT_MEDICATION_ASSIGNMENT_REQUIRED"] : [] },
@@ -120,7 +122,7 @@ export async function applyMedicationAction(user: Pick<User, "id">, organization
     if (!a.canProposeMedications) throw new AuthorizationError("Missing permission: organization.manage or medication.approve");
     const fields = { medication: input.medication, dose: trimOrNull(input.dose), route: trimOrNull(input.route), times: trimOrNull(input.times), reason: trimOrNull(input.reason), prescriber: trimOrNull(input.prescriber), startDate: input.startDate ? dayKeyToDate(input.startDate) : null, stopDate: input.stopDate ? dayKeyToDate(input.stopDate) : null };
     const data = { ...fields };
-    const pendingApproval = { marApprovedAt: null, marApprovedByUserId: null };
+    const pendingApproval = { marApprovedAt: null, marApprovedByUserId: null, historicalApprovedFrom: null, historicalApprovedThrough: null, historicalApprovalSourceReference: null };
     if (data.startDate && data.stopDate && data.stopDate < data.startDate) throw new ValidationError("The stop date cannot be before the start date");
     if (input.id) {
       const existing = await prisma.clientMedication.findFirst({ where: { id: input.id, organizationId, clientId } }); if (!existing) throw new ResourceNotFoundError("Medication not found");
@@ -145,6 +147,23 @@ export async function applyMedicationAction(user: Pick<User, "id">, organization
     if (!parseScheduleTimes(existing.times).length) throw new ValidationError("A structured medication schedule is required before MAR approval");
     if (existing.stopDate && dateToDayKey(existing.stopDate) < todayKey(new Date(), a.timezone)) throw new ValidationError("An ended medication cannot be approved for the MAR");
     await prisma.$transaction(async tx => { const updated = await tx.clientMedication.update({ where: { id: input.id }, data: { marApprovedAt: new Date(), marApprovedByUserId: a.userId } }); await recordHistory(tx, { organizationId, clientId, entityType: "MEDICATION", entityId: input.id, action: "APPROVED", changedByUserId: a.userId, snapshotJson: snapshot({ label: existing.medication, before: existing, after: updated }) }); });
+    return { ok: true, id: input.id };
+  }
+  if (input.action === "APPROVE_HISTORICAL_MEDICATION") {
+    if (!a.canEditMedications) throw new AuthorizationError("Only a current verified clinical reviewer can authorize a historical medication schedule");
+    const existing = await prisma.clientMedication.findFirst({ where: { id: input.id, organizationId, clientId } }); if (!existing) throw new ResourceNotFoundError("Medication not found");
+    if (!existing.startDate) throw new ValidationError("A historical start date is required before retrospective authorization");
+    if (!parseScheduleTimes(existing.times).length) throw new ValidationError("A structured scheduled medication is required; PRN medications are excluded");
+    if (input.effectiveFrom > input.effectiveThrough) throw new ValidationError("The retrospective authorization start must not be after its end");
+    if (input.effectiveThrough > todayKey(new Date(), a.timezone)) throw new ValidationError("Retrospective authorization cannot include a future date");
+    const medicationStart = dateToDayKey(existing.startDate), medicationStop = existing.stopDate ? dateToDayKey(existing.stopDate) : null;
+    if (input.effectiveFrom < medicationStart || (medicationStop && input.effectiveThrough > medicationStop)) throw new ValidationError("The retrospective authorization must stay within the recorded medication effective dates");
+    const now = new Date();
+    await prisma.$transaction(async tx => {
+      const updated = await tx.clientMedication.update({ where: { id: input.id }, data: { marApprovedAt: now, marApprovedByUserId: a.userId, historicalApprovedFrom: dayKeyToDate(input.effectiveFrom), historicalApprovedThrough: dayKeyToDate(input.effectiveThrough), historicalApprovalSourceReference: input.sourceReference } });
+      await tx.historicalMarEntry.updateMany({ where: { organizationId, clientId, medicationId: input.id, doseDate: { gte: dayKeyToDate(input.effectiveFrom), lte: dayKeyToDate(input.effectiveThrough) }, medicationAuthorizationState: "UNAPPROVED_DRAFT" }, data: { medicationAuthorizationState: "APPROVED", medicationAuthorizationSnapshotJson: { approvedAt: now.toISOString(), approvedByUserId: a.userId, effectiveFrom: input.effectiveFrom, effectiveThrough: input.effectiveThrough, sourceReference: input.sourceReference } } });
+      await recordHistory(tx, { organizationId, clientId, entityType: "MEDICATION", entityId: input.id, action: "RETROSPECTIVELY_AUTHORIZED", changedByUserId: a.userId, snapshotJson: snapshot({ label: existing.medication, before: existing, after: updated, authorizationRecordedAt: now.toISOString(), effectiveFrom: input.effectiveFrom, effectiveThrough: input.effectiveThrough, sourceReference: input.sourceReference }) });
+    });
     return { ok: true, id: input.id };
   }
   if (input.action === "SAVE_DOSE") {

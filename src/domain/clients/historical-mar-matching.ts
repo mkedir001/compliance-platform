@@ -36,7 +36,7 @@ export type HistoricalMatch = {
 export type SupplementalAttendance = {
   rowHash: string;
   rowNumber: number;
-  employeeId: string;
+  employeeId: string | null;
   clockInAt: Date;
   clockOutAt: Date;
 };
@@ -134,13 +134,14 @@ export function matchHistoricalOccurrenceWithSupplemental(day: string, time: str
   const primary = matchHistoricalOccurrence(day, time, timeZone, visits);
   if (primary.state === "MATCHED") return { ...primary, attendanceSource: "AXISCARE", attendanceEvidenceKey: primary.visitId, supplementalCandidates: [] };
   const instants = localTimeCandidates(day, time, timeZone);
-  const candidates = supplemental.filter(row => row.reconciliationState === "SUPPLEMENTAL" && instants.some(instant => covers(row.clockInAt, row.clockOutAt, instant)));
+  const allSupplemental = supplemental.filter(row => instants.some(instant => covers(row.clockInAt, row.clockOutAt, instant)));
+  const candidates = allSupplemental.filter(row => row.reconciliationState === "SUPPLEMENTAL");
   if (candidates.length > 1) return { state: "AMBIGUOUS_VISIT", confidence: "MULTIPLE_VERIFIED_PAVILIO_WINDOWS", visitId: null, employeeId: null, candidates: [], attendanceSource: null, attendanceEvidenceKey: null, supplementalCandidates: candidates.map(row => row.rowHash).sort() };
   if (candidates.length === 1) {
     const row = candidates[0];
-    return { state: "MATCHED", confidence: "VERIFIED_PAVILIO_COVERAGE", visitId: null, employeeId: row.employeeId, candidates: [], attendanceSource: "PAVILIO", attendanceEvidenceKey: row.rowHash, supplementalCandidates: [row.rowHash] };
+    return { state: row.employeeId ? "MATCHED" : "MISSING_CAREGIVER_MAPPING", confidence: row.employeeId ? "VERIFIED_PAVILIO_COVERAGE" : "VERIFIED_PAVILIO_COVERAGE_UNMAPPED", visitId: null, employeeId: row.employeeId, candidates: [], attendanceSource: "PAVILIO", attendanceEvidenceKey: row.rowHash, supplementalCandidates: [row.rowHash] };
   }
-  return { ...primary, attendanceSource: null, attendanceEvidenceKey: null, supplementalCandidates: [] };
+  return { ...primary, attendanceSource: primary.visitId || primary.candidates.length ? "AXISCARE" : null, attendanceEvidenceKey: primary.visitId, supplementalCandidates: allSupplemental.map(row => row.rowHash).sort() };
 }
 
 export type MedicationVersion = {
@@ -151,7 +152,9 @@ export type MedicationVersion = {
   times: string | null;
   startDate: string | null;
   stopDate: string | null;
-  approved: boolean;
+  approvedAt: string | null;
+  historicalApprovedFrom: string | null;
+  historicalApprovedThrough: string | null;
   source: string;
 };
 
@@ -180,7 +183,11 @@ export function buildMedicationOccurrences(versions: readonly MedicationVersion[
         const key = JSON.stringify({ medication: version.medication, dose: version.dose, route: version.route, times: parseScheduleTimes(version.times) });
         variants.set(key, [...(variants.get(key) ?? []), version]);
       }
-      const scheduleState = variants.size > 1 ? "MEDICATION_HISTORY_GAP" : active.some(version => version.approved) ? "APPROVED" : "MEDICATION_NOT_APPROVED";
+      const approvedOnDay = (version: MedicationVersion) => {
+        const retrospective = Boolean(version.historicalApprovedFrom && version.historicalApprovedThrough && day >= version.historicalApprovedFrom && day <= version.historicalApprovedThrough);
+        return retrospective || Boolean(version.approvedAt && version.approvedAt <= day);
+      };
+      const scheduleState = variants.size > 1 ? "MEDICATION_HISTORY_GAP" : active.some(approvedOnDay) ? "APPROVED" : "MEDICATION_NOT_APPROVED";
       const selected = active;
       const representative = active.find(version => version.source === "current") ?? active[0];
       const times = [...new Set(selected.flatMap(version => parseScheduleTimes(version.times)))].sort();

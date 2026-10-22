@@ -50,13 +50,17 @@ describe("AxisCare-first Pavilio reconciliation", () => {
 });
 
 describe("historical medication schedules", () => {
-  const version = (over: Partial<MedicationVersion> = {}): MedicationVersion => ({ medicationId: "med-1", medication: "Synthetic medication", dose: "1 unit", route: "oral", times: "8 AM", startDate: "2026-01-01", stopDate: null, approved: true, source: "current", ...over });
+  const version = (over: Partial<MedicationVersion> = {}): MedicationVersion => ({ medicationId: "med-1", medication: "Synthetic medication", dose: "1 unit", route: "oral", times: "8 AM", startDate: "2026-01-01", stopDate: null, approvedAt: "2025-12-31", historicalApprovedFrom: null, historicalApprovedThrough: null, source: "current", ...over });
   it("honors effective start and discontinuation dates", () => {
     const rows = buildMedicationOccurrences([version({ stopDate: "2026-01-02" })], "2026-01-01", "2026-01-04");
     expect(rows.map(row => row.day)).toEqual(["2026-01-01", "2026-01-02"]);
   });
   it("flags pending schedules rather than silently treating them as approved", () => {
-    expect(buildMedicationOccurrences([version({ approved: false })], "2026-01-01", "2026-01-01")[0].scheduleState).toBe("MEDICATION_NOT_APPROVED");
+    expect(buildMedicationOccurrences([version({ approvedAt: null })], "2026-01-01", "2026-01-01")[0].scheduleState).toBe("MEDICATION_NOT_APPROVED");
+  });
+  it("does not backdate a later approval without an explicit retrospective authorization range", () => {
+    expect(buildMedicationOccurrences([version({ approvedAt: "2026-10-22" })], "2026-01-01", "2026-01-01")[0].scheduleState).toBe("MEDICATION_NOT_APPROVED");
+    expect(buildMedicationOccurrences([version({ approvedAt: "2026-10-22", historicalApprovedFrom: "2026-01-01", historicalApprovedThrough: "2026-01-31" })], "2026-01-01", "2026-01-01")[0].scheduleState).toBe("APPROVED");
   });
   it("flags conflicting historical schedule snapshots rather than guessing", () => {
     const rows = buildMedicationOccurrences([version(), version({ source: "history:old", times: "8 PM" })], "2026-01-01", "2026-01-01");
