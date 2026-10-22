@@ -4,7 +4,8 @@ const state = vi.hoisted(() => ({ user: { email: "Owner@Example.com", status: "A
 vi.mock("@/lib/prisma", () => ({ prisma: {
   user: { findUnique: async () => state.user },
   organizationMembership: { findUnique: async () => state.membership },
-  permission: { findMany: async () => [{ code: "organization.manage" }, { code: "medication.approve" }, { code: "billing.run" }] },
+  permission: { findMany: async ({ where }: { where?: unknown } = {}) => where ? [{ code: "client.read" }] : [{ code: "organization.manage" }, { code: "medication.approve" }, { code: "billing.run" }] },
+  membershipPermission: { findMany: async () => [] },
 } }));
 
 import { isMasterAccount, masterAccountEmails } from "@/domain/permissions/master-account";
@@ -18,7 +19,8 @@ describe("master account", () => {
     expect(await isMasterAccount("u1")).toBe(false);
   });
   it("matches a configured sign-in email case-insensitively", async () => {
-    process.env.MASTER_ACCOUNT_EMAILS = " owner@example.com , other@example.com";
+    process.env.MASTER_ACCOUNT_EMAILS = " owner@example.com , other@example.com, OWNER@example.com";
+    expect(masterAccountEmails()).toEqual(["owner@example.com", "other@example.com"]);
     expect(await isMasterAccount("u1")).toBe(true);
   });
   it("does not match other emails, inactive users, or users without an email", async () => {
@@ -32,6 +34,11 @@ describe("master account", () => {
     process.env.MASTER_ACCOUNT_EMAILS = "owner@example.com";
     expect([...(await resolvePermissionCodes("m1"))].sort()).toEqual(["billing.run", "medication.approve", "organization.manage"]);
     state.membership = { userId: "u1", status: "SUSPENDED" };
-    await expect(resolvePermissionCodes("m1")).rejects.toThrow(); // falls through to normal resolution, which needs the real tables
+    expect([...(await resolvePermissionCodes("m1"))]).toEqual(["client.read"]);
+  });
+  it("compares only the authenticated application user's stored email", async () => {
+    process.env.MASTER_ACCOUNT_EMAILS = "mkedir@radiantcaremn.com";
+    state.user = { email: "different@example.com", status: "ACTIVE" };
+    expect(await isMasterAccount("u1")).toBe(false);
   });
 });

@@ -1,7 +1,6 @@
 import { Prisma, type User } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { isMasterAccount } from "@/domain/permissions/master-account";
 import { AuthorizationError, ConflictError, ResourceNotFoundError, ValidationError } from "@/domain/auth/errors";
 import { requireOrganizationAccess, resolvePermissionCodes } from "@/domain/permissions/authorization";
 import { computeMedicationDutyEligibility } from "@/domain/medication/service";
@@ -42,7 +41,9 @@ async function access(user: Pick<User, "id">, organizationId: string, clientId: 
   if (!canAdminView && (!assignedRead || !await hasAssignedClientAccess(user.id, organizationId, clientId, now))) throw new AuthorizationError("Assigned-client medication access is required");
   if (!await prisma.client.findFirst({ where: { id: clientId, organizationId }, select: { id: true } })) throw new ResourceNotFoundError("Client not found");
   const clinicalCredential = canAdminView ? await prisma.professionalCredential.findFirst({ where: { organizationId, userId: user.id, status: "ACTIVE", verificationStatus: "VERIFIED", credentialType: { in: ["RN", "CNS", "CNP", "PA", "PHYSICIAN"] }, OR: [{ expiresAt: null }, { expiresAt: { gte: now } }] }, select: { id: true } }) : null;
-  const canReview = Boolean(canAdminView && (clinicalCredential || await isMasterAccount(user.id))), assignmentGate = permissions.has("medication.activity.record") ? await resolveAssignmentGate(user.id, organizationId, clientId, now) : null;
+  // Permission to reach the review workflow is not a substitute for a current,
+  // verified clinical credential. This remains true for master accounts.
+  const canReview = Boolean(canAdminView && clinicalCredential), assignmentGate = permissions.has("medication.activity.record") ? await resolveAssignmentGate(user.id, organizationId, clientId, now) : null;
   return { userId: user.id, organizationId, timezone: organization.timezone, permissions, canAdminView, canReview, canEditMedications: canReview, canProposeMedications: canReview || permissions.has("organization.manage") || permissions.has("client.update"), assignmentGate };
 }
 
@@ -114,23 +115,30 @@ export async function applyMedicationAction(user: Pick<User, "id">, organization
     if (!a.canProposeMedications) throw new AuthorizationError("Missing permission: organization.manage or medication.approve");
     const fields = { medication: input.medication, dose: trimOrNull(input.dose), route: trimOrNull(input.route), times: trimOrNull(input.times), reason: trimOrNull(input.reason), prescriber: trimOrNull(input.prescriber), startDate: input.startDate ? dayKeyToDate(input.startDate) : null, stopDate: input.stopDate ? dayKeyToDate(input.stopDate) : null };
     const data = { ...fields };
-    // A clinical reviewer's save is itself the approval. Anyone else's save leaves the medication pending until a reviewer approves it.
-    const approval = a.canEditMedications ? { marApprovedAt: new Date(), marApprovedByUserId: a.userId } : { marApprovedAt: null, marApprovedByUserId: null };
+    const pendingApproval = { marApprovedAt: null, marApprovedByUserId: null };
     if (data.startDate && data.stopDate && data.stopDate < data.startDate) throw new ValidationError("The stop date cannot be before the start date");
     if (input.id) {
       const existing = await prisma.clientMedication.findFirst({ where: { id: input.id, organizationId, clientId } }); if (!existing) throw new ResourceNotFoundError("Medication not found");
-      const sameDay = (x: Date | null, y: Date | null) => (x?.getTime() ?? null) === (y?.getTime() ?? null), onlyStopChanged = existing.medication === data.medication && existing.dose === data.dose && existing.route === data.route && existing.times === data.times && existing.reason === data.reason && existing.prescriber === data.prescriber && sameDay(existing.startDate, data.startDate);
-      // Discontinuing an approved medication does not change the order, so it keeps its approval.
-      const keepApproval = !a.canEditMedications && onlyStopChanged && Boolean(existing.marApprovedAt);
-      await prisma.$transaction(async tx => { const updated = await tx.clientMedication.update({ where: { id: input.id }, data: keepApproval ? data : { ...data, ...approval } }); await recordHistory(tx, { organizationId, clientId, entityType: "MEDICATION", entityId: input.id!, action: data.stopDate && (!existing.stopDate || data.stopDate < existing.stopDate) ? "DISCONTINUED" : "UPDATED", changedByUserId: a.userId, snapshotJson: snapshot({ label: existing.medication, before: existing, after: updated }) }); });
+      const sameDay = (x: Date | null, y: Date | null) => (x?.getTime() ?? null) === (y?.getTime() ?? null);
+      const orderFieldsUnchanged = existing.medication === data.medication && existing.dose === data.dose && existing.route === data.route && existing.times === data.times && existing.reason === data.reason && existing.prescriber === data.prescriber && sameDay(existing.startDate, data.startDate);
+      const stopUnchanged = sameDay(existing.stopDate, data.stopDate);
+      const isDiscontinuation = Boolean(data.stopDate && (!existing.stopDate || data.stopDate < existing.stopDate));
+      // A no-op save or an earlier stop date does not expand an approved order.
+      // Any other change invalidates the approval, even when made by a reviewer.
+      const keepApproval = Boolean(existing.marApprovedAt && existing.marApprovedByUserId && orderFieldsUnchanged && (stopUnchanged || isDiscontinuation));
+      await prisma.$transaction(async tx => { const updated = await tx.clientMedication.update({ where: { id: input.id }, data: keepApproval ? data : { ...data, ...pendingApproval } }); await recordHistory(tx, { organizationId, clientId, entityType: "MEDICATION", entityId: input.id!, action: isDiscontinuation ? "DISCONTINUED" : "UPDATED", changedByUserId: a.userId, snapshotJson: snapshot({ label: existing.medication, before: existing, after: updated }) }); });
       return { ok: true, id: input.id };
     }
-    const created = await prisma.$transaction(async tx => { const row = await tx.clientMedication.create({ data: { organizationId, clientId, ...data, ...approval } }); await recordHistory(tx, { organizationId, clientId, entityType: "MEDICATION", entityId: row.id, action: "CREATED", changedByUserId: a.userId, snapshotJson: snapshot({ label: row.medication, after: row }) }); return row; });
+    const created = await prisma.$transaction(async tx => { const row = await tx.clientMedication.create({ data: { organizationId, clientId, ...data, ...pendingApproval } }); await recordHistory(tx, { organizationId, clientId, entityType: "MEDICATION", entityId: row.id, action: "CREATED", changedByUserId: a.userId, snapshotJson: snapshot({ label: row.medication, after: row }) }); return row; });
     return { ok: true, id: created.id };
   }
   if (input.action === "APPROVE_MEDICATION") {
     if (!a.canEditMedications) throw new AuthorizationError("Only a clinical reviewer can approve a medication for the MAR");
     const existing = await prisma.clientMedication.findFirst({ where: { id: input.id, organizationId, clientId } }); if (!existing) throw new ResourceNotFoundError("Medication not found");
+    if (existing.marApprovedAt && existing.marApprovedByUserId) throw new ValidationError("This medication is already approved for the MAR");
+    if (!existing.startDate) throw new ValidationError("A start date is required before MAR approval");
+    if (!parseScheduleTimes(existing.times).length) throw new ValidationError("A structured medication schedule is required before MAR approval");
+    if (existing.stopDate && dateToDayKey(existing.stopDate) < todayKey(new Date(), a.timezone)) throw new ValidationError("An ended medication cannot be approved for the MAR");
     await prisma.$transaction(async tx => { const updated = await tx.clientMedication.update({ where: { id: input.id }, data: { marApprovedAt: new Date(), marApprovedByUserId: a.userId } }); await recordHistory(tx, { organizationId, clientId, entityType: "MEDICATION", entityId: input.id, action: "APPROVED", changedByUserId: a.userId, snapshotJson: snapshot({ label: existing.medication, before: existing, after: updated }) }); });
     return { ok: true, id: input.id };
   }

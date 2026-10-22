@@ -166,7 +166,7 @@ function MedicationList({ data, editing, setEditing, busy, onSave, onApprove }: 
   const set = (key: keyof MedForm) => (e: { target: { value: string } }) => setForm(prev => ({ ...prev, [key]: e.target.value }));
   return <div style={{ display: "grid", gap: 12 }}>
     {data.me.canProposeMedications ? <div className="med-noprint"><button type="button" onClick={() => setEditing("new")}>+ Add medication</button></div> : <p className="med-note med-noprint">Medications can be added by an organization manager or a clinical reviewer.</p>}
-    {data.me.canProposeMedications && !data.me.canEditMedications ? <p className="med-note med-noprint">Medications you add stay <b>pending approval</b> and cannot be used on the MAR until a clinical reviewer (a verified, current RN, CNS, CNP, PA or physician) approves them. Changing an approved medication sends it back for approval.</p> : null}
+    {data.me.canProposeMedications ? <p className="med-note med-noprint">New medications stay <b>pending approval</b> and cannot be used on the MAR until a clinical reviewer (a verified, current RN, CNS, CNP, PA or physician) explicitly approves them. Changing an approved medication sends it back for approval.</p> : null}
     {editing ? <form className="med-form med-noprint" onSubmit={e => { e.preventDefault(); onSave({ id: form.id, medication: form.medication, dose: form.dose || null, route: form.route || null, times: form.times || null, reason: form.reason || null, prescriber: form.prescriber || null, startDate: form.startDate || null, stopDate: form.stopDate || null }); }}>
       <label>Medication<input required value={form.medication} onChange={set("medication")} /></label>
       <label>Dose<input value={form.dose} onChange={set("dose")} placeholder="100 mg" /></label>

@@ -6,7 +6,7 @@ import { prisma } from "@/lib/prisma";
  * permission in every organization it is an active member of. It does not bypass what a permission can never
  * stand in for, such as a person's own qualification to administer medication.
  */
-export const masterAccountEmails = () => (process.env.MASTER_ACCOUNT_EMAILS ?? "").split(",").map(value => value.trim().toLowerCase()).filter(Boolean);
+export const masterAccountEmails = () => [...new Set((process.env.MASTER_ACCOUNT_EMAILS ?? "").split(",").map(value => value.trim().toLowerCase()).filter(Boolean))];
 
 export async function isMasterAccount(userId: string) {
   const emails = masterAccountEmails();
