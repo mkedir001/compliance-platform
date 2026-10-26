@@ -157,16 +157,15 @@ body{color:var(--portal-ink);background:var(--portal-canvas)}
 .invitation-shell{display:grid;align-content:center;min-height:100svh;max-width:680px;padding-block:32px}.invitation-shell h1{font-size:clamp(2.4rem,12vw,4.6rem)}.invitation-card{padding:24px;border:1px solid #d7ded8;border-radius:12px;background:#fff;box-shadow:0 8px 28px #173e3112}.invitation-card>p{margin-top:0;line-height:1.55;overflow-wrap:anywhere}.invitation-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.invitation-actions>p{flex-basis:100%;margin:.25rem 0}.invitation-actions button,.invitation-actions .button-link{min-height:44px;padding:11px 15px}@media(max-width:520px){.invitation-shell{width:100%;padding:24px 14px}.invitation-card{padding:18px}.invitation-actions{align-items:stretch;flex-direction:column}.invitation-actions button,.invitation-actions .button-link{width:100%;text-align:center}}
 
 /* Intake step cards: the global ".portal-app button" rule (dark green) was overriding these, hiding the labels. */
-.portal-app .intake-steps button{min-height:58px;padding:8px 12px;gap:10px;background:#fff;color:#173e31;border:1px solid #c9d4cc;border-radius:10px;font-weight:700;box-shadow:0 1px 0 #0000000a;transition:background .12s,border-color .12s}
+.portal-app .intake-steps button{min-width:0;min-height:58px;padding:8px 12px;gap:10px;background:#fff;color:#173e31;border:1px solid #c9d4cc;border-radius:10px;font-weight:700;box-shadow:0 1px 0 #0000000a;transition:background .12s,border-color .12s}
 .portal-app .intake-steps button:hover:not(.active){background:#f3f7f4;border-color:#8aa497}
 .portal-app .intake-steps button:focus-visible{outline:2px solid #173e31;outline-offset:2px}
 .portal-app .intake-steps button>span:first-child{flex:none;background:#e3eae4;color:#173e31}
-.portal-app .intake-steps .step-copy{color:inherit;line-height:1.2;font-size:.9rem}
+.portal-app .intake-steps .step-copy{min-width:0;color:inherit;line-height:1.2;font-size:.9rem;overflow-wrap:anywhere}
 .portal-app .intake-steps .step-copy small{color:#5b6b61;font-weight:600}
 .portal-app .intake-steps button.status-complete{border-left:4px solid #287a51}
 .portal-app .intake-steps button.status-incomplete{border-left:4px solid #e9b949}
 .portal-app .intake-steps button.active{background:#173e31;border-color:#173e31;color:#fff}
-.portal-app .intake-steps button.active>span:first-child{background:#fff;color:#173e31}
 .portal-app .intake-steps button.active .step-copy small{color:#d3e4d9}
 .portal-app .intake-steps button.status-complete>span:first-child{background:#287a51;color:#fff}
 .portal-app .intake-steps button.status-incomplete>span:first-child{background:#e9b949;color:#302406}
