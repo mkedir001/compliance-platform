@@ -161,7 +161,7 @@ body{color:var(--portal-ink);background:var(--portal-canvas)}
 .portal-app .intake-steps button:hover:not(.active){background:#f3f7f4;border-color:#8aa497}
 .portal-app .intake-steps button:focus-visible{outline:2px solid #173e31;outline-offset:2px}
 .portal-app .intake-steps button>span:first-child{flex:none;background:#e3eae4;color:#173e31}
-.portal-app .intake-steps .step-copy{min-width:0;color:inherit;line-height:1.2;font-size:.9rem;overflow-wrap:anywhere}
+.portal-app .intake-steps .step-copy{min-width:0;color:inherit;line-height:1.2;font-size:.9rem}
 .portal-app .intake-steps .step-copy small{color:#5b6b61;font-weight:600}
 .portal-app .intake-steps button.status-complete{border-left:4px solid #287a51}
 .portal-app .intake-steps button.status-incomplete{border-left:4px solid #e9b949}
